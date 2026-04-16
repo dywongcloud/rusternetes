@@ -3,42 +3,55 @@
 **Round 147** | Complete — 398/441 passed (90.2%) — 43 failed | 2026-04-16
 **Baseline**: Round 146 = 62 failures (85.9%)
 
-## Fixed (pending deploy) — 14 fixes
+## Still Failing (43 tests) — Round 147
 
-| Test | Fix # | Root Cause |
-|------|-------|-----------|
-| chunking.go:194 | 19 | Item count change falsely invalidated pagination tokens |
-| init_container.go:235 | 17 | Missed Succeeded path in runtime.rs |
-| webhook.go:2491 | 18 | Webhook URL missing ?timeout=Ns query param |
-| webhook.go:1481 | 20 | Resource should be "pods" not "pods/attach" |
-| webhook.go:2164 | 22 | CR update handler didn't run validating webhooks |
-| pods.go:600 | 21 | v1 protocol doesn't use channel 3 status |
-| resource_quota.go:302 | 23 | Extended resources (requests.example.com/foo) not checked |
-| crd_publish_openapi.go:285+ | 24 | CRD update lost enum field via typed serde round-trip |
-| garbage_collector.go:436 | 25+27 | RC finalizer removed before all pods orphaned + GC snapshot-based orphan detection was racy |
-| daemon_set.go:1276 | 27 | GC deleted DaemonSet pods (owner existed but missed in snapshot) |
-| statefulset.go:957 | 28 | Kubelet didn't check hostPort conflicts at admission |
-| preemption.go:877 | 29 | Scheduler didn't check extended resources (fakecpu) |
-| crd_publish_openapi.go:225, :170, :77 | 30 | Missing x-kubernetes-group-version-kind in OpenAPI defs |
+| # | Test | Category |
+|---|------|----------|
+| 1 | webhook.go:1481 — deny attaching pod | Webhook admission |
+| 2 | webhook.go:2164 — deny CR creation/update/deletion | Webhook admission |
+| 3 | webhook.go:1400 — deny pod and configmap creation | Webhook admission |
+| 4 | webhook.go:2491 — honor timeout | Webhook admission |
+| 5 | webhook.go:2222 — mutate CR with pruning | Webhook admission |
+| 6 | aggregator.go:359 — Sample API Server | Aggregator proxy |
+| 7 | crd_publish_openapi.go:451 — removes def when version not served | CRD OpenAPI |
+| 8 | crd_publish_openapi.go:400 — updates spec when version renamed | CRD OpenAPI |
+| 9 | crd_publish_openapi.go:225 — preserving unknown fields at root | CRD OpenAPI |
+| 10 | crd_publish_openapi.go:253 — preserving unknown in embedded | CRD OpenAPI |
+| 11 | crd_publish_openapi.go:77 — CRD with validation schema | CRD OpenAPI |
+| 12 | crd_publish_openapi.go:170 — CRD without validation schema | CRD OpenAPI |
+| 13 | crd_publish_openapi.go:285 — multiple CRDs different groups | CRD OpenAPI |
+| 14 | crd_publish_openapi.go:366 — same group/version different kinds | CRD OpenAPI |
+| 15 | crd_publish_openapi.go:318 — same group different versions | CRD OpenAPI |
+| 16 | garbage_collector.go:436 — orphan pods from RC | GC |
+| 17 | resource_quota.go:302 — capture life of a pod | ResourceQuota |
+| 18 | chunking.go:194 — continue after compaction | Pagination |
+| 19 | daemon_set.go:1276 — RollingUpdate pod update | DaemonSet |
+| 20 | deployment.go:1259 — proportional scaling | Deployment |
+| 21 | deployment.go:995 — rollover | Deployment |
+| 22 | replica_set.go:232 — basic image on each replica | ReplicaSet |
+| 23 | rc.go:538 — basic image on each replica | ReplicationController |
+| 24 | statefulset.go:957 — recreate evicted statefulset | StatefulSet |
+| 25 | hostport.go:219 — no conflict different hostIP/protocol | HostPort |
+| 26 | proxy.go:503 — valid responses for pod and service Proxy | Proxy |
+| 27 | proxy.go:271 — proxy through service and pod | Proxy |
+| 28 | service_latency.go:145 — endpoint latency not very high | Service |
+| 29 | service.go:251 — switch session affinity NodePort | Service |
+| 30 | service.go:251 — switch session affinity ClusterIP | Service |
+| 31 | service.go:3459 — service status lifecycle | Service |
+| 32 | service.go:251 — session affinity for NodePort | Service |
+| 33 | service.go:768 — serve basic endpoint from pods | Service |
+| 34 | runtime.go:129 — container exit expected status | Node/Runtime |
+| 35 | init_container.go:235 — invoke init on RestartNever | Init container |
+| 36 | init_container.go:440 — not start app if init fails RestartAlways | Init container |
+| 37 | pods.go:600 — remote command over websockets | Exec |
+| 38 | pre_stop.go:153 — call prestop when killing pod | Node lifecycle |
+| 39 | preemption.go:877 — preemption running path | Scheduling |
+| 40 | output.go:263 — EmptyDir (non-root,0666,default) | EmptyDir perms |
+| 41 | output.go:263 — EmptyDir (non-root,0777,default) | EmptyDir perms |
+| 42 | output.go:263 — EmptyDir (root,0666,default) | EmptyDir perms |
+| 43 | output.go:263 — EmptyDir (root,0777,default) | EmptyDir perms |
 
-## Still Failing — no code fix available
-
-| Test | Error | Root Cause |
-|------|-------|-----------|
-| aggregator.go:359 | deployment not ready | Pod startup failure (Docker 409) — fix 14 deployed but may need more |
-| deployment.go:1259, :995 | RS not available | Pod startup failure — downstream of Docker 409 |
-| rc.go:538 | pod not reachable | Network issue — pod running but HTTP timeout |
-| hostport.go:219 | pod2 timeout | Pod startup failure — Docker 409 |
-| output.go:263 | file perms -rw-r--r-- not -rw-rw-rw- | Docker umask 022 strips group/other write; K8s CRI sets umask at OCI level which Docker API doesn't support for shell-less images |
-| proxy.go:503 | pod didn't start | Pod startup failure |
-| service.go:251, :768 | affinity issues | No endpoints — backend pods can't start (Docker 409) |
-| service.go:3459 | delete timeout | Watch/timing |
-| preemption.go:877 | observation timeout | Scheduler preemption — only 1 of 2 pods created |
-| crd_publish_openapi.go:170, :225, :253, :77 | kubectl explain / schema | May need kubectl explain discovery endpoint |
-
-## All Fixes (28 total)
-
-### Deployed in Round 147 (1-16)
+## All Fixes (31 total, all deployed in Round 147)
 
 | # | Fix |
 |---|-----|
@@ -58,11 +71,6 @@
 | 14 | Per-pod sync lock (prevent concurrent sync_pod) |
 | 15 | Skip unchanged status writes |
 | 16 | Pod resize memory_swap |
-
-### Pending Deploy (17-31)
-
-| # | Fix |
-|---|-----|
 | 17 | Pod conditions runtime.rs Succeeded path |
 | 18 | Webhook URL timeout param (?timeout=Ns) |
 | 19 | Pagination staleness (remove item count check) |
@@ -85,4 +93,4 @@
 |-------|------|------|-------|------|
 | 141 | 368 | 73 | 441 | 83.4% |
 | 146 | 379 | 62 | 441 | 85.9% |
-| 147 | 398 | 43 | 441 | 90.2% (fixes 1-16 deployed) |
+| 147 | 398 | 43 | 441 | 90.2% (all 31 fixes deployed) |

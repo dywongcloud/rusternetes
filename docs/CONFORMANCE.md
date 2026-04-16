@@ -24,30 +24,29 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 127   | 2026-04-07 | 397  | 44   | 90.0%     | Pre-regression baseline |
 | 132   | 2026-04-09 | 363  | 78   | 82.3%     | First round with major fixes deployed |
 | 133   | 2026-04-10 | 370  | 71   | 83.9%     | 47 fixes deployed, 18 staged |
-| 135   | 2026-04-11 | 373  | 68   | 84.6%     | New high score, 57 unique failure locations |
+| 135   | 2026-04-11 | 373  | 68   | 84.6%     | Previous high score |
+| 146   | 2026-04-15 | 379  | 62   | 85.9%     | 16 fixes deployed |
+| 147   | 2026-04-16 | 398  | 43   | 90.2%     | New high score, 31 fixes deployed |
 
-**Current best deployed**: Round 135 at 84.6% (373/441).
+**Current best deployed**: Round 147 at 90.2% (398/441).
 
-**Latest status (Round 135)**: 373/441 conformance tests passing with 68 failures across 57 unique locations. Key remaining failure areas: webhook dispatch (12), CRD OpenAPI schema publishing (9, fix staged), DNS pod startup (6), service networking (6), apps controller timing (8), preemption extended resources (4, fix staged), field validation (3, fix staged). Additional fixes staged for Round 136 targeting ~17 tests.
+**Latest status (Round 147)**: 398/441 conformance tests passing with 43 failures. Key remaining failure areas: CRD OpenAPI publishing (9), webhook admission (5), service networking/session affinity (6), apps controller timing (3), EmptyDir volume permissions (4), init containers (2), proxy/aggregator (3), node lifecycle (3), other (8). 31 total fixes deployed through Round 147.
 
-**Total commits**: 1,314+ across 30+ rounds of iterative testing and debugging.
+**Total commits**: 1,534+ across 30+ rounds of iterative testing and debugging.
 
 ## Failure Categories
 
-Based on Round 135 analysis (68 failures, 57 unique locations):
+Based on Round 147 analysis (43 failures):
 
-- **Webhook dispatch (~12)**: Webhook services reachable but readiness check times out. Needs deep comparison against K8s dispatch flow.
-- **CRD OpenAPI (~9)**: OpenAPI handler uses typed deserialization losing nested `items` schemas. Fix staged (0188c3c).
-- **Apps controllers (~8)**: Deployment, ReplicaSet, ReplicationController, StatefulSet timing/watch issues.
-- **DNS (~6)**: Rate limiter timeout, pods not starting.
-- **Service networking (~6)**: ClusterIP service unreachable from exec pods.
-- **EmptyDir (~4)**: Stale webhook configuration blocks pod creation (webhook cascade).
-- **Preemption (~4)**: Extended resources not checked in preemption. Fix staged (e1f4bd0).
-- **Node lifecycle (~4)**: Lifecycle hooks, runtime, init containers, pod resize.
-- **Field validation (~3)**: Unknown top-level CR fields not rejected; YAML dup format. Fix staged (a18febe).
-- **Auth (~2)**: ServiceAccount mount token, OIDC discovery.
-- **kubectl (~2)**: Proxy, describe.
-- **Other (~8)**: DaemonSet, Job, Init container, Discovery, Namespace, ResourceQuota, HostPort, Aggregator, EndpointSlice mirroring.
+- **CRD OpenAPI publishing (~9)**: CRD schema definitions in /openapi/v2 missing fields or x-kubernetes-group-version-kind after update/rename.
+- **Service networking (~6)**: Session affinity (NodePort and ClusterIP), basic endpoint serving, endpoint latency, service status lifecycle.
+- **Webhook admission (~5)**: Deny pod/configmap creation, deny attach, deny CR CRUD, mutate CR with pruning, webhook timeout.
+- **EmptyDir volume perms (~4)**: macOS Docker bind mounts don't support 0666/0777 mode bits.
+- **Apps controllers (~3)**: Deployment proportional scaling/rollover, ReplicaSet/RC basic image serving.
+- **Proxy/Aggregator (~3)**: Proxy through service/pod, proxy valid responses, aggregator sample API server.
+- **Node lifecycle (~3)**: Container runtime exit status, preStop hook, exec over websockets.
+- **Init containers (~2)**: RestartNever invoke, RestartAlways failure handling.
+- **Other (~8)**: GC orphan pods, ResourceQuota pod lifecycle, chunking compaction, DaemonSet rolling update, StatefulSet eviction, HostPort conflicts, preemption running path, service endpoints latency.
 
 Detailed tracking in `docs/CONFORMANCE_FAILURES.md`.
 

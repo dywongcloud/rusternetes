@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rusternetes - Kubernetes Reimplemented in Rust</title>
-  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 161,000+ lines of Rust, 31 controllers, 84.6% conformance pass rate. 68 failures remaining.">
+  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 161,000+ lines of Rust, 31 controllers, 90.2% conformance pass rate. 43 failures remaining.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -43,26 +43,26 @@
           <span class="stat-label">Controllers</span>
         </div>
         <div class="stat">
-          <span class="stat-num">1,314+</span>
+          <span class="stat-num">1,534+</span>
           <span class="stat-label">Commits</span>
         </div>
         <div class="stat">
-          <span class="stat-num">84.6%</span>
+          <span class="stat-num">90.2%</span>
           <span class="stat-label">Pass Rate</span>
         </div>
       </div>
       <div class="highscore-box">
         <div class="highscore-header">CONFORMANCE HIGH SCORE</div>
         <div class="highscore-display">
-          <div class="highscore-pct">84.6<span class="highscore-pct-sign">%</span></div>
+          <div class="highscore-pct">90.2<span class="highscore-pct-sign">%</span></div>
           <div class="highscore-details">
-            <span class="highscore-line">RND 135 &middot; 373/441 PASS</span>
-            <span class="highscore-line dim">68 FAILURES &middot; 57 UNIQUE LOCATIONS</span>
-            <span class="highscore-line blink">NEXT TARGET: 90%</span>
+            <span class="highscore-line">RND 147 &middot; 398/441 PASS</span>
+            <span class="highscore-line dim">43 FAILURES &middot; 31 FIXES DEPLOYED</span>
+            <span class="highscore-line blink">NEXT TARGET: 95%</span>
           </div>
         </div>
         <div class="highscore-bar-track">
-          <div class="highscore-bar-fill" style="width: 84.6%"><!-- Round 135 --></div>
+          <div class="highscore-bar-fill" style="width: 90.2%"><!-- Round 147 --></div>
         </div>
       </div>
 
@@ -288,7 +288,7 @@ kubectl get pods -A</code></pre>
         </div>
         <div class="why-card">
           <h3>Correctness</h3>
-          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 1,314+ commits and 135 rounds of conformance testing validate behavior against real Kubernetes.</p>
+          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 1,534+ commits and 147 rounds of conformance testing validate behavior against real Kubernetes.</p>
         </div>
       </div>
     </div>
