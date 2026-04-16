@@ -2478,6 +2478,20 @@ impl Kubelet {
                                 }
                             }
 
+                            // Skip update if status hasn't changed — avoids unnecessary
+                            // resourceVersion bumps that cause CAS conflicts for kubectl replace.
+                            // K8s kubelet uses status manager to diff before writing.
+                            let old_status_json = serde_json::to_value(
+                                pod.status.as_ref(),
+                            ).ok();
+                            let new_status_json = serde_json::to_value(
+                                new_pod.status.as_ref(),
+                            ).ok();
+                            if old_status_json == new_status_json {
+                                debug!("Pod {}/{} status unchanged, skipping update", namespace, pod_name);
+                                return Ok(());
+                            }
+
                             if let Err(e) = self.storage.update(&key, &new_pod).await {
                                 // CAS conflict — re-read and retry once
                                 debug!("Pod status update CAS conflict, retrying: {}", e);
