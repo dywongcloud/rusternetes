@@ -29,7 +29,7 @@
 | deployment.go:1259, :995 | RS not available | Pod startup failure — downstream of Docker 409 |
 | rc.go:538 | pod not reachable | Network issue — pod running but HTTP timeout |
 | hostport.go:219 | pod2 timeout | Pod startup failure — Docker 409 |
-| output.go:263 | file perms -rw-r--r-- not -rw-rw-rw- | macOS Docker bind mount doesn't support 0666 mode |
+| output.go:263 | file perms -rw-r--r-- not -rw-rw-rw- | Docker umask 022 strips group/other write; K8s CRI sets umask at OCI level which Docker API doesn't support for shell-less images |
 | proxy.go:503 | pod didn't start | Pod startup failure |
 | service.go:251, :768 | affinity issues | No endpoints — backend pods can't start (Docker 409) |
 | service.go:3459 | delete timeout | Watch/timing |
