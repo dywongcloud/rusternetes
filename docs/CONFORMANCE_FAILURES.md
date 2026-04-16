@@ -83,11 +83,22 @@
 ### Category 14: kubectl replace — NOT YET FIXED
 **Affected tests**: builder.go:97
 - **Error**: "error running kubectl replace -f"
-- **Root cause**: Unknown — needs investigation of our PUT semantics.
+- **Root cause**: Needs investigation of our PUT semantics.
 
 ### Category 15: Pod Resize — KNOWN PARTIAL
 **Affected tests**: pod_resize.go:857
 - **Status**: Partially implemented. Resize works for some containers but not all.
+
+### Category 16: Watch "context canceled" — NOT YET FIXED
+**Affected tests**: replica_set.go:232, sysctl.go:100, and others (cross-cutting)
+- **Error**: 1123 occurrences of `Watch failed: context canceled` in e2e logs
+- **Root cause**: Client-go watches connect but immediately get canceled. Only 11 server-side errors vs 1123 client-side. Likely HTTP/2 streaming issue — connections drop silently. Transfer-Encoding: chunked header is prohibited in HTTP/2 (RFC 7540 §8.1.2.2) but we set it on watch responses.
+- **Impact**: Systemic — affects any test that uses watches for readiness checks.
+
+### Category 17: DaemonSet Pod Count — NOT YET FIXED
+**Affected tests**: daemon_set.go:1276
+- **Error**: "Expected 0 to equal 1" — DaemonSet pod not running on node
+- **Root cause**: DaemonSet controller not scheduling pod, or pod failing to start.
 
 ## Fixes Applied (This Round)
 
