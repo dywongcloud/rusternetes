@@ -53,6 +53,7 @@
 | 22 | CR update webhooks | Pending | UPDATE didn't run validating webhooks |
 | 23 | Extended resource quota | Pending | requests.example.com/foo not checked |
 | 24 | CRD raw JSON storage | Pending | Update handler lost enum via typed struct |
+| 25 | RC orphan all-or-nothing | Pending | Finalizer removed before all pods orphaned |
 
 ## Progress History
 
