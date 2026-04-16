@@ -252,6 +252,13 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         let mut resources = Vec::new();
 
         for value in values {
+            if let Err(e) = self.extract_metadata(&value) {
+                debug!(
+                    "GC: Failed to extract metadata from {} resource: {} (key hint: {:?})",
+                    resource_type, e,
+                    value.pointer("/metadata/name").and_then(|v| v.as_str())
+                );
+            }
             if let Ok(metadata) = self.extract_metadata(&value) {
                 // Reconstruct the storage key using the same format as build_key
                 let key = match &metadata.namespace {
@@ -352,6 +359,12 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                     .all(|owner_ref| !existing_uids.contains(owner_ref.uid.as_str()));
 
                 if all_owners_missing {
+                    debug!(
+                        "GC: orphan {} — ownerRef UIDs {:?} not in existing_uids ({} entries)",
+                        resource.key,
+                        owner_refs.iter().map(|r| r.uid.as_str()).collect::<Vec<_>>(),
+                        existing_uids.len(),
+                    );
                     orphans.push(resource.clone());
                 }
             }
