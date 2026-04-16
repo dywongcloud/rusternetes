@@ -366,6 +366,21 @@ fn strip_false_extensions(value: &mut serde_json::Value) {
             }
         }
 
+        // Unwrap JSONSchemaPropsOrArray: K8s CRD schemas store "items" as
+        // {"schema": {...}} (Go's JSONSchemaPropsOrArray serialization).
+        // OpenAPI v2 expects "items" to be a direct schema object.
+        // K8s ref: vendor/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1/types_jsonschema.go
+        if let Some(items) = obj.get("items") {
+            if let Some(items_obj) = items.as_object() {
+                if items_obj.len() == 1 && items_obj.contains_key("schema") {
+                    if let Some(inner_schema) = items_obj.get("schema") {
+                        let unwrapped = inner_schema.clone();
+                        obj.insert("items".to_string(), unwrapped);
+                    }
+                }
+            }
+        }
+
         // Recurse into all nested objects/arrays
         let keys: Vec<String> = obj.keys().cloned().collect();
         for key in keys {
