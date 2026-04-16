@@ -45,6 +45,17 @@ pub async fn create_replicationcontroller(
     rc.metadata.ensure_uid();
     rc.metadata.ensure_creation_timestamp();
 
+    // K8s defaults RC.Spec.Selector from Template.Labels when not provided.
+    // See: pkg/registry/core/replicationcontroller/strategy.go
+    if rc.spec.selector.is_none() {
+        rc.spec.selector = rc
+            .spec
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.clone());
+    }
+
     // Apply K8s defaults to pod template
     crate::handlers::defaults::apply_pod_template_defaults(&mut rc.spec.template);
 

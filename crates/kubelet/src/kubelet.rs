@@ -1889,6 +1889,7 @@ impl Kubelet {
                                         status.message =
                                             Some("Pod completed successfully".to_string());
                                         status.container_statuses = Some(container_statuses);
+                                        status.conditions = Some(Self::succeeded_pod_conditions());
                                     }
                                     let _ = self.storage.update(&key, &new_pod).await;
                                     return Ok(());
@@ -2403,6 +2404,7 @@ impl Kubelet {
                                         status.message =
                                             Some("Pod completed successfully".to_string());
                                         status.container_statuses = Some(container_statuses);
+                                        status.conditions = Some(Self::succeeded_pod_conditions());
                                     }
                                     let _ = self.storage.update(&key, &new_pod).await;
                                     return Ok(());
@@ -2645,6 +2647,7 @@ impl Kubelet {
                                 if let Some(ref cs) = container_statuses {
                                     status.container_statuses = Some(cs.clone());
                                 }
+                                status.conditions = Some(Self::succeeded_pod_conditions());
                             }
                             let key = build_key("pods", Some(namespace), pod_name);
                             let _ = self.storage.update(&key, &new_pod).await;
@@ -2671,10 +2674,13 @@ impl Kubelet {
                             _ => pod.clone(),
                         };
                         if let Some(ref mut status) = new_pod.status {
-                            status.phase = Some(terminal_phase);
+                            status.phase = Some(terminal_phase.clone());
                             status.message = Some(message);
                             if let Some(ref cs) = container_statuses {
                                 status.container_statuses = Some(cs.clone());
+                            }
+                            if terminal_phase == Phase::Succeeded {
+                                status.conditions = Some(Self::succeeded_pod_conditions());
                             }
                         }
                         let key = build_key("pods", Some(namespace), pod_name);
@@ -2778,6 +2784,46 @@ impl Kubelet {
                 status: "False".to_string(),
                 reason: Some("ContainersNotReady".to_string()),
                 message: Some("Not all containers are ready".to_string()),
+                last_transition_time: now,
+                observed_generation: None,
+            },
+        ]
+    }
+
+    /// Build conditions for a pod that has succeeded (all containers completed successfully).
+    /// K8s ref: pkg/kubelet/status/generate.go — PodCompleted reason
+    fn succeeded_pod_conditions() -> Vec<PodCondition> {
+        let now = Some(chrono::Utc::now());
+        vec![
+            PodCondition {
+                condition_type: "Initialized".to_string(),
+                status: "True".to_string(),
+                reason: Some("PodCompleted".to_string()),
+                message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "PodScheduled".to_string(),
+                status: "True".to_string(),
+                reason: None,
+                message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "ContainersReady".to_string(),
+                status: "False".to_string(),
+                reason: Some("PodCompleted".to_string()),
+                message: None,
+                last_transition_time: now,
+                observed_generation: None,
+            },
+            PodCondition {
+                condition_type: "Ready".to_string(),
+                status: "False".to_string(),
+                reason: Some("PodCompleted".to_string()),
+                message: None,
                 last_transition_time: now,
                 observed_generation: None,
             },

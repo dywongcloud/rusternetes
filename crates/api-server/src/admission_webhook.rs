@@ -193,7 +193,13 @@ impl AdmissionWebhookClient {
                 "Webhook call to {} failed: {} ({}){}",
                 url, e, detail, cause_chain
             );
-            rusternetes_common::Error::Internal(format!("failed to call webhook: {}", e))
+            // Include cause chain so errors like "deadline has elapsed" are visible to clients
+            let full_error = if causes.is_empty() {
+                format!("failed to call webhook: {}", e)
+            } else {
+                format!("failed to call webhook: {} ({})", e, causes.join(": "))
+            };
+            rusternetes_common::Error::Internal(full_error)
         })?;
 
         if !response.status().is_success() {
@@ -593,6 +599,55 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         }
                     }
 
+                    // Evaluate matchConditions (CEL expressions) for validating webhooks
+                    if let Some(ref conditions) = webhook.match_conditions {
+                        if !conditions.is_empty() {
+                            let mut all_match = true;
+                            let op_str = match operation {
+                                Operation::Create => "CREATE",
+                                Operation::Update => "UPDATE",
+                                Operation::Delete => "DELETE",
+                                _ => "",
+                            };
+                            let mut ctx = rusternetes_common::CELContext::new();
+                            if let Some(ref obj) = object {
+                                let _ = ctx.add_json_variable("object", obj);
+                            }
+                            if let Some(ref old) = old_object {
+                                let _ = ctx.add_json_variable("oldObject", old);
+                            } else {
+                                let _ = ctx.add_json_variable("oldObject", &serde_json::Value::Null);
+                            }
+                            let request_val = serde_json::json!({
+                                "operation": op_str,
+                                "kind": { "group": gvk.group, "version": gvk.version, "kind": gvk.kind },
+                                "namespace": namespace.unwrap_or(""),
+                                "name": name,
+                            });
+                            let _ = ctx.add_json_variable("request", &request_val);
+                            let mut evaluator = rusternetes_common::CELEvaluator::new();
+                            for cond in conditions {
+                                if cond.expression.is_empty() {
+                                    continue;
+                                }
+                                match evaluator.evaluate(&cond.expression, &ctx) {
+                                    Ok(true) => {}
+                                    _ => {
+                                        all_match = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !all_match {
+                                debug!(
+                                    "Skipping validating webhook {} — matchConditions not met for {}/{}",
+                                    webhook.name, namespace.unwrap_or(""), name
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
                     // Skip webhooks whose service namespace no longer exists or is terminating
                     if let Some(ref svc) = webhook.client_config.service {
                         let ns_key =
@@ -882,6 +937,56 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 webhook.name
                             );
                             continue;
+                        }
+                    }
+
+                    // Evaluate matchConditions (CEL expressions)
+                    // K8s ref: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates/rules/rules.go
+                    if let Some(ref conditions) = webhook.match_conditions {
+                        if !conditions.is_empty() {
+                            let mut all_match = true;
+                            let op_str = match operation {
+                                Operation::Create => "CREATE",
+                                Operation::Update => "UPDATE",
+                                Operation::Delete => "DELETE",
+                                _ => "",
+                            };
+                            let mut ctx = rusternetes_common::CELContext::new();
+                            if let Some(ref obj) = object {
+                                let _ = ctx.add_json_variable("object", obj);
+                            }
+                            if let Some(ref old) = old_object {
+                                let _ = ctx.add_json_variable("oldObject", old);
+                            } else {
+                                let _ = ctx.add_json_variable("oldObject", &serde_json::Value::Null);
+                            }
+                            let request_val = serde_json::json!({
+                                "operation": op_str,
+                                "kind": { "group": gvk.group, "version": gvk.version, "kind": gvk.kind },
+                                "namespace": namespace.unwrap_or(""),
+                                "name": name,
+                            });
+                            let _ = ctx.add_json_variable("request", &request_val);
+                            let mut evaluator = rusternetes_common::CELEvaluator::new();
+                            for cond in conditions {
+                                if cond.expression.is_empty() {
+                                    continue;
+                                }
+                                match evaluator.evaluate(&cond.expression, &ctx) {
+                                    Ok(true) => {}
+                                    _ => {
+                                        all_match = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !all_match {
+                                debug!(
+                                    "Skipping mutating webhook {} — matchConditions not met for {}/{}",
+                                    webhook.name, namespace.unwrap_or(""), name
+                                );
+                                continue;
+                            }
                         }
                     }
 

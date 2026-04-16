@@ -466,20 +466,28 @@ fn strategic_merge_arrays(original: &[Value], patch: &[Value]) -> Result<Vec<Val
             }
         }
 
-        // Convert back to array (preserve original order as much as possible)
+        // K8s SMP enforces order: patch items first (in patch order),
+        // then server-only items (items in original but not in patch).
+        // See: apimachinery/pkg/util/strategicpatch/patch.go normalizeElementOrder
+        let patch_names: Vec<String> = patch
+            .iter()
+            .filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+            .collect();
+
         let mut final_array = Vec::new();
-        for item in original {
-            if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
-                if let Some(merged_item) = result.remove(name) {
-                    final_array.push(merged_item);
-                }
+
+        // First: items from the patch, in patch order
+        for name in &patch_names {
+            if let Some(item) = result.remove(name) {
+                final_array.push(item);
             }
         }
-        // Add any new items from patch
-        for item in patch {
+
+        // Then: server-only items (in original order, not in patch)
+        for item in original {
             if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
-                if let Some(new_item) = result.remove(name) {
-                    final_array.push(new_item);
+                if let Some(item) = result.remove(name) {
+                    final_array.push(item);
                 }
             }
         }
@@ -729,9 +737,34 @@ mod tests {
                 .unwrap();
 
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0]["image"], "nginx:1.1"); // Updated
-        assert_eq!(result[1]["image"], "redis:5"); // Preserved
-        assert_eq!(result[2]["name"], "container3"); // Added
+        // K8s SMP order: patch items first, then server-only items
+        assert_eq!(result[0]["image"], "nginx:1.1"); // Patch item 1 (updated)
+        assert_eq!(result[1]["name"], "container3"); // Patch item 2 (added)
+        assert_eq!(result[2]["image"], "redis:5"); // Server-only (preserved)
+    }
+
+    #[test]
+    fn test_strategic_merge_arrays_patch_items_first() {
+        // Reproduces StatefulSet patch scenario: patch adds container with different name
+        // K8s SMP puts patch items before server-only items
+        let original = json!([
+            {"name": "webserver", "image": "agnhost:2.55", "args": ["test-webserver"]}
+        ]);
+        let patch = json!([
+            {"name": "test-ss", "image": "pause:3.10.1"}
+        ]);
+
+        let result =
+            strategic_merge_arrays(original.as_array().unwrap(), patch.as_array().unwrap())
+                .unwrap();
+
+        assert_eq!(result.len(), 2);
+        // Patch item comes first
+        assert_eq!(result[0]["name"], "test-ss");
+        assert_eq!(result[0]["image"], "pause:3.10.1");
+        // Server-only item comes second
+        assert_eq!(result[1]["name"], "webserver");
+        assert_eq!(result[1]["image"], "agnhost:2.55");
     }
 
     #[test]
