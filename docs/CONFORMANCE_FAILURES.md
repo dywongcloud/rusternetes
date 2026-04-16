@@ -3,7 +3,7 @@
 **Round 147** | In Progress — 33+ failures so far | 2026-04-16
 **Baseline**: Round 146 = 62 failures (85.9%)
 
-## Fixed (pending deploy) — 12 fixes
+## Fixed (pending deploy) — 14 fixes
 
 | Test | Fix # | Root Cause |
 |------|-------|-----------|
@@ -18,6 +18,8 @@
 | garbage_collector.go:436 | 25+27 | RC finalizer removed before all pods orphaned + GC snapshot-based orphan detection was racy |
 | daemon_set.go:1276 | 27 | GC deleted DaemonSet pods (owner existed but missed in snapshot) |
 | statefulset.go:957 | 28 | Kubelet didn't check hostPort conflicts at admission |
+| preemption.go:877 | 29 | Scheduler didn't check extended resources (fakecpu) |
+| crd_publish_openapi.go:225, :170, :77 | 30 | Missing x-kubernetes-group-version-kind in OpenAPI defs |
 
 ## Still Failing — no code fix available
 
@@ -57,7 +59,7 @@
 | 15 | Skip unchanged status writes |
 | 16 | Pod resize memory_swap |
 
-### Pending Deploy (17-28)
+### Pending Deploy (17-30)
 
 | # | Fix |
 |---|-----|
@@ -73,6 +75,8 @@
 | 26 | GC debug logging |
 | 27 | GC owner re-verification before delete |
 | 28 | Kubelet hostPort admission (reject with Phase=Failed) |
+| 29 | Scheduler extended resource checking |
+| 30 | CRD OpenAPI x-kubernetes-group-version-kind extension |
 
 ## Progress History
 
