@@ -97,10 +97,11 @@ pub fn paginate<T>(
         })?;
 
         let is_stale =
-            // Check if total item count changed
-            (cont.total_at_creation > 0 && cont.total_at_creation != items.len())
-            // Check if token expired (etcd compaction, 5 min)
-            || (cont.created_at > 0 && {
+            // Check if token expired (etcd compaction, 5 min).
+            // K8s uses resourceVersion consistency, not item count comparison.
+            // Item count can change between pages (controllers creating resources)
+            // without invalidating the pagination — items are sorted by key.
+            (cont.created_at > 0 && {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
