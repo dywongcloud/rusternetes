@@ -145,6 +145,12 @@ impl AdmissionWebhookClient {
         timeout: Duration,
         ca_bundle: Option<&[u8]>,
     ) -> Result<AdmissionReviewResponse> {
+        // K8s appends ?timeout={seconds}s to the webhook URL so the backend
+        // knows how long it has. Tests check for this in error messages.
+        // K8s ref: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/request/admissionreview.go
+        let url_with_timeout = format!("{}?timeout={}s", url, timeout.as_secs());
+        let url = &url_with_timeout;
+
         let mut builder = reqwest::Client::builder()
             .timeout(timeout)
             .connect_timeout(Duration::from_secs(2));
