@@ -1977,9 +1977,14 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
-        // EmptyDir: create a temporary directory with mode 0777
+        // EmptyDir: create a temporary directory with mode 0777.
+        // Use a LOCAL path inside the container (not the host bind mount) so that
+        // Linux filesystem permissions work correctly. Host bind mounts on macOS
+        // (Docker's virtiofs/gRPC-fuse) may not support full POSIX permission bits,
+        // causing files created with mode 0666 to appear as 0644.
+        // K8s uses the node's local filesystem for EmptyDir, not a remote mount.
         if volume.empty_dir.is_some() {
-            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
+            let volume_dir = format!("/tmp/emptydir-volumes/{}/{}", pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
             #[cfg(unix)]
             {
