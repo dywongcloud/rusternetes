@@ -7,10 +7,9 @@
 
 | # | Test | Error | Root Cause |
 |---|------|-------|-----------|
-| 1 | rc.go:538 | pod running but HTTP timeout | Pod-to-pod network routing across Docker containers doesn't work |
-| 2 | proxy.go:271 | "Unable to reach service through proxy" | Same network issue — API server can't reach pod IPs |
-| 3 | pre_stop.go:153 | "validating pre-stop: timed out" | Test validates via pod proxy which hits same network issue |
-| 4 | runtime.go:129 | container state not Running after restart | Kubelet restarts containers on 5s sync cycle; test checks state between restarts |
+| 1 | rc.go:538 | pod running but HTTP timeout | Pod-to-pod network routing — likely downstream of Docker pause timing (fix 31) |
+| 2 | proxy.go:271 | "Unable to reach service through proxy" | Service endpoints not ready — downstream of pod startup (fix 31) |
+| 3 | pre_stop.go:153 | "validating pre-stop: timed out" | Test uses pod proxy which needs working pod networking |
 
 ## Issues Fixed But Not Yet Deployed (next round should pass)
 
@@ -87,7 +86,8 @@ These all fail because pods can't start — the pause container isn't fully runn
 | 32 | EmptyDir uses container-local path for POSIX permissions | Pending |
 | 33 | CRD structural pruning (remove unknown fields) | Pending |
 | 34 | Webhook timeout error normalized to include "deadline" | Pending |
-| 35 | CRD groups in non-aggregated API discovery (/apis) | Pending |
+| 35 | CRD groups in non-aggregated API discovery (/apis) |
+| 36 | Immediate pod status update after container restart | Pending |
 
 ## Progress History
 
