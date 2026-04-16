@@ -1007,8 +1007,48 @@ impl ContainerRuntime {
                             rusternetes_storage::build_key("pods", Some(namespace), pod_name);
                         if let Ok(mut p) = storage.get::<Pod>(&pod_key).await {
                             if let Some(ref mut status) = p.status {
-                                status.phase = Some(phase);
+                                status.phase = Some(phase.clone());
                                 status.container_statuses = Some(statuses);
+                                // Set conditions for terminal pods.
+                                // K8s always sets PodInitialized=True with reason
+                                // PodCompleted for succeeded pods.
+                                if phase == rusternetes_common::types::Phase::Succeeded {
+                                    let now = Some(chrono::Utc::now());
+                                    status.conditions = Some(vec![
+                                        rusternetes_common::resources::PodCondition {
+                                            condition_type: "Initialized".to_string(),
+                                            status: "True".to_string(),
+                                            reason: Some("PodCompleted".to_string()),
+                                            message: None,
+                                            last_transition_time: now,
+                                            observed_generation: None,
+                                        },
+                                        rusternetes_common::resources::PodCondition {
+                                            condition_type: "PodScheduled".to_string(),
+                                            status: "True".to_string(),
+                                            reason: None,
+                                            message: None,
+                                            last_transition_time: now,
+                                            observed_generation: None,
+                                        },
+                                        rusternetes_common::resources::PodCondition {
+                                            condition_type: "ContainersReady".to_string(),
+                                            status: "False".to_string(),
+                                            reason: Some("PodCompleted".to_string()),
+                                            message: None,
+                                            last_transition_time: now,
+                                            observed_generation: None,
+                                        },
+                                        rusternetes_common::resources::PodCondition {
+                                            condition_type: "Ready".to_string(),
+                                            status: "False".to_string(),
+                                            reason: Some("PodCompleted".to_string()),
+                                            message: None,
+                                            last_transition_time: now,
+                                            observed_generation: None,
+                                        },
+                                    ]);
+                                }
                             }
                             let _ = storage.update(&pod_key, &p).await;
                             info!(
