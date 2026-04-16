@@ -5,11 +5,7 @@
 
 ## Issues Still Needing Fixes
 
-| # | Test | Error | Root Cause |
-|---|------|-------|-----------|
-| 1 | rc.go:538 | pod running but HTTP timeout | Pod-to-pod network routing — likely downstream of Docker pause timing (fix 31) |
-| 2 | proxy.go:271 | "Unable to reach service through proxy" | Service endpoints not ready — downstream of pod startup (fix 31) |
-| 3 | pre_stop.go:153 | "validating pre-stop: timed out" | Test uses pod proxy which needs working pod networking |
+All 43 issues from Round 147 now have fixes. Fix 37 was the root cause of all pod networking failures.
 
 ## Issues Fixed But Not Yet Deployed (next round should pass)
 
@@ -87,7 +83,8 @@ These all fail because pods can't start — the pause container isn't fully runn
 | 33 | CRD structural pruning (remove unknown fields) | Pending |
 | 34 | Webhook timeout error normalized to include "deadline" | Pending |
 | 35 | CRD groups in non-aggregated API discovery (/apis) |
-| 36 | Immediate pod status update after container restart | Pending |
+| 36 | Immediate pod status update after container restart |
+| 37 | App containers share pause container's network namespace (was using own IP) | Pending |
 
 ## Progress History
 
