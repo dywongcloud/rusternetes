@@ -85,7 +85,8 @@
 | 28 | Kubelet hostPort admission (reject with Phase=Failed) |
 | 29 | Scheduler extended resource checking |
 | 30 | CRD OpenAPI x-kubernetes-group-version-kind extension |
-| 31 | Wait for pause container running before app containers |
+| 31 | start_pause_container blocks until running (CRI RunPodSandbox semantics) |
+| 32 | EmptyDir uses container-local path for POSIX permission support |
 
 ## Progress History
 
