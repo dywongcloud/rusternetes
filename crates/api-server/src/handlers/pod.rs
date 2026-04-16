@@ -290,6 +290,14 @@ pub async fn create(
         }
     }
 
+    // Re-apply defaults after mutation. K8s runs SetDefaults twice: before and after
+    // mutating webhooks. This ensures webhook-added containers get defaults like
+    // terminationMessagePolicy=File, imagePullPolicy, etc.
+    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/create.go
+    if let Some(ref mut spec) = pod.spec {
+        crate::handlers::defaults::apply_pod_spec_defaults(spec);
+    }
+
     // Inject service account token (built-in admission controller)
     if let Err(e) =
         crate::admission::inject_service_account_token(&state.storage, &namespace, &mut pod).await
