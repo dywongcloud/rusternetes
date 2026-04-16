@@ -373,10 +373,82 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         orphans
     }
 
-    /// Delete an orphaned resource
+    /// Delete an orphaned resource, but only after re-verifying the owner is gone.
+    ///
+    /// The initial orphan detection uses a snapshot which can be stale — resources
+    /// created between the scan start and the orphan check won't be in the snapshot.
+    /// K8s GC re-reads the owner from the API server before deleting dependents:
+    /// see attemptToDeleteItem → getObject in garbagecollector.go:521.
+    ///
+    /// We re-read both the dependent (to get fresh ownerRefs) and then look up
+    /// each owner by constructing the storage key from the ownerReference fields.
     async fn delete_orphan(&self, orphan: &ResourceInfo) -> rusternetes_common::Result<()> {
+        // Re-read the resource from storage to get fresh ownerReferences.
+        // It may have been updated since the scan snapshot.
+        let fresh: Value = match self.storage.get(&orphan.key).await {
+            Ok(v) => v,
+            Err(rusternetes_common::Error::NotFound(_)) => return Ok(()), // already gone
+            Err(e) => return Err(e),
+        };
+        let fresh_meta = match self.extract_metadata(&fresh) {
+            Ok(m) => m,
+            Err(_) => return Ok(()), // can't parse metadata, skip
+        };
+
+        // If ownerReferences were removed (orphan policy processed), skip deletion
+        let owner_refs = match &fresh_meta.owner_references {
+            Some(refs) if !refs.is_empty() => refs,
+            _ => return Ok(()), // no owners = not an orphan (or already orphaned)
+        };
+
+        // For each ownerReference, construct the storage key and check if the owner exists.
+        // K8s uses the owner's GVR + namespace + name to look it up.
+        // We use kind → plural resource name mapping + namespace from the dependent.
+        let namespace = fresh_meta.namespace.as_deref();
+
+        for owner_ref in owner_refs {
+            let plural = kind_to_plural(&owner_ref.kind);
+            if plural.is_empty() {
+                // Unknown kind — be conservative, don't delete
+                debug!("GC: {} has owner of unknown kind '{}', skipping", orphan.key, owner_ref.kind);
+                return Ok(());
+            }
+            let owner_key = if let Some(ns) = namespace {
+                format!("/registry/{}/{}/{}", plural, ns, owner_ref.name)
+            } else {
+                format!("/registry/{}/{}", plural, owner_ref.name)
+            };
+
+            // Try to read the owner from storage
+            match self.storage.get::<Value>(&owner_key).await {
+                Ok(owner_value) => {
+                    // Owner exists — verify UID matches
+                    if let Some(uid) = owner_value.pointer("/metadata/uid").and_then(|u| u.as_str()) {
+                        if uid == owner_ref.uid {
+                            // Owner with matching UID exists — NOT an orphan
+                            debug!(
+                                "GC: {} is NOT orphan — owner {}/{} (uid={}) still exists",
+                                orphan.key, owner_ref.kind, owner_ref.name, uid
+                            );
+                            return Ok(());
+                        }
+                        // UID mismatch — the resource was recreated with a different UID.
+                        // The old owner is gone, this ownerRef is dangling.
+                    }
+                }
+                Err(rusternetes_common::Error::NotFound(_)) => {
+                    // Owner not found — this ownerRef is dangling
+                }
+                Err(_) => {
+                    // Storage error — be conservative, don't delete
+                    return Ok(());
+                }
+            }
+        }
+
+        // All owners verified as gone — this is truly an orphan
         info!(
-            "Deleting orphaned resource: {} ({})",
+            "Deleting orphaned resource: {} ({}) — all owners verified gone",
             orphan.key, orphan.resource_type
         );
         self.storage.delete(&orphan.key).await
@@ -980,5 +1052,52 @@ mod tests {
         // Test remove_finalizer
         metadata.remove_finalizer("my-finalizer");
         assert!(!metadata.has_finalizers());
+    }
+}
+
+/// Map K8s Kind names to their plural storage resource names.
+/// K8s uses discovery API for this; we use a static mapping.
+fn kind_to_plural(kind: &str) -> &str {
+    match kind {
+        "Pod" => "pods",
+        "Service" => "services",
+        "Endpoints" => "endpoints",
+        "EndpointSlice" => "endpointslices",
+        "Namespace" => "namespaces",
+        "Node" => "nodes",
+        "ConfigMap" => "configmaps",
+        "Secret" => "secrets",
+        "ServiceAccount" => "serviceaccounts",
+        "Deployment" => "deployments",
+        "ReplicaSet" => "replicasets",
+        "StatefulSet" => "statefulsets",
+        "DaemonSet" => "daemonsets",
+        "ReplicationController" => "replicationcontrollers",
+        "Job" => "jobs",
+        "CronJob" => "cronjobs",
+        "Ingress" => "ingresses",
+        "NetworkPolicy" => "networkpolicies",
+        "PersistentVolumeClaim" => "persistentvolumeclaims",
+        "PersistentVolume" => "persistentvolumes",
+        "StorageClass" => "storageclasses",
+        "ClusterRole" => "clusterroles",
+        "ClusterRoleBinding" => "clusterrolebindings",
+        "Role" => "roles",
+        "RoleBinding" => "rolebindings",
+        "CustomResourceDefinition" => "customresourcedefinitions",
+        "ControllerRevision" => "controllerrevisions",
+        "HorizontalPodAutoscaler" => "horizontalpodautoscalers",
+        "PodDisruptionBudget" => "poddisruptionbudgets",
+        "ResourceQuota" => "resourcequotas",
+        "LimitRange" => "limitranges",
+        _ => {
+            // Fallback: lowercase + "s" (works for many K8s kinds)
+            // This is imperfect but better than failing
+            tracing::warn!("GC: unknown kind '{}', using lowercase+s fallback", kind);
+            // Return a static str — caller should handle the fallback case
+            // We can't return a dynamically constructed string as &str,
+            // so return an empty string to signal "unknown"
+            ""
+        }
     }
 }
