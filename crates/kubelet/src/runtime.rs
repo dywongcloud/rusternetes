@@ -4132,15 +4132,22 @@ impl ContainerRuntime {
                 dns: dns_servers,
                 dns_search: dns_search_domains,
                 dns_options: dns_options,
-                // Use CNI network namespace if available, pause container network for
-                // non-CNI mode (so all containers share the same pod network), or fall
-                // back to the Docker bridge network.
+                // App containers MUST share the pause container's network namespace.
+                // This ensures all containers in a pod share the same IP address,
+                // which is fundamental to K8s networking (pod IP = pause container IP).
+                //
+                // With CNI netns: use ns:{path} to join the network namespace
+                // Without CNI: use container:{pause} to join the pause container's namespace
+                //
+                // Previously, when use_cni was true but no netns was available,
+                // we fell back to the Docker bridge which gave each container its
+                // OWN IP — breaking pod proxy, service routing, and inter-container
+                // communication. K8s ref: all containers share the pod sandbox network.
                 network_mode: if let Some(netns) = netns_path {
                     Some(format!("ns:{}", netns))
-                } else if !self.use_cni {
-                    Some(format!("container:{}_pause", pod_name))
                 } else {
-                    Some(self.network.clone())
+                    // Always use pause container's network namespace
+                    Some(format!("container:{}_pause", pod_name))
                 },
                 // Share IPC and PID namespaces with pause container (K8s pod semantics)
                 ipc_mode: if !self.use_cni {
