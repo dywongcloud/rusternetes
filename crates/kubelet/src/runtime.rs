@@ -1280,7 +1280,13 @@ impl ContainerRuntime {
                         "Pause container {} already exists, removing and retrying",
                         pause_name
                     );
+                    // Force stop first, then remove. Docker may not release the name
+                    // immediately if the container is still running.
                     let _ = self
+                        .docker
+                        .stop_container(&pause_name, Some(bollard::container::StopContainerOptions { t: 0 }))
+                        .await;
+                    match self
                         .docker
                         .remove_container(
                             &pause_name,
@@ -1289,7 +1295,18 @@ impl ContainerRuntime {
                                 ..Default::default()
                             }),
                         )
-                        .await;
+                        .await
+                    {
+                        Ok(_) => {
+                            // Wait briefly for Docker to release the container name
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        }
+                        Err(rm_err) => {
+                            warn!("Failed to remove pause container {}: {}", pause_name, rm_err);
+                            // Try waiting longer — Docker may still be processing
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                    }
                     self.docker
                         .create_container(Some(options), config)
                         .await
@@ -3111,6 +3128,8 @@ impl ContainerRuntime {
                 self.docker
                     .remove_container(&container_name, Some(remove_options))
                     .await?;
+                // Wait for Docker to release the container name
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             } else {
                 // Unknown state — don't remove, don't recreate
                 debug!(
@@ -4468,8 +4487,9 @@ impl ContainerRuntime {
                         )
                         .await;
                 }
-                // Brief pause for Docker to finalize removal
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                // Wait for Docker to finalize removal and release the container name.
+                // 100ms was insufficient — Docker needs more time to clean up.
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 // Retry creation after removal
                 if let Err(e2) = self.docker.create_container(Some(options), config).await {
                     error!(
