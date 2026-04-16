@@ -6912,11 +6912,16 @@ impl ContainerRuntime {
         cpu_shares: Option<i64>,
         memory: Option<i64>,
     ) -> Result<()> {
+        // Docker requires memory_swap >= memory. If we set memory without
+        // memory_swap, Docker rejects: "Memory limit should be smaller than
+        // already set memoryswap limit". Set memory_swap = memory (no swap).
+        let memory_swap = memory;
         let update = bollard::container::UpdateContainerOptions::<String> {
             cpu_period,
             cpu_quota,
             cpu_shares: cpu_shares.map(|s| s as isize),
             memory,
+            memory_swap,
             ..Default::default()
         };
         self.docker
