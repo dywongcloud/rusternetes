@@ -160,19 +160,22 @@ pub async fn handle_ws_exec(
         .and_then(|info| info.exit_code)
         .unwrap_or(0);
 
-    if exit_code != 0 {
-        // Always send failure status — all protocols expect error reporting
-        let status_json = format!(
+    // K8s v4/v5 protocol: ALWAYS send status on channel 3 (error channel).
+    // The client reads from the error stream expecting a status JSON.
+    // Without this, the error stream reader gets a close frame without data,
+    // producing "websocket: close 1005 (no status)".
+    // K8s ref: staging/src/k8s.io/client-go/tools/remotecommand/v4.go
+    let status_json = if exit_code == 0 {
+        r#"{"status":"Success"}"#.to_string()
+    } else {
+        format!(
             r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#,
             exit_code, exit_code
-        );
-        let mut status_data = vec![3u8];
-        status_data.extend_from_slice(status_json.as_bytes());
-        let _ = socket.send(Message::Binary(status_data.into())).await;
-    }
-    // For exit_code == 0: skip channel 3 status. The v1 protocol test
-    // (pods.go:595) rejects non-stdout messages. V4/v5 clients handle
-    // the absence of Success status gracefully (connection close = success).
+        )
+    };
+    let mut status_data = vec![3u8];
+    status_data.extend_from_slice(status_json.as_bytes());
+    let _ = socket.send(Message::Binary(status_data.into())).await;
 
     // Allow time for the client to read the status message before closing.
     // Without this delay, the TCP connection may reset before the client
