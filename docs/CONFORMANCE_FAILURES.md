@@ -59,7 +59,7 @@ These have code fixes committed but need `docker compose build` + redeploy.
 | 15 | Skip unchanged status | builder.go:97 — status written every 5s unchanged |
 | 16 | Pod resize memory_swap | pod_resize.go:857 — Docker rejects without memory_swap |
 
-### Pending Deploy (fixes 17-27)
+### Pending Deploy (fixes 17-28)
 
 | # | Fix | What it fixes |
 |---|-----|--------------|
@@ -74,6 +74,7 @@ These have code fixes committed but need `docker compose build` + redeploy.
 | 25 | RC orphan all-or-nothing | gc.go:436 — finalizer removed before all pods orphaned |
 | 26 | GC debug logging | DaemonSet/GC — log metadata failures and orphan reasons |
 | 27 | GC owner re-verification | DaemonSet/GC — re-read owner from storage before deleting orphan |
+| 28 | Kubelet hostPort admission | statefulset.go:957 — reject pods with hostPort conflicts (Phase=Failed) |
 
 ## Progress History
 
