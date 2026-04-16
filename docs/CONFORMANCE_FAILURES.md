@@ -59,7 +59,7 @@ These have code fixes committed but need `docker compose build` + redeploy.
 | 15 | Skip unchanged status | builder.go:97 — status written every 5s unchanged |
 | 16 | Pod resize memory_swap | pod_resize.go:857 — Docker rejects without memory_swap |
 
-### Pending Deploy (fixes 17-25)
+### Pending Deploy (fixes 17-27)
 
 | # | Fix | What it fixes |
 |---|-----|--------------|
@@ -72,6 +72,8 @@ These have code fixes committed but need `docker compose build` + redeploy.
 | 23 | Extended resource quota | resource_quota.go:302 — custom resources not checked |
 | 24 | CRD raw JSON storage | CRD tests — update handler lost enum via typed struct |
 | 25 | RC orphan all-or-nothing | gc.go:436 — finalizer removed before all pods orphaned |
+| 26 | GC debug logging | DaemonSet/GC — log metadata failures and orphan reasons |
+| 27 | GC owner re-verification | DaemonSet/GC — re-read owner from storage before deleting orphan |
 
 ## Progress History
 
