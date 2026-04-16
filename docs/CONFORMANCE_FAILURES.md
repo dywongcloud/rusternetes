@@ -89,6 +89,7 @@
 | 32 | EmptyDir uses container-local path for POSIX permission support |
 | 33 | CRD structural pruning (remove unknown fields after webhook mutation) |
 | 34 | Webhook timeout error normalized to include "deadline" |
+| 35 | CRD groups in non-aggregated API discovery (/apis) |
 
 ## Progress History
 
