@@ -439,7 +439,10 @@ pub async fn create(
                 "Error checking ResourceQuota for pod {}/{}: {}",
                 namespace, pod.metadata.name, e
             );
-            // Continue anyway - don't fail pod creation if quota check fails
+            return Err(rusternetes_common::Error::Internal(format!(
+                "error checking ResourceQuota: {}",
+                e
+            )));
         }
     }
 

@@ -223,7 +223,8 @@ pub async fn check_resource_quota<S: Storage>(
         }
 
         // Check and increment CPU requests
-        if let Some(cpu_limit_str) = hard.get("requests.cpu") {
+        // K8s: "cpu" is an alias for "requests.cpu"
+        if let Some(cpu_limit_str) = hard.get("requests.cpu").or_else(|| hard.get("cpu")) {
             let current_cpu = current_usage
                 .get("requests.cpu")
                 .and_then(|s| parse_cpu_to_millicores(s).ok())
@@ -244,7 +245,8 @@ pub async fn check_resource_quota<S: Storage>(
         }
 
         // Check and increment memory requests
-        if let Some(mem_limit_str) = hard.get("requests.memory") {
+        // K8s: "memory" is an alias for "requests.memory"
+        if let Some(mem_limit_str) = hard.get("requests.memory").or_else(|| hard.get("memory")) {
             let current_mem = current_usage
                 .get("requests.memory")
                 .and_then(|s| parse_memory_to_bytes(s).ok())
