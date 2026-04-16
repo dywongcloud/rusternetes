@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed | 2026-04-15
 
-## Fixes Applied (11 total, not yet deployed)
+## Fixes Applied (12 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -17,6 +17,7 @@
 | 9 | Init container restart tracking | restart_count always 0, last_state always None | kubelet/runtime.rs | init_container.go:440 |
 | 10 | ResourceQuota cpu/memory aliases | "cpu" alias for "requests.cpu" not handled; errors silently passed | api-server/admission.rs, handlers/pod.rs | resource_quota.go:290 |
 | 11 | Exec websocket Success status | Missing status JSON on channel 3 for exit code 0 | api-server/streaming.rs | exec_util.go:113 |
+| 12 | Docker 409 container conflict | 100ms wait insufficient; containers not stopped before removal | kubelet/runtime.rs | ~9 pod startup failures |
 
 ## Root Cause Analysis
 
