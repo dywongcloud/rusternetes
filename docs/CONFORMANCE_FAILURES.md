@@ -1,6 +1,6 @@
 # Conformance Failure Tracker
 
-**Round 146** | 44+ unique test failures (run still in progress) | 2026-04-15
+**Round 146** | 379/441 passed (85.9%) — 62 failed | 2026-04-15
 
 ## Fixes Applied (8 total, not yet deployed)
 
@@ -145,7 +145,7 @@
 | 141 | 368 | 73 | 441 | 83.4% |
 | 143 | 372 | 69 | 441 | 84.4% |
 | 144 | ~375 | ~60 | 441 | ~85.1% |
-| 146 | TBD | 43+ | 441 | TBD (pre-fix, in progress) |
+| 146 | 379 | 62 | 441 | 85.9% (pre-fix baseline) |
 
 ## Commits
 
