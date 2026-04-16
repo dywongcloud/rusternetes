@@ -1,6 +1,6 @@
 # Conformance Failure Tracker
 
-**Round 146** | In Progress — 37+ failures at 257/441 (85.6% pass rate) | 2026-04-15
+**Round 146** | In Progress — 36+ unique test failures | 2026-04-15
 
 ## Root Causes & Fixes
 
@@ -35,11 +35,12 @@
 - **K8s ref**: `pkg/kubelet/status/generate.go:209-217`
 - **Fix**: Added `succeeded_pod_conditions()` and set conditions on all Succeeded phase transitions.
 
-### Category 6: Init Container terminationMessagePolicy Default — NOT YET FIXED
-**Affected tests**: init_container.go:235 (secondary), runtime.go:129
+### Category 6: Defaults After Mutation — FIX APPLIED
+**Affected tests**: webhook.go:1352, runtime.go:129
 - **Error**: "expect the init terminationMessagePolicy to be default to 'File', got ''"
-- **Root cause**: Our API server doesn't default `terminationMessagePolicy` to "File" for containers. K8s applies this default during admission.
-- **K8s ref**: `pkg/apis/core/v1/defaults.go`
+- **Root cause**: K8s runs SetDefaults TWICE: before and after mutating webhooks. We only ran it once (before). Webhook-added containers (init containers added by mutation) never get defaults applied.
+- **K8s ref**: `staging/src/k8s.io/apiserver/pkg/endpoints/handlers/create.go`
+- **Fix**: Re-apply `apply_pod_spec_defaults` after webhook mutation in pod create handler.
 
 ### Category 7: CRD OpenAPI Schema Publishing — NOT YET FIXED
 **Affected tests**: crd_publish_openapi.go:77, :184, :225, :267, :285, :366
@@ -96,15 +97,17 @@
 | 3 | Webhook timeout "deadline" | api-server/admission_webhook.rs | webhook.go:1400 |
 | 4 | SMP array ordering | api-server/patch.rs | statefulset.go:1092 |
 | 5 | Pod Succeeded conditions | kubelet/kubelet.rs | init_container.go:235 |
+| 6 | Defaults after mutation | api-server/handlers/pod.rs | webhook.go:1352 |
 
 ## Expected Impact
 
-With fixes 1-5, we expect to fix approximately 10 of the 32 failures:
-- Fix 1 (RC selector): rc.go, gc.go (2 tests, possibly deployment.go and replica_set.go too)
-- Fix 2 (matchConditions): 4 webhook tests
-- Fix 3 (deadline): 1 webhook test
-- Fix 4 (SMP ordering): 1 statefulset test
-- Fix 5 (conditions): 1 init_container test
+With fixes 1-6, we expect to fix approximately 11-13 of the 36 failures:
+- Fix 1 (RC selector): rc.go, gc.go, possibly deployment.go, replica_set.go (2-4 tests)
+- Fix 2 (matchConditions): webhook.go:932, :2222, :2164, :1352 (4 tests, but :1352 also needs fix 6)
+- Fix 3 (deadline): webhook.go:1400 (1 test)
+- Fix 4 (SMP ordering): statefulset.go:1092 (1 test)
+- Fix 5 (conditions): init_container.go:235 (1 test)
+- Fix 6 (defaults after mutation): webhook.go:1352 (1 test, overlaps with fix 2)
 
 ## Progress History
 
@@ -114,4 +117,4 @@ With fixes 1-5, we expect to fix approximately 10 of the 32 failures:
 | 141 | 368 | 73 | 441 | 83.4% |
 | 143 | 372 | 69 | 441 | 84.4% |
 | 144 | ~375 | ~60 | 441 | ~85.1% |
-| 146 | ~220 | 37+ | 441 | ~85.6% (at 257/441) |
+| 146 | TBD | 36+ | 441 | TBD (in progress) |
