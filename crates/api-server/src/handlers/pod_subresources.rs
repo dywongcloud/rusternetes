@@ -698,6 +698,13 @@ pub async fn attach(
 ) -> Result<Response> {
     info!("Attaching to pod {}/{}", namespace, name);
 
+    // Save user info for webhook check before auth moves ownership
+    let webhook_user_info = rusternetes_common::admission::UserInfo {
+        username: auth_ctx.user.username.clone(),
+        uid: auth_ctx.user.uid.clone(),
+        groups: auth_ctx.user.groups.clone(),
+    };
+
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "pods")
         .with_namespace(&namespace)
@@ -751,6 +758,44 @@ pub async fn attach(
             "Container {} not found in pod {}/{}",
             container_name, namespace, name
         )));
+    }
+
+    // Run admission webhooks for Connect operation (attach)
+    // K8s validates attach requests through admission webhooks the same as exec.
+    {
+        use rusternetes_common::admission::{GroupVersionKind, GroupVersionResource, Operation};
+        let gvk = GroupVersionKind {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            kind: "Pod".to_string(),
+        };
+        let gvr = GroupVersionResource {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            resource: "pods/attach".to_string(),
+        };
+        match state
+            .webhook_manager
+            .run_validating_webhooks(
+                &Operation::Connect,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &name,
+                None,
+                None,
+                &webhook_user_info,
+            )
+            .await?
+        {
+            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
+                return Err(Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
     }
 
     // Check if this is a SPDY upgrade request (kubectl uses SPDY)
