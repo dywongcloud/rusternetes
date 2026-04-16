@@ -1064,6 +1064,85 @@ impl Kubelet {
             .and_then(|s| s.phase.as_ref())
             .unwrap_or(&Phase::Pending);
 
+        // K8s kubelet admission: check hostPort conflicts before starting the pod.
+        // K8s ref: pkg/kubelet/kubelet.go:2752 — allocationManager.AddPod
+        // If a pod's hostPorts conflict with already-running pods on this node,
+        // reject it immediately with Phase=Failed. The owning controller (StatefulSet,
+        // etc.) can then delete and recreate it.
+        if matches!(current_phase, Phase::Pending) && !is_running {
+            if let Some(spec) = &pod.spec {
+                let pod_host_ports: Vec<(u16, String)> = spec
+                    .containers
+                    .iter()
+                    .flat_map(|c| c.ports.iter().flatten())
+                    .filter_map(|p| {
+                        p.host_port.map(|hp| {
+                            let ip = p.host_ip.clone().unwrap_or_default();
+                            (hp, ip)
+                        })
+                    })
+                    .collect();
+
+                if !pod_host_ports.is_empty() {
+                    // Get all pods on this node
+                    let all_pods_prefix = build_prefix("pods", None);
+                    let all_pods: Vec<Pod> = self.storage.list(&all_pods_prefix).await.unwrap_or_default();
+                    let active_on_node: Vec<&Pod> = all_pods
+                        .iter()
+                        .filter(|p| {
+                            p.metadata.name != pod.metadata.name
+                                && p.spec.as_ref().and_then(|s| s.node_name.as_deref()) == Some(&self.node_name)
+                                && !matches!(
+                                    p.status.as_ref().and_then(|s| s.phase.as_ref()),
+                                    Some(Phase::Failed) | Some(Phase::Succeeded)
+                                )
+                                && p.metadata.deletion_timestamp.is_none()
+                        })
+                        .collect();
+
+                    for (port, ip) in &pod_host_ports {
+                        for existing in &active_on_node {
+                            if let Some(existing_spec) = &existing.spec {
+                                for c in &existing_spec.containers {
+                                    for ep in c.ports.iter().flatten() {
+                                        if let Some(ehp) = ep.host_port {
+                                            if ehp == *port {
+                                                let eip = ep.host_ip.clone().unwrap_or_default();
+                                                let conflict = ip.is_empty()
+                                                    || eip.is_empty()
+                                                    || ip == "0.0.0.0"
+                                                    || eip == "0.0.0.0"
+                                                    || ip == &eip;
+                                                if conflict {
+                                                    info!(
+                                                        "Pod {}/{} rejected: hostPort {} conflicts with pod {}",
+                                                        namespace, pod_name, port, existing.metadata.name
+                                                    );
+                                                    let key = build_key("pods", Some(namespace), pod_name);
+                                                    if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                                                        if let Some(ref mut status) = p.status {
+                                                            status.phase = Some(Phase::Failed);
+                                                            status.reason = Some("HostPortConflict".to_string());
+                                                            status.message = Some(format!(
+                                                                "Pod was rejected: host port {} is already in use",
+                                                                port
+                                                            ));
+                                                        }
+                                                        let _ = self.storage.update(&key, &p).await;
+                                                    }
+                                                    return Ok(());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         match current_phase {
             // If pod is Pending and has been scheduled to this node, start it
             Phase::Pending if !is_running => {
