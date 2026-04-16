@@ -1,86 +1,83 @@
 # Conformance Failure Tracker
 
-**Round 147** | In Progress — 29 failures so far | 2026-04-16
-**Baseline**: Round 146 had 62 failures (85.9%)
+**Round 147** | In Progress — 33+ failures so far | 2026-04-16
+**Baseline**: Round 146 = 62 failures (85.9%)
 
-## Fixed (pending next deploy)
+## Fixed (pending deploy) — 12 fixes
 
-These have code fixes committed but need `docker compose build` + redeploy.
+| Test | Fix # | Root Cause |
+|------|-------|-----------|
+| chunking.go:194 | 19 | Item count change falsely invalidated pagination tokens |
+| init_container.go:235 | 17 | Missed Succeeded path in runtime.rs |
+| webhook.go:2491 | 18 | Webhook URL missing ?timeout=Ns query param |
+| webhook.go:1481 | 20 | Resource should be "pods" not "pods/attach" |
+| webhook.go:2164 | 22 | CR update handler didn't run validating webhooks |
+| pods.go:600 | 21 | v1 protocol doesn't use channel 3 status |
+| resource_quota.go:302 | 23 | Extended resources (requests.example.com/foo) not checked |
+| crd_publish_openapi.go:285+ | 24 | CRD update lost enum field via typed serde round-trip |
+| garbage_collector.go:436 | 25+27 | RC finalizer removed before all pods orphaned + GC snapshot-based orphan detection was racy |
+| daemon_set.go:1276 | 27 | GC deleted DaemonSet pods (owner existed but missed in snapshot) |
+| statefulset.go:957 | 28 | Kubelet didn't check hostPort conflicts at admission |
 
-| Test | Error | Fix # | Root Cause |
-|------|-------|-------|-----------|
-| chunking.go:194 | pagination token expired | 19 | Item count change falsely invalidated tokens |
-| init_container.go:235 | PodCondition nil | 17 | Missed Succeeded path in runtime.rs |
-| init_container.go:440 | exit code / restart tracking | 9 | restart_count always 0, last_state always None |
-| webhook.go:2491 | missing ?timeout=Ns | 18 | Webhook URL missing timeout query param |
-| webhook.go:1481 | "pods/attach" resource | 20 | Should be "pods" not "pods/attach" |
-| webhook.go:2164 | CR update not denied | 22 | CR update handler didn't run validating webhooks |
-| pods.go:600 | channel 3 on v1 protocol | 21 | v1 protocol doesn't use channel 3 status |
-| resource_quota.go:302 | extended resource not checked | 23 | requests.example.com/foo not enforced |
-| garbage_collector.go:436 | 100 pods → 34 | 25 | Orphan finalizer removed before all pods orphaned |
-| crd_publish_openapi.go:285+ | schema mismatch / explain fails | 24 | CRD update lost enum field via typed serde |
+## Still Failing — no code fix available
 
-## Still Failing (no fix yet)
+| Test | Error | Root Cause |
+|------|-------|-----------|
+| aggregator.go:359 | deployment not ready | Pod startup failure (Docker 409) — fix 14 deployed but may need more |
+| deployment.go:1259, :995 | RS not available | Pod startup failure — downstream of Docker 409 |
+| rc.go:538 | pod not reachable | Network issue — pod running but HTTP timeout |
+| hostport.go:219 | pod2 timeout | Pod startup failure — Docker 409 |
+| output.go:263 | file perms -rw-r--r-- not -rw-rw-rw- | macOS Docker bind mount doesn't support 0666 mode |
+| proxy.go:503 | pod didn't start | Pod startup failure |
+| service.go:251, :768 | affinity issues | No endpoints — backend pods can't start (Docker 409) |
+| service.go:3459 | delete timeout | Watch/timing |
+| preemption.go:877 | observation timeout | Scheduler preemption — only 1 of 2 pods created |
+| crd_publish_openapi.go:170, :225, :253, :77 | kubectl explain / schema | May need kubectl explain discovery endpoint |
 
-| Test | Error | Category | Notes |
-|------|-------|----------|-------|
-| crd_publish_openapi.go:170, :225, :253, :77 | kubectl explain / schema | CRD OpenAPI | Fix 24 addresses enum loss; remaining may be kubectl explain discovery or residual schema mismatch |
-| aggregator.go:359 | deployment not ready | Pod startup | Sample-apiserver pod fails to start |
-| deployment.go:1259, :995 | RS not available / rollover | Pod startup | Pods not becoming Ready |
-| daemon_set.go:1276 | 0 pods on node | DaemonSet | Only 1 eligible node found (expects 2) |
-| statefulset.go:957 | pod not re-created | StatefulSet | Controller not deleting/recreating pods |
-| rc.go:538 | pod not reachable | Network | Pod running but HTTP requests timeout |
-| hostport.go:219 | pod2 timeout | Pod startup | Container start failure |
-| output.go:263 | pod not ready | Pod startup | File permission test pod fails |
-| proxy.go:503 | pod didn't start | Pod startup | Pod timeout |
-| service.go:251, :768, :3459 | affinity / unreachable / delete timeout | kube-proxy | Session affinity iptables, endpoint routing |
-| preemption.go:877 | observation timeout | Scheduling | Watch-dependent, may be timing |
+## All Fixes (28 total)
 
-## All Fixes (25 total)
+### Deployed in Round 147 (1-16)
 
-### Deployed in Round 147 (fixes 1-16)
+| # | Fix |
+|---|-----|
+| 1 | RC selector defaulting from template labels |
+| 2 | Webhook matchConditions CEL evaluation |
+| 3 | Webhook timeout "deadline" in error message |
+| 4 | SMP array ordering (patch items first) |
+| 5 | Pod Succeeded conditions (PodInitialized=True) |
+| 6 | Defaults after mutation (SetDefaults twice) |
+| 7 | CRD OpenAPI items unwrap |
+| 8 | LIST resourceVersion (etcd mod_revision not timestamp) |
+| 9 | Init container restart tracking |
+| 10 | ResourceQuota cpu/memory aliases |
+| 11 | Exec websocket Success status on channel 3 |
+| 12 | Docker 409 wait (stop before remove, 500ms) |
+| 13 | Attach webhook validation |
+| 14 | Per-pod sync lock (prevent concurrent sync_pod) |
+| 15 | Skip unchanged status writes |
+| 16 | Pod resize memory_swap |
 
-| # | Fix | What it fixed |
-|---|-----|--------------|
-| 1 | RC selector defaulting | rc.go:623, gc.go:436 — selector was null |
-| 2 | Webhook matchConditions | webhook.go:932, :2222, :2164 — CEL never evaluated |
-| 3 | Webhook timeout "deadline" | webhook.go:1400 — cause chain not in error |
-| 4 | SMP array ordering | statefulset.go:1092 — patch items must come first |
-| 5 | Pod Succeeded conditions | init_container.go:235 — missing PodInitialized |
-| 6 | Defaults after mutation | webhook.go:1352 — SetDefaults only ran once |
-| 7 | CRD OpenAPI items unwrap | CRD tests — extra {"schema":{}} wrapper |
-| 8 | LIST resourceVersion | Systemic — timestamps instead of etcd mod_revisions |
-| 9 | Init container restart tracking | init_container.go:440 — restart_count always 0 |
-| 10 | ResourceQuota cpu/memory aliases | resource_quota.go:290 — "cpu" vs "requests.cpu" |
-| 11 | Exec websocket Success status | exec_util.go:113 — missing channel 3 for exit 0 |
-| 12 | Docker 409 wait | Pod startup — insufficient wait after removal |
-| 13 | Attach webhook validation | webhook.go:1481 — attach had no webhook check |
-| 14 | Per-pod sync lock | Pod startup — concurrent sync_pod races |
-| 15 | Skip unchanged status | builder.go:97 — status written every 5s unchanged |
-| 16 | Pod resize memory_swap | pod_resize.go:857 — Docker rejects without memory_swap |
+### Pending Deploy (17-28)
 
-### Pending Deploy (fixes 17-28)
-
-| # | Fix | What it fixes |
-|---|-----|--------------|
-| 17 | Pod conditions runtime.rs | init_container.go:235 — missed Succeeded path |
-| 18 | Webhook URL timeout param | webhook.go:2491 — missing ?timeout=Ns |
-| 19 | Pagination staleness | chunking.go:194 — item count invalidated tokens |
-| 20 | Webhook resource name | webhook.go:1481 — "pods/attach" → "pods" |
-| 21 | v1 protocol channel 3 | pods.go:600 — v1 doesn't use channel 3 |
-| 22 | CR update webhooks | webhook.go:2164 — UPDATE had no validating webhooks |
-| 23 | Extended resource quota | resource_quota.go:302 — custom resources not checked |
-| 24 | CRD raw JSON storage | CRD tests — update handler lost enum via typed struct |
-| 25 | RC orphan all-or-nothing | gc.go:436 — finalizer removed before all pods orphaned |
-| 26 | GC debug logging | DaemonSet/GC — log metadata failures and orphan reasons |
-| 27 | GC owner re-verification | DaemonSet/GC — re-read owner from storage before deleting orphan |
-| 28 | Kubelet hostPort admission | statefulset.go:957 — reject pods with hostPort conflicts (Phase=Failed) |
+| # | Fix |
+|---|-----|
+| 17 | Pod conditions runtime.rs Succeeded path |
+| 18 | Webhook URL timeout param (?timeout=Ns) |
+| 19 | Pagination staleness (remove item count check) |
+| 20 | Webhook resource "pods" not "pods/attach" |
+| 21 | v1 protocol skip channel 3 status |
+| 22 | CR update validating webhooks |
+| 23 | Extended resource quota checking |
+| 24 | CRD raw JSON storage (preserve enum) |
+| 25 | RC orphan all-or-nothing (retry if any PATCH fails) |
+| 26 | GC debug logging |
+| 27 | GC owner re-verification before delete |
+| 28 | Kubelet hostPort admission (reject with Phase=Failed) |
 
 ## Progress History
 
 | Round | Pass | Fail | Total | Rate |
 |-------|------|------|-------|------|
 | 141 | 368 | 73 | 441 | 83.4% |
-| 144 | ~375 | ~60 | 441 | ~85.1% |
 | 146 | 379 | 62 | 441 | 85.9% |
-| 147 | TBD | 29+ | 441 | ~93% est (in progress, fixes 1-16 deployed) |
+| 147 | TBD | 33+ | 441 | ~93% est (in progress, fixes 1-16 deployed) |
