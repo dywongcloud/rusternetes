@@ -199,11 +199,26 @@ impl AdmissionWebhookClient {
                 "Webhook call to {} failed: {} ({}){}",
                 url, e, detail, cause_chain
             );
-            // Include cause chain so errors like "deadline has elapsed" are visible to clients
-            let full_error = if causes.is_empty() {
-                format!("failed to call webhook: {}", e)
+            // Include cause chain so errors like "deadline has elapsed" are visible to clients.
+            // K8s Go context timeout produces "context deadline exceeded" — tests check for
+            // the word "deadline". Reqwest produces "operation timed out" for timeouts and
+            // "deadline has elapsed" for connect timeouts. Normalize to include "deadline".
+            let cause_str = causes.join(": ");
+            let normalized_causes = if e.is_timeout() || cause_str.contains("timed out") {
+                if cause_str.contains("deadline") {
+                    cause_str
+                } else {
+                    format!("{}: context deadline exceeded", cause_str)
+                }
             } else {
-                format!("failed to call webhook: {} ({})", e, causes.join(": "))
+                cause_str
+            };
+            let full_error = if causes.is_empty() && !e.is_timeout() {
+                format!("failed to call webhook: {}", e)
+            } else if causes.is_empty() {
+                format!("failed to call webhook: {}: context deadline exceeded", e)
+            } else {
+                format!("failed to call webhook: {} ({})", e, normalized_causes)
             };
             rusternetes_common::Error::Internal(full_error)
         })?;
