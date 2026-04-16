@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed, 51 unique test locations | 2026-04-15
 
-## Fixes Applied This Round (15 total, not yet deployed)
+## Fixes Applied This Round (16 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -21,6 +21,7 @@
 | 13 | Attach webhook validation | Attach handler missing webhook check entirely | api-server/handlers/pod_subresources.rs | webhook.go:1481 |
 | 14 | Per-pod sync lock | Concurrent sync_pod calls for same pod → Docker 409 races | kubelet/kubelet.rs | all pod startup failures |
 | 15 | Skip unchanged status writes | Status written every 5s even when unchanged → RV churn | kubelet/kubelet.rs | builder.go:97 (CAS race) |
+| 16 | Pod resize memory_swap | Docker rejects memory update without memory_swap | kubelet/runtime.rs | pod_resize.go:857 |
 
 ## Root Cause Details
 
@@ -139,7 +140,6 @@
 
 ### Likely still failing after deployment:
 - job.go:144 (downstream of Docker 409 — pod can't start, so exit code never captured; fix 14 may resolve)
-- pod_resize.go:857 (known partial — Docker update_container API may not update all cgroups)
 
 ## Progress History
 
@@ -154,6 +154,7 @@
 ## Commits (This Round)
 
 ```
+aefbe04 fix: Set memory_swap when updating container memory limits (pod resize)
 7fa25ef fix: Skip pod status update when status unchanged — reduce RV churn
 59ec5c6 fix: Per-pod sync lock prevents concurrent sync_pod Docker 409 races
 de85728 fix: Run admission webhooks on pod attach requests
