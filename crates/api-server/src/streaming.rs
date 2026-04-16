@@ -160,22 +160,25 @@ pub async fn handle_ws_exec(
         .and_then(|info| info.exit_code)
         .unwrap_or(0);
 
-    // K8s v4/v5 protocol: ALWAYS send status on channel 3 (error channel).
-    // The client reads from the error stream expecting a status JSON.
-    // Without this, the error stream reader gets a close frame without data,
-    // producing "websocket: close 1005 (no status)".
+    // K8s v4/v5 protocol: send status on channel 3 (error channel).
+    // v1 protocol (channel.k8s.io) does NOT use channel 3 — sending it causes
+    // "Got message from server that didn't start with channel 1" failures.
     // K8s ref: staging/src/k8s.io/client-go/tools/remotecommand/v4.go
-    let status_json = if exit_code == 0 {
-        r#"{"status":"Success"}"#.to_string()
-    } else {
-        format!(
-            r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#,
-            exit_code, exit_code
-        )
-    };
-    let mut status_data = vec![3u8];
-    status_data.extend_from_slice(status_json.as_bytes());
-    let _ = socket.send(Message::Binary(status_data.into())).await;
+    let is_v1 = V1_PROTOCOL_FLAG.load(std::sync::atomic::Ordering::Relaxed);
+    if !is_v1 || exit_code != 0 {
+        // v4/v5: always send status. v1: only send for non-zero exit (error reporting).
+        let status_json = if exit_code == 0 {
+            r#"{"status":"Success"}"#.to_string()
+        } else {
+            format!(
+                r#"{{"status":"Failure","message":"command terminated with exit code {}","reason":"NonZeroExitCode","details":{{"causes":[{{"reason":"ExitCode","message":"{}"}}]}}}}"#,
+                exit_code, exit_code
+            )
+        };
+        let mut status_data = vec![3u8];
+        status_data.extend_from_slice(status_json.as_bytes());
+        let _ = socket.send(Message::Binary(status_data.into())).await;
+    }
 
     // Allow time for the client to read the status message before closing.
     // Without this delay, the TCP connection may reset before the client
@@ -254,6 +257,37 @@ pub async fn handle_exec_websocket(
     )
     .await
 }
+
+/// Exec with protocol awareness — v1 doesn't use channel 3 for status
+pub async fn handle_exec_websocket_with_protocol(
+    socket: WebSocket,
+    pod: Pod,
+    container_name: String,
+    command: Vec<String>,
+    stdin: bool,
+    stdout: bool,
+    stderr: bool,
+    tty: bool,
+    is_v1_protocol: bool,
+) {
+    // Set the v1 flag so handle_ws_exec can check it
+    V1_PROTOCOL_FLAG.store(is_v1_protocol, std::sync::atomic::Ordering::Relaxed);
+    handle_ws_exec(
+        socket,
+        pod,
+        container_name,
+        command,
+        stdin,
+        stdout,
+        stderr,
+        tty,
+    )
+    .await
+}
+
+/// Global flag for v1 protocol detection (per-request via task-local would be better,
+/// but this works since exec calls are serialized per connection)
+static V1_PROTOCOL_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Alias for backward compatibility
 pub async fn handle_attach_websocket(

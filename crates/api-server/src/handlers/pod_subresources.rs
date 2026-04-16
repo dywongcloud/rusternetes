@@ -494,7 +494,7 @@ pub async fn exec(
         let gvr = GroupVersionResource {
             group: "".to_string(),
             version: "v1".to_string(),
-            resource: "pods/exec".to_string(),
+            resource: "pods".to_string(),
         };
         let user_info = rusternetes_common::admission::UserInfo {
             username: "admin".to_string(),
@@ -571,10 +571,14 @@ pub async fn exec(
     if let Some(ws) = ws {
         info!("Upgrading exec to WebSocket for pod {}/{}", namespace, name);
         // Accept the v5.channel.k8s.io subprotocol for Kubernetes exec
+        // Detect which protocol the client requested. v1 (channel.k8s.io) doesn't
+        // use channel 3 for status; v4/v5 do. We need to tell the handler.
+        let is_v1_protocol = sec_ws_protocol == "channel.k8s.io"
+            || (!sec_ws_protocol.contains("v4.channel") && !sec_ws_protocol.contains("v5.channel"));
         return Ok(ws
             .protocols(["v5.channel.k8s.io", "v4.channel.k8s.io", "channel.k8s.io"])
             .on_upgrade(move |socket| {
-                streaming::handle_exec_websocket(
+                streaming::handle_exec_websocket_with_protocol(
                     socket,
                     pod,
                     container_name,
@@ -583,6 +587,7 @@ pub async fn exec(
                     query.stdout,
                     query.stderr,
                     query.tty,
+                    is_v1_protocol,
                 )
             })
             .into_response());
@@ -772,7 +777,7 @@ pub async fn attach(
         let gvr = GroupVersionResource {
             group: "".to_string(),
             version: "v1".to_string(),
-            resource: "pods/attach".to_string(),
+            resource: "pods".to_string(),
         };
         match state
             .webhook_manager

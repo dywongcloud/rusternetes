@@ -438,6 +438,49 @@ pub async fn update_custom_resource(
         return Ok(Json(cr));
     }
 
+    // Run validating webhooks for UPDATE operations.
+    // K8s runs webhooks on all mutating operations (CREATE, UPDATE, DELETE).
+    {
+        use rusternetes_common::admission::{
+            AdmissionResponse, GroupVersionKind, GroupVersionResource, Operation,
+        };
+        let gvk = GroupVersionKind {
+            group: group.clone(),
+            version: version.clone(),
+            kind: cr.kind.clone(),
+        };
+        let gvr = GroupVersionResource {
+            group: group.clone(),
+            version: version.clone(),
+            resource: plural.clone(),
+        };
+        let user_info = rusternetes_common::admission::UserInfo {
+            username: "admin".to_string(),
+            uid: "system:admin".to_string(),
+            groups: vec!["system:masters".to_string()],
+        };
+        let cr_value = serde_json::to_value(&cr).ok();
+        match state
+            .webhook_manager
+            .run_validating_webhooks(
+                &Operation::Update,
+                &gvk,
+                &gvr,
+                namespace.as_deref(),
+                &name,
+                cr_value,
+                None,
+                &user_info,
+            )
+            .await?
+        {
+            AdmissionResponse::Deny(reason) => {
+                return Err(rusternetes_common::Error::Forbidden(reason));
+            }
+            _ => {}
+        }
+    }
+
     // Build storage key
     let resource_type = format!("{}_{}", group.replace('.', "_"), plural);
     let key = if let Some(ref ns) = namespace {
