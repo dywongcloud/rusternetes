@@ -242,6 +242,12 @@ pub async fn create_custom_resource(
         }
     }
 
+    // K8s structural pruning: remove unknown fields from the CR based on
+    // the CRD schema, unless x-kubernetes-preserve-unknown-fields is set.
+    // This happens AFTER webhook mutation so webhook-added fields not in
+    // the schema are pruned. K8s ref: apiextensions-apiserver/pkg/apiserver/schema/pruning
+    prune_custom_resource(&crd, &version, &mut cr);
+
     // Check for dry-run
     if crate::handlers::dryrun::is_dry_run(&params) {
         return Ok((StatusCode::OK, Json(cr)));
@@ -1012,6 +1018,89 @@ fn apply_schema_defaults(crd: &CustomResourceDefinition, version: &str, cr: &mut
                     && k != "status"
                 {
                     cr.extra.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Prune unknown fields from a CR based on the CRD schema.
+/// K8s removes fields not in the schema unless x-kubernetes-preserve-unknown-fields is set.
+/// This runs AFTER webhook mutation so webhook-added fields not in the schema are removed.
+/// K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/schema/pruning
+fn prune_custom_resource(
+    crd: &CustomResourceDefinition,
+    version: &str,
+    cr: &mut CustomResource,
+) {
+    let crd_version = match crd.spec.versions.iter().find(|v| v.name == version) {
+        Some(v) => v,
+        None => return,
+    };
+
+    // Check if the CRD preserves unknown fields globally
+    if crd.spec.preserve_unknown_fields == Some(true) {
+        return;
+    }
+
+    let schema = match &crd_version.schema {
+        Some(s) => &s.open_apiv3_schema,
+        None => return,
+    };
+
+    // Check if root schema preserves unknown fields
+    if schema.x_kubernetes_preserve_unknown_fields == Some(true) {
+        return;
+    }
+
+    // Get the schema properties for the "data" field (or whatever top-level fields exist)
+    // K8s prunes against spec/status/metadata + any additional properties
+    let schema_properties: std::collections::HashSet<String> = schema
+        .properties
+        .as_ref()
+        .map(|props| props.keys().cloned().collect())
+        .unwrap_or_default();
+
+    // Prune extra fields on the CR that aren't in the schema
+    // K8s preserves: apiVersion, kind, metadata (always)
+    // Everything else is checked against schema properties
+    let known_top_level: std::collections::HashSet<&str> =
+        ["apiVersion", "kind", "metadata"].iter().copied().collect();
+
+    let cr_keys: Vec<String> = cr.extra.keys().cloned().collect();
+    for key in cr_keys {
+        if !known_top_level.contains(key.as_str()) && !schema_properties.contains(&key) {
+            tracing::debug!("Pruning unknown field '{}' from CR", key);
+            cr.extra.remove(&key);
+        }
+    }
+
+    // Also prune within known fields like "data", "spec", "status"
+    // by checking their nested schema properties
+    if let Some(schema_props) = &schema.properties {
+        for (field_name, field_schema) in schema_props {
+            // Check if this field preserves unknown fields
+            if field_schema.x_kubernetes_preserve_unknown_fields == Some(true) {
+                continue;
+            }
+            if let Some(field_props) = &field_schema.properties {
+                let allowed_keys: std::collections::HashSet<String> =
+                    field_props.keys().cloned().collect();
+
+                // Prune from cr.extra if this field is there
+                if let Some(field_val) = cr.extra.get_mut(field_name) {
+                    if let Some(obj) = field_val.as_object_mut() {
+                        let obj_keys: Vec<String> = obj.keys().cloned().collect();
+                        for k in obj_keys {
+                            if !allowed_keys.contains(&k) {
+                                tracing::debug!(
+                                    "Pruning unknown field '{}.{}' from CR",
+                                    field_name, k
+                                );
+                                obj.remove(&k);
+                            }
+                        }
+                    }
                 }
             }
         }
