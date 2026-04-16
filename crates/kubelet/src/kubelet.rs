@@ -10,7 +10,7 @@ use rusternetes_common::{
 };
 use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage, WatchEvent};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -48,6 +48,10 @@ pub struct Kubelet {
     /// per-UID and dispatch in the sync loop.
     /// K8s ref: pkg/kubelet/pod_workers.go
     pod_states: Mutex<HashMap<String, PodWorkerState>>,
+    /// Per-pod sync lock. Prevents concurrent sync_pod calls for the same pod.
+    /// K8s uses one goroutine per pod (podWorkerLoop). We use a lock set to
+    /// ensure only one sync_pod runs at a time for each pod UID.
+    pod_sync_locks: Mutex<HashSet<String>>,
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
@@ -81,6 +85,7 @@ impl Kubelet {
             sync_interval: Duration::from_secs(sync_interval_secs),
             eviction_manager: Mutex::new(EvictionManager::new()),
             pod_states: Mutex::new(HashMap::new()),
+            pod_sync_locks: Mutex::new(HashSet::new()),
         })
     }
 
@@ -824,6 +829,32 @@ impl Kubelet {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
         let pod_uid = &pod.metadata.uid;
+
+        // Per-pod sync lock: prevent concurrent sync_pod calls for the same pod.
+        // K8s uses one goroutine per pod; without this, concurrent syncs create
+        // Docker 409 "container name already in use" errors (1014 per run).
+        {
+            let mut locks = self.pod_sync_locks.lock().unwrap();
+            if locks.contains(pod_uid) {
+                debug!("Skipping sync for pod {}/{} — already syncing", namespace, pod_name);
+                return Ok(());
+            }
+            locks.insert(pod_uid.clone());
+        }
+        // Release the lock when this function returns (on any path)
+        struct SyncGuard<'a> {
+            locks: &'a Mutex<HashSet<String>>,
+            uid: String,
+        }
+        impl<'a> Drop for SyncGuard<'a> {
+            fn drop(&mut self) {
+                self.locks.lock().unwrap().remove(&self.uid);
+            }
+        }
+        let _sync_guard = SyncGuard {
+            locks: &self.pod_sync_locks,
+            uid: pod_uid.clone(),
+        };
 
         debug!("Syncing pod: {}/{}", namespace, pod_name);
 
