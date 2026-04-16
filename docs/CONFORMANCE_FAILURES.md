@@ -1,145 +1,144 @@
 # Conformance Failure Tracker
 
-**Round 146** | 379/441 passed (85.9%) — 62 failed | 2026-04-15
+**Round 146** | 379/441 passed (85.9%) — 62 failed, 51 unique test locations | 2026-04-15
 
-## Fixes Applied (12 total, not yet deployed)
+## Fixes Applied This Round (12 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
 | 1 | RC selector defaulting | K8s defaults RC.Spec.Selector from Template.Labels; ours was null | api-server/handlers/replicationcontroller.rs | rc.go:623, garbage_collector.go:436 |
 | 2 | Webhook matchConditions | CEL match conditions never evaluated in mutating/validating paths | api-server/admission_webhook.rs | webhook.go:932, :2222, :2164 |
-| 3 | Webhook timeout "deadline" | reqwest cause chain not included in error message | api-server/admission_webhook.rs | webhook.go:1400 |
+| 3 | Webhook timeout "deadline" | reqwest cause chain not included in error message | api-server/admission_webhook.rs | webhook.go:1400, :2491 |
 | 4 | SMP array ordering | K8s puts patch items before server-only; ours preserved original order | api-server/patch.rs | statefulset.go:1092 |
 | 5 | Pod Succeeded conditions | Missing PodInitialized=True with reason PodCompleted | kubelet/kubelet.rs | init_container.go:235 |
 | 6 | Defaults after mutation | K8s runs SetDefaults twice (before AND after webhooks) | api-server/handlers/pod.rs | webhook.go:1352 |
 | 7 | CRD OpenAPI items unwrap | items had extra {"schema": {...}} wrapper for Swagger v2 | api-server/handlers/openapi.rs | 10 crd_publish_openapi.go tests |
-| 8 | LIST resourceVersion | All 11 LIST handlers used timestamps instead of etcd mod_revisions | 7 handler files | systemic watch failures across many tests |
+| 8 | LIST resourceVersion | All 11 LIST handlers used timestamps instead of etcd mod_revisions | 7 handler files | systemic watch failures — many tests |
 | 9 | Init container restart tracking | restart_count always 0, last_state always None | kubelet/runtime.rs | init_container.go:440 |
 | 10 | ResourceQuota cpu/memory aliases | "cpu" alias for "requests.cpu" not handled; errors silently passed | api-server/admission.rs, handlers/pod.rs | resource_quota.go:290 |
 | 11 | Exec websocket Success status | Missing status JSON on channel 3 for exit code 0 | api-server/streaming.rs | exec_util.go:113 |
-| 12 | Docker 409 container conflict | 100ms wait insufficient; containers not stopped before removal | kubelet/runtime.rs | ~9 pod startup failures |
+| 12 | Docker 409 container conflict | 100ms wait insufficient; containers not stopped before removal | kubelet/runtime.rs | pod startup failures (~9 tests) |
 
-## Root Cause Analysis
+## Root Cause Details
 
 ### FIX 1: RC Selector Defaulting
-**Tests**: rc.go:623, garbage_collector.go:436
 - **Error**: rc.go — "rc manager never removed the failure condition"; gc.go — "expect 100 pods, got 9 pods"
-- **Root cause**: K8s API server defaults `RC.Spec.Selector` from `Template.Labels` when selector is nil. Our API stores `selector: null`. The RC controller's `labels_match_selector()` returns false for ALL pods → releases them → tries to recreate → hits quota. GC test: RC creates only 9 of 100 pods because selector mismatch causes constant thrashing.
+- **Root cause**: K8s API server defaults `RC.Spec.Selector` from `Template.Labels` when selector is nil. Our API stored `selector: null`. The RC controller's `labels_match_selector()` returned false for ALL pods → released them → tried to recreate → hit quota.
 - **K8s ref**: `pkg/registry/core/replicationcontroller/strategy.go`
 
 ### FIX 2: Webhook matchConditions
-**Tests**: webhook.go:932, :2222, :2164
-- **Error**: :932 — configmap "skip-me" should not be mutated; :2222 — got extra `mutation-stage-2` key; :2164 — "updating custom resource should be denied" when it should be allowed
-- **Root cause**: `run_mutating_webhooks()` and `run_validating_webhooks()` never evaluated `matchConditions` CEL expressions. All webhooks fired regardless of conditions.
+- **Error**: :932 — configmap "skip-me" mutated when it shouldn't be; :2222 — got extra `mutation-stage-2`; :2164 — CR update denied when it should be allowed
+- **Root cause**: `run_mutating_webhooks()` and `run_validating_webhooks()` never evaluated `matchConditions` CEL expressions. All webhooks fired regardless.
 - **K8s ref**: `staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/predicates`
 
 ### FIX 3: Webhook Timeout "deadline"
-**Tests**: webhook.go:1400
 - **Error**: `expect error "deadline", got "failed to call webhook: error sending request for url (...)"`
-- **Root cause**: reqwest error Display shows only top-level message. The nested cause "deadline has elapsed" wasn't included. K8s Go client wraps as `"failed to call webhook: context deadline exceeded"` where "deadline" is visible.
+- **Root cause**: reqwest error Display only shows top-level message. The nested cause "deadline has elapsed" was lost. Now includes full cause chain.
 - **K8s ref**: `staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go:311`
 
 ### FIX 4: SMP Array Ordering
-**Tests**: statefulset.go:1092
-- **Error**: "statefulset not using ssPatchImage. Is using agnhost:2.55"
-- **Root cause**: K8s SMP's `normalizeElementOrder` puts patch items FIRST, then server-only items. Our implementation preserved original order. Test patches SS with container "test-ss" (not in original), expects it at index [0].
+- **Error**: "statefulset not using ssPatchImage"
+- **Root cause**: K8s `normalizeElementOrder` puts patch items FIRST, then server-only. Our code preserved original order. Patch container "test-ss" was appended instead of prepended.
 - **K8s ref**: `apimachinery/pkg/util/strategicpatch/patch.go:1534-1544`
 
 ### FIX 5: Pod Succeeded Conditions
-**Tests**: init_container.go:235
 - **Error**: `Expected *v1.PodCondition nil not to be nil`
-- **Root cause**: Kubelet set `Phase::Succeeded` but never set conditions. Test expects `PodInitialized=True` with reason `PodCompleted`.
+- **Root cause**: Kubelet set `Phase::Succeeded` but never set conditions. K8s always sets `PodInitialized=True` with reason `PodCompleted` on succeeded pods.
 - **K8s ref**: `pkg/kubelet/status/generate.go:209-217`
 
 ### FIX 6: Defaults After Mutation
-**Tests**: webhook.go:1352
 - **Error**: "expect the init terminationMessagePolicy to be default to 'File', got ''"
-- **Root cause**: K8s runs SetDefaults TWICE: before and after mutating webhooks. We only ran it before. Webhook-added init containers had empty terminationMessagePolicy.
+- **Root cause**: K8s runs SetDefaults TWICE: before and after mutating webhooks. We only ran it once. Webhook-added init containers had empty `terminationMessagePolicy`.
 - **K8s ref**: `staging/src/k8s.io/apiserver/pkg/endpoints/handlers/create.go`
 
 ### FIX 7: CRD OpenAPI Items Schema
-**Tests**: crd_publish_openapi.go:77, :184, :225, :267, :285, :318, :366, :400, :451
-- **Error**: kubectl explain fails; schema "not match" (structurally identical except Go pointer addresses)
-- **Root cause**: K8s CRD schemas store `items` as `{"schema": {...}}` (Go JSONSchemaPropsOrArray). OpenAPI v2 expects `items` as a direct schema. Our code copied raw JSON without unwrapping, producing `items.schema.type` instead of `items.type`.
+- **Error**: kubectl explain fails; schema "not match"
+- **Root cause**: K8s CRD schemas store `items` as `{"schema": {...}}` (Go JSONSchemaPropsOrArray). OpenAPI v2 expects `items` as a direct schema. Our code copied raw JSON without unwrapping.
+- **Verified**: `/openapi/v2` output showed `items.schema.type` instead of `items.type`.
 - **K8s ref**: `vendor/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1/types_jsonschema.go`
 
 ### FIX 8: LIST resourceVersion (BIGGEST FIX)
-**Tests**: replica_set.go:232, :560, deployment.go:1259, sysctl.go:100, service.go:768, statefulset.go:957, and many others
 - **Error**: 1123 `Watch failed: context canceled` per conformance run
-- **Root cause**: ALL 11 LIST handlers used `chrono::Utc::now().timestamp()` as the list-level resourceVersion (producing ~1.7 billion). Individual items had etcd mod_revisions (~75,000). When client-go does LIST+WATCH, it starts the watch from the LIST's resourceVersion. Etcd will NEVER reach revision 1.7 billion, so every watch immediately fails. The retry watcher retries every second, producing 1123 failures per run.
-- **K8s ref**: LIST resourceVersion must be the highest etcd mod_revision from the items.
-- **Verified**: `curl /api/v1/pods` returned list RV=1776302579 but items had RV=75027.
+- **Root cause**: ALL 11 LIST handlers used `chrono::Utc::now().timestamp()` (~1.7 billion) as the list resourceVersion. Items had etcd mod_revisions (~75,000). LIST+WATCH starts the watch from the LIST's RV, but etcd will never reach 1.7 billion → every watch fails immediately.
+- **Verified**: `curl /api/v1/pods` returned list RV=1776302579, items had RV=75027.
+- **Impact**: Systemic — affects every test that uses LIST+WATCH (deployment, RS, SS, service, sysctl, preemption, DaemonSet, etc.).
+
+### FIX 9: Init Container Restart Tracking
+- **Error**: "first init container should have exitCode != 0" (exitCode was 0)
+- **Root cause**: `get_init_container_statuses()` always set `restart_count: 0` and `last_state: None`. When a failed init container was removed and recreated, restart history was lost. Test expects `restart_count >= 3`.
+- **K8s ref**: `pkg/kubelet/kuberuntime/kuberuntime_container.go`
+
+### FIX 10: ResourceQuota cpu/memory Aliases
+- **Error**: "Expected an error to have occurred. Got: nil" — pod created despite exceeding quota
+- **Root cause**: Quota check only looked for `"requests.cpu"` key, but the test's quota used `"cpu"` (K8s alias). Also, quota check errors were silently ignored instead of rejecting the pod.
+- **K8s ref**: `pkg/quota/v1/evaluator/core/pods.go`
+
+### FIX 11: Exec Websocket Success Status
+- **Error**: "websocket: close 1005 (no status)"
+- **Root cause**: K8s v4/v5 exec protocol requires a status JSON on channel 3 for ALL exit codes. We only sent status for non-zero exits. The client's error stream reader blocks waiting for status; without it, it gets a close frame without data → "close 1005".
+- **K8s ref**: `staging/src/k8s.io/client-go/tools/remotecommand/v4.go`
+
+### FIX 12: Docker 409 Container Conflicts
+- **Error**: "Told to stop trying after 2.004s" / "expected pod success" (1014 Docker 409 errors per run)
+- **Root cause**: When removing a conflicting container, we waited only 100ms before retrying create. Docker needs more time to release container names. Also didn't stop running containers before removing.
+- **Fix**: Stop container first, increase wait to 500ms, check remove result.
 
 ## Remaining Unfixed Issues
 
-### Pod/Container Startup Failures (Docker 409)
-**Tests**: kubelet.go:53, :186, runtime.go:165, output.go:263, :282, projected_secret.go:371, hostport.go:219
-- **Error**: "Told to stop trying after 2.004s" / "expected pod success"
-- **Root cause**: Docker 409 conflicts (container name already in use) and pause container failures (cannot join network namespace of exited container). Infrastructure issue with Docker container lifecycle.
-
-### Init Container Exit Code
-**Tests**: init_container.go:440
-- **Error**: "first init container should have exitCode != 0" but got exitCode=0
-- **Root cause**: Init container should fail but completes successfully. May be a test-specific issue with how we handle init container restarts.
-
-### Exec Websocket Close
-**Tests**: exec_util.go:113
-- **Error**: "websocket: close 1005 (no status)"
-- **Root cause**: Exec websocket closes without proper close frame. Our handler sends close(1000) but it may not reach client before TCP drops.
+### Pod Startup Failures (partially addressed by fix 12)
+**Tests**: kubelet.go:53, :186, runtime.go:129, :165, output.go:263, :282, projected_secret.go:371, hostport.go:219, rc.go:509, deployment.go:995, proxy.go:503
+- **Error**: "Told to stop trying" / "expected pod success" / pod timeout
+- **Root cause**: Docker 409 conflicts cause container creation to fail. Fix 12 mitigates by stopping before removing and increasing wait, but concurrent kubelet sync cycles can still race on the same container name. Pods on these tests never reach Ready.
+- **Downstream impact**: Also causes aggregator.go:359, service.go:251/:768/:4271, service_latency.go:145, proxy.go:271 (services have no ready endpoints because pods didn't start).
 
 ### Webhook Attach Denial
 **Tests**: webhook.go:1481
-- **Error**: "unexpected 'kubectl attach' error message — expected 'attaching to pod is not allowed', got 'broken pipe'"
-- **Root cause**: Webhook denies attach but our error handling returns wrong error format. The attach connection breaks before the denial message reaches kubectl.
+- **Error**: "expected 'attaching to pod is not allowed', got 'broken pipe'"
+- **Root cause**: Webhook denies attach request but the connection breaks before the denial message reaches kubectl. Our attach handler may not properly propagate webhook denial errors over the websocket/SPDY connection.
 
-### Service/kube-proxy
-**Tests**: service.go:251, :768, :3459
-- **Error**: "Affinity shouldn't hold" / "Affinity should hold" / "service not reachable" / "failed to delete Service"
-- **Root cause**: kube-proxy session affinity timeout and endpoint routing issues.
-
-### StatefulSet Controller
-**Tests**: statefulset.go:957
-- **Error**: "Pod ss-0 expected to be re-created at least once"
-- **Root cause**: May be fixed by LIST resourceVersion fix (test uses watches). Otherwise, SS controller reconciliation issue.
-
-### Aggregator
-**Tests**: aggregator.go:359
-- **Error**: sample-apiserver deployment never ready (ReadyReplicas: 0)
-- **Root cause**: Sample API server pod failing to start.
-
-### kubectl replace
+### kubectl replace CAS Conflict
 **Tests**: builder.go:97
-- **Error**: "error running kubectl replace -f"
-- **Root cause**: PUT semantics issue.
+- **Error**: "the object has been modified; please apply your changes to the latest version" (stored RV: 31356, provided: 31348)
+- **Root cause**: Between kubectl read and write, the kubelet or controller updated the pod's resourceVersion. This is a race condition exacerbated by frequent status updates.
 
-### ReplicaSet Scale
-**Tests**: replica_set.go:560
-- **Error**: "failed to see replicas of test-rs scale to requested amount of 3"
-- **Root cause**: Likely fixed by LIST resourceVersion fix (watch-dependent). Otherwise RS controller issue.
-
-### Job Failure
+### Job Failure Detection
 **Tests**: job.go:144
-- **Error**: "failed to ensure job failure"
-- **Root cause**: Job controller not marking job as failed within timeout.
-
-### Webhook Slow/Timeout (additional)
-**Tests**: webhook.go:1481, webhook.go:2491
-- **Error**: :1481 — "unexpected kubectl attach error — expected 'not allowed', got 'broken pipe'"; :2491 — "expect HTTP/dial timeout error, got 'failed to call webhook'"
-- **Root cause**: :2491 is same as fix 3 (cause chain not in error). :1481 is attach connection breaking before denial message delivered.
-
-### Proxy
-**Tests**: proxy.go:271
-- **Error**: "Unable to reach service through proxy: context deadline exceeded"
-- **Root cause**: API server proxy endpoint not forwarding to service.
-
-### DaemonSet
-**Tests**: daemon_set.go:1276
-- **Error**: "Expected 0 to equal 1"
-- **Root cause**: DaemonSet pod not running on node.
+- **Error**: "job completed while waiting for its failure"
+- **Root cause**: Job's init container should exit non-zero, causing the job to fail. But our kubelet may report exitCode 0 for the init container (related to Docker inspect timing), causing the job to complete instead of fail.
 
 ### Pod Resize
 **Tests**: pod_resize.go:857
-- **Status**: Partially implemented. Known issue from previous rounds.
+- **Status**: Partially implemented from previous rounds. API sets resize=Proposed, kubelet calls Docker update, but some containers don't get cgroup updates.
+
+### Preemption
+**Tests**: preemption.go:877
+- **Error**: "failed pod observation expectations: context deadline exceeded"
+- **Root cause**: Watch-dependent test. Likely fixed by fix 8 (LIST resourceVersion). If not, scheduler preemption may need investigation.
+
+## Failure-to-Fix Mapping
+
+### Expected to be fixed by deployed fixes:
+| Fix | Tests |
+|-----|-------|
+| 1 (RC selector) | rc.go:623, garbage_collector.go:436 |
+| 2 (matchConditions) | webhook.go:932, :2222, :2164 |
+| 3 (deadline) | webhook.go:1400, :2491 |
+| 4 (SMP order) | statefulset.go:1092 |
+| 5 (conditions) | init_container.go:235 |
+| 6 (defaults) | webhook.go:1352 |
+| 7 (CRD items) | crd_publish_openapi.go:77, :184, :225, :267, :285, :318, :366, :400, :451 |
+| 8 (LIST RV) | replica_set.go:232, :560, deployment.go:1259, sysctl.go:100, statefulset.go:957, daemon_set.go:1276, service.go:3459, service_latency.go:145, preemption.go:877 |
+| 9 (init restart) | init_container.go:440 |
+| 10 (quota alias) | resource_quota.go:290 |
+| 11 (exec ws) | exec_util.go:113 |
+| 12 (Docker 409) | kubelet.go:53, :186, runtime.go:129, :165, output.go:263, :282, projected_secret.go:371, hostport.go:219, rc.go:509 |
+| 12 downstream | aggregator.go:359, deployment.go:995, proxy.go:271, :503, service.go:251, :768, :4271 |
+
+### Likely still failing after deployment:
+- webhook.go:1481 (attach denial format)
+- builder.go:97 (CAS race)
+- job.go:144 (init container exit code timing)
+- pod_resize.go:857 (known partial)
 
 ## Progress History
 
@@ -151,16 +150,15 @@
 | 144 | ~375 | ~60 | 441 | ~85.1% |
 | 146 | 379 | 62 | 441 | 85.9% (pre-fix baseline) |
 
-## Commits
+## Commits (This Round)
 
 ```
-4e91110 docs: Final tracker update — 8 fixes, expect 25-30 of 36 tests fixed
-7705532 docs: Add LIST resourceVersion fix — 8 total fixes, biggest systemic fix
+f23bfeb fix: Docker container name 409 conflict — stop before remove, increase wait
+92d6314 fix: Always send Success status on exec websocket channel 3
+d120ea1 fix: ResourceQuota check cpu/memory aliases and fail on quota errors
+e1e3da2 fix: Track init container restart_count and last_state across recreations
 74dfb4b fix: Use etcd mod_revision for LIST resourceVersion instead of timestamps
-6ba7757 docs: Add watch context canceled and DaemonSet categories to tracker
-3a224ab docs: Add CRD OpenAPI items fix to tracker — 7 fixes total
 ecb67b7 fix: Unwrap CRD items schema for OpenAPI v2 compatibility
-02e1581 docs: Update conformance tracker with 36+ failures and 6 fixes
 0f001e5 fix: Re-apply defaults after mutating webhooks (terminationMessagePolicy)
 3930fe8 fix: 5 conformance fixes — RC selector, webhook matchConditions, SMP ordering, pod conditions
 ```
