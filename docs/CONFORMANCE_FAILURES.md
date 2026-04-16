@@ -2,7 +2,7 @@
 
 **Round 146** | 379/441 passed (85.9%) — 62 failed | 2026-04-15
 
-## Fixes Applied (8 total, not yet deployed)
+## Fixes Applied (10 total, not yet deployed)
 
 | # | Fix | Root Cause | Fix Location | Tests Expected to Fix |
 |---|-----|-----------|-------------|----------------------|
@@ -14,6 +14,8 @@
 | 6 | Defaults after mutation | K8s runs SetDefaults twice (before AND after webhooks) | api-server/handlers/pod.rs | webhook.go:1352 |
 | 7 | CRD OpenAPI items unwrap | items had extra {"schema": {...}} wrapper for Swagger v2 | api-server/handlers/openapi.rs | 10 crd_publish_openapi.go tests |
 | 8 | LIST resourceVersion | All 11 LIST handlers used timestamps instead of etcd mod_revisions | 7 handler files | systemic watch failures across many tests |
+| 9 | Init container restart tracking | restart_count always 0, last_state always None | kubelet/runtime.rs | init_container.go:440 |
+| 10 | ResourceQuota cpu/memory aliases | "cpu" alias for "requests.cpu" not handled; errors silently passed | api-server/admission.rs, handlers/pod.rs | resource_quota.go:290 |
 
 ## Root Cause Analysis
 
