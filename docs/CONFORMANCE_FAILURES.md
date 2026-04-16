@@ -1,6 +1,6 @@
 # Conformance Failure Tracker
 
-**Round 146** | 43 unique test failures (run still in progress) | 2026-04-15
+**Round 146** | 44+ unique test failures (run still in progress) | 2026-04-15
 
 ## Fixes Applied (8 total, not yet deployed)
 
@@ -118,10 +118,15 @@
 - **Error**: "failed to ensure job failure"
 - **Root cause**: Job controller not marking job as failed within timeout.
 
+### Webhook Slow/Timeout (additional)
+**Tests**: webhook.go:1481, webhook.go:2491
+- **Error**: :1481 — "unexpected kubectl attach error — expected 'not allowed', got 'broken pipe'"; :2491 — "expect HTTP/dial timeout error, got 'failed to call webhook'"
+- **Root cause**: :2491 is same as fix 3 (cause chain not in error). :1481 is attach connection breaking before denial message delivered.
+
 ### Proxy
 **Tests**: proxy.go:271
 - **Error**: "Unable to reach service through proxy: context deadline exceeded"
-- **Root cause**: Aggregator proxy or service proxy not functioning.
+- **Root cause**: API server proxy endpoint not forwarding to service.
 
 ### DaemonSet
 **Tests**: daemon_set.go:1276
