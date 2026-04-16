@@ -2166,6 +2166,20 @@ impl Kubelet {
                                         }
                                     }
                                 }
+                                // After restarting containers, immediately update status
+                                // to reflect Running state. Without this, the status shows
+                                // CrashLoopBackOff/Waiting until the next sync cycle (5s),
+                                // causing runtime.go:129 to see wrong state.
+                                // K8s PLEG updates status immediately on container events.
+                                if let Ok(fresh_statuses) = self.runtime.get_container_statuses(pod).await {
+                                    let key = build_key("pods", Some(namespace), pod_name);
+                                    if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                                        if let Some(ref mut s) = p.status {
+                                            s.container_statuses = Some(fresh_statuses);
+                                        }
+                                        let _ = self.storage.update(&key, &p).await;
+                                    }
+                                }
                             }
                         }
                     }
