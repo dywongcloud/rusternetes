@@ -319,7 +319,7 @@ pub async fn get_api_groups(
             .unwrap();
     }
 
-    let groups = vec![
+    let mut groups = vec![
         // apps API group
         APIGroup {
             name: "apps".to_string(),
@@ -603,6 +603,51 @@ pub async fn get_api_groups(
             },
         },
     ];
+
+    // Dynamically add CRD groups to the non-aggregated discovery response.
+    // kubectl uses this to find resources by GVK. Without CRD groups here,
+    // kubectl create/explain fails with "no matches for kind".
+    // K8s ref: apiextensions-apiserver registers CRD API groups dynamically.
+    if let Some(axum::extract::State(ref st)) = state {
+        use rusternetes_storage::Storage;
+        let crd_prefix = rusternetes_storage::build_prefix("customresourcedefinitions", None);
+        if let Ok(crds) = st.storage.list::<serde_json::Value>(&crd_prefix).await {
+            let mut seen_groups: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for crd in &crds {
+                let group = crd.pointer("/spec/group").and_then(|v| v.as_str());
+                let versions_arr = crd.pointer("/spec/versions").and_then(|v| v.as_array());
+                if let (Some(group), Some(versions_arr)) = (group, versions_arr) {
+                    if seen_groups.contains(group) {
+                        continue;
+                    }
+                    seen_groups.insert(group.to_string());
+                    let mut gv_versions = Vec::new();
+                    let mut preferred = None;
+                    for ver in versions_arr {
+                        let ver_name = ver.get("name").and_then(|v| v.as_str()).unwrap_or("v1");
+                        let served = ver.get("served").and_then(|v| v.as_bool()).unwrap_or(false);
+                        if served {
+                            let gv = GroupVersionForDiscovery {
+                                group_version: format!("{}/{}", group, ver_name),
+                                version: ver_name.to_string(),
+                            };
+                            if preferred.is_none() {
+                                preferred = Some(gv.clone());
+                            }
+                            gv_versions.push(gv);
+                        }
+                    }
+                    if !gv_versions.is_empty() {
+                        groups.push(APIGroup {
+                            name: group.to_string(),
+                            versions: gv_versions,
+                            preferred_version: preferred.unwrap(),
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     let api_group_list = APIGroupList {
         kind: "APIGroupList".to_string(),
