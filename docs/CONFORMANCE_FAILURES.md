@@ -59,7 +59,7 @@
 | 15 | Skip unchanged status writes |
 | 16 | Pod resize memory_swap |
 
-### Pending Deploy (17-30)
+### Pending Deploy (17-31)
 
 | # | Fix |
 |---|-----|
@@ -77,6 +77,7 @@
 | 28 | Kubelet hostPort admission (reject with Phase=Failed) |
 | 29 | Scheduler extended resource checking |
 | 30 | CRD OpenAPI x-kubernetes-group-version-kind extension |
+| 31 | Wait for pause container running before app containers |
 
 ## Progress History
 

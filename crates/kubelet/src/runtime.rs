@@ -1362,20 +1362,28 @@ impl ContainerRuntime {
             .await
             .context("Failed to start pause container")?;
 
-        // Wait for pause container to be fully running before starting app containers.
-        // Docker's start_container API returns before the container reaches "running" state.
-        // App containers that join the pause container's network namespace fail with
-        // "cannot join network namespace of a non running container" if pause isn't ready.
-        for _ in 0..10 {
-            if let Ok(info) = self.docker.inspect_container(&pause_name, None::<InspectContainerOptions>).await {
-                if info.state.as_ref().and_then(|s| s.running).unwrap_or(false) {
-                    break;
+        // K8s CRI RunPodSandbox is synchronous — returns only after the sandbox
+        // is running. Docker's start_container returns immediately. We must block
+        // until the pause container is confirmed running, otherwise app containers
+        // fail with "cannot join network namespace of a non running container".
+        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_sandbox.go — RunPodSandbox
+        {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                match self.docker.inspect_container(&pause_name, None::<InspectContainerOptions>).await {
+                    Ok(info) if info.state.as_ref().and_then(|s| s.running).unwrap_or(false) => break,
+                    Ok(_) if std::time::Instant::now() > deadline => {
+                        anyhow::bail!("Pause container {} did not reach running state within 10s", pause_name);
+                    }
+                    Err(e) if std::time::Instant::now() > deadline => {
+                        anyhow::bail!("Pause container {} inspect failed after 10s: {}", pause_name, e);
+                    }
+                    _ => tokio::time::sleep(std::time::Duration::from_millis(50)).await,
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
-        info!("Pause container {} started", pause_name);
+        info!("Pause container {} running", pause_name);
 
         // Inspect to get the assigned IP
         let inspect = self
