@@ -89,11 +89,13 @@
 **Affected tests**: pod_resize.go:857
 - **Status**: Partially implemented. Resize works for some containers but not all.
 
-### Category 16: Watch "context canceled" — NOT YET FIXED
-**Affected tests**: replica_set.go:232, sysctl.go:100, and others (cross-cutting)
+### Category 16: LIST resourceVersion Mismatch — FIX APPLIED
+**Affected tests**: replica_set.go:232, sysctl.go:100, deployment.go:1259, service.go:768, and others (cross-cutting)
 - **Error**: 1123 occurrences of `Watch failed: context canceled` in e2e logs
-- **Root cause**: Client-go watches connect but immediately get canceled. Only 11 server-side errors vs 1123 client-side. Likely HTTP/2 streaming issue — connections drop silently. Transfer-Encoding: chunked header is prohibited in HTTP/2 (RFC 7540 §8.1.2.2) but we set it on watch responses.
-- **Impact**: Systemic — affects any test that uses watches for readiness checks.
+- **Root cause**: ALL LIST handlers used `chrono::Utc::now().timestamp()` as the list resourceVersion (producing values like `1776302554`). Individual items had etcd mod_revisions (like `75027`). When client-go does LIST+WATCH, it starts the watch from the LIST's resourceVersion — but etcd will never reach revision 1776302554, so every watch immediately fails. The retry watcher retries every second, producing 1123 failures per run.
+- **K8s ref**: LIST resourceVersion must be the highest etcd mod_revision from the items.
+- **Fix**: Replaced all 11 timestamp-based RVs with `list_resource_version()` which computes max etcd mod_revision from items.
+- **Impact**: This is the single biggest fix — it should resolve watch-dependent failures across deployment, replica_set, sysctl, service, and many other tests.
 
 ### Category 17: DaemonSet Pod Count — NOT YET FIXED
 **Affected tests**: daemon_set.go:1276
@@ -111,6 +113,7 @@
 | 5 | Pod Succeeded conditions | kubelet/kubelet.rs | init_container.go:235 |
 | 6 | Defaults after mutation | api-server/handlers/pod.rs | webhook.go:1352 |
 | 7 | CRD items schema unwrap | api-server/handlers/openapi.rs | crd_publish_openapi.go (8 tests) |
+| 8 | LIST resourceVersion fix | 7 handler files | systemic watch failures (many tests) |
 
 ## Expected Impact
 
