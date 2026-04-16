@@ -87,6 +87,8 @@
 | 30 | CRD OpenAPI x-kubernetes-group-version-kind extension |
 | 31 | start_pause_container blocks until running (CRI RunPodSandbox semantics) |
 | 32 | EmptyDir uses container-local path for POSIX permission support |
+| 33 | CRD structural pruning (remove unknown fields after webhook mutation) |
+| 34 | Webhook timeout error normalized to include "deadline" |
 
 ## Progress History
 
