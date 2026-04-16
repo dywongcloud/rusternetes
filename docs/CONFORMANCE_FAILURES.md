@@ -87,37 +87,12 @@
 - **Root cause**: When removing a conflicting container, we waited only 100ms before retrying create. Docker needs more time to release container names. Also didn't stop running containers before removing.
 - **Fix**: Stop container first, increase wait to 500ms, check remove result.
 
-## Remaining Unfixed Issues
+## Remaining Risk
 
-### Pod Startup Failures (partially addressed by fix 12)
-**Tests**: kubelet.go:53, :186, runtime.go:129, :165, output.go:263, :282, projected_secret.go:371, hostport.go:219, rc.go:509, deployment.go:995, proxy.go:503
-- **Error**: "Told to stop trying" / "expected pod success" / pod timeout
-- **Root cause**: Docker 409 conflicts cause container creation to fail. Fix 12 mitigates by stopping before removing and increasing wait, but concurrent kubelet sync cycles can still race on the same container name. Pods on these tests never reach Ready.
-- **Downstream impact**: Also causes aggregator.go:359, service.go:251/:768/:4271, service_latency.go:145, proxy.go:271 (services have no ready endpoints because pods didn't start).
-
-### Webhook Attach Denial
-**Tests**: webhook.go:1481
-- **Error**: "expected 'attaching to pod is not allowed', got 'broken pipe'"
-- **Root cause**: Webhook denies attach request but the connection breaks before the denial message reaches kubectl. Our attach handler may not properly propagate webhook denial errors over the websocket/SPDY connection.
-
-### kubectl replace CAS Conflict
-**Tests**: builder.go:97
-- **Error**: "the object has been modified; please apply your changes to the latest version" (stored RV: 31356, provided: 31348)
-- **Root cause**: Between kubectl read and write, the kubelet or controller updated the pod's resourceVersion. This is a race condition exacerbated by frequent status updates.
-
-### Job Failure Detection
-**Tests**: job.go:144
+### job.go:144 — Job Failure Detection
 - **Error**: "job completed while waiting for its failure"
-- **Root cause**: Job's init container should exit non-zero, causing the job to fail. But our kubelet may report exitCode 0 for the init container (related to Docker inspect timing), causing the job to complete instead of fail.
-
-### Pod Resize
-**Tests**: pod_resize.go:857
-- **Status**: Partially implemented from previous rounds. API sets resize=Proposed, kubelet calls Docker update, but some containers don't get cgroup updates.
-
-### Preemption
-**Tests**: preemption.go:877
-- **Error**: "failed pod observation expectations: context deadline exceeded"
-- **Root cause**: Watch-dependent test. Likely fixed by fix 8 (LIST resourceVersion). If not, scheduler preemption may need investigation.
+- **Root cause**: Pod can't start due to Docker 409, so no exit code is captured. Fix 14 (per-pod sync lock) eliminates the Docker 409 race, which should allow the pod to start and exit with code 1 as intended.
+- **Risk**: If Docker 409 still occurs despite fix 14, this test will still fail.
 
 ## Failure-to-Fix Mapping
 
@@ -135,11 +110,12 @@
 | 9 (init restart) | init_container.go:440 |
 | 10 (quota alias) | resource_quota.go:290 |
 | 11 (exec ws) | exec_util.go:113 |
-| 12 (Docker 409) | kubelet.go:53, :186, runtime.go:129, :165, output.go:263, :282, projected_secret.go:371, hostport.go:219, rc.go:509 |
-| 12 downstream | aggregator.go:359, deployment.go:995, proxy.go:271, :503, service.go:251, :768, :4271 |
-
-### Likely still failing after deployment:
-- job.go:144 (downstream of Docker 409 — pod can't start, so exit code never captured; fix 14 may resolve)
+| 12+14 (Docker 409) | kubelet.go:53, :186, runtime.go:129, :165, output.go:263, :282, projected_secret.go:371, hostport.go:219, rc.go:509 |
+| 12+14 downstream | aggregator.go:359, deployment.go:995, proxy.go:271, :503, service.go:251, :768, :4271 |
+| 13 (attach webhook) | webhook.go:1481 |
+| 14 (sync lock) | job.go:144 (pod can start → exit code captured → policy triggers) |
+| 15 (status diff) | builder.go:97 |
+| 16 (memory_swap) | pod_resize.go:857 |
 
 ## Progress History
 
