@@ -1,95 +1,93 @@
 # Conformance Failure Tracker
 
-**Round 147** | Complete — 398/441 passed (90.2%) — 43 failed | 2026-04-16
-**Baseline**: Round 146 = 62 failures (85.9%)
+**Round 147** | 398/441 (90.2%) — 43 failed | 2026-04-16
+**Round 146** | 379/441 (85.9%) — 62 failed
 
-## Still Failing (43 tests) — Round 147
+## Issues Still Needing Fixes
 
-| # | Test | Category |
-|---|------|----------|
-| 1 | webhook.go:1481 — deny attaching pod | Webhook admission |
-| 2 | webhook.go:2164 — deny CR creation/update/deletion | Webhook admission |
-| 3 | webhook.go:1400 — deny pod and configmap creation | Webhook admission |
-| 4 | webhook.go:2491 — honor timeout | Webhook admission |
-| 5 | webhook.go:2222 — mutate CR with pruning | Webhook admission |
-| 6 | aggregator.go:359 — Sample API Server | Aggregator proxy |
-| 7 | crd_publish_openapi.go:451 — removes def when version not served | CRD OpenAPI |
-| 8 | crd_publish_openapi.go:400 — updates spec when version renamed | CRD OpenAPI |
-| 9 | crd_publish_openapi.go:225 — preserving unknown fields at root | CRD OpenAPI |
-| 10 | crd_publish_openapi.go:253 — preserving unknown in embedded | CRD OpenAPI |
-| 11 | crd_publish_openapi.go:77 — CRD with validation schema | CRD OpenAPI |
-| 12 | crd_publish_openapi.go:170 — CRD without validation schema | CRD OpenAPI |
-| 13 | crd_publish_openapi.go:285 — multiple CRDs different groups | CRD OpenAPI |
-| 14 | crd_publish_openapi.go:366 — same group/version different kinds | CRD OpenAPI |
-| 15 | crd_publish_openapi.go:318 — same group different versions | CRD OpenAPI |
-| 16 | garbage_collector.go:436 — orphan pods from RC | GC |
-| 17 | resource_quota.go:302 — capture life of a pod | ResourceQuota |
-| 18 | chunking.go:194 — continue after compaction | Pagination |
-| 19 | daemon_set.go:1276 — RollingUpdate pod update | DaemonSet |
-| 20 | deployment.go:1259 — proportional scaling | Deployment |
-| 21 | deployment.go:995 — rollover | Deployment |
-| 22 | replica_set.go:232 — basic image on each replica | ReplicaSet |
-| 23 | rc.go:538 — basic image on each replica | ReplicationController |
-| 24 | statefulset.go:957 — recreate evicted statefulset | StatefulSet |
-| 25 | hostport.go:219 — no conflict different hostIP/protocol | HostPort |
-| 26 | proxy.go:503 — valid responses for pod and service Proxy | Proxy |
-| 27 | proxy.go:271 — proxy through service and pod | Proxy |
-| 28 | service_latency.go:145 — endpoint latency not very high | Service |
-| 29 | service.go:251 — switch session affinity NodePort | Service |
-| 30 | service.go:251 — switch session affinity ClusterIP | Service |
-| 31 | service.go:3459 — service status lifecycle | Service |
-| 32 | service.go:251 — session affinity for NodePort | Service |
-| 33 | service.go:768 — serve basic endpoint from pods | Service |
-| 34 | runtime.go:129 — container exit expected status | Node/Runtime |
-| 35 | init_container.go:235 — invoke init on RestartNever | Init container |
-| 36 | init_container.go:440 — not start app if init fails RestartAlways | Init container |
-| 37 | pods.go:600 — remote command over websockets | Exec |
-| 38 | pre_stop.go:153 — call prestop when killing pod | Node lifecycle |
-| 39 | preemption.go:877 — preemption running path | Scheduling |
-| 40 | output.go:263 — EmptyDir (non-root,0666,default) | EmptyDir perms |
-| 41 | output.go:263 — EmptyDir (non-root,0777,default) | EmptyDir perms |
-| 42 | output.go:263 — EmptyDir (root,0666,default) | EmptyDir perms |
-| 43 | output.go:263 — EmptyDir (root,0777,default) | EmptyDir perms |
+| # | Test | Error | Root Cause |
+|---|------|-------|-----------|
+| 1 | rc.go:538 | pod running but HTTP timeout | Pod-to-pod network routing across Docker containers doesn't work |
+| 2 | proxy.go:271 | "Unable to reach service through proxy" | Same network issue — API server can't reach pod IPs |
+| 3 | pre_stop.go:153 | "validating pre-stop: timed out" | Test validates via pod proxy which hits same network issue |
+| 4 | runtime.go:129 | container state not Running after restart | Kubelet restarts containers on 5s sync cycle; test checks state between restarts |
 
-## All Fixes (31 total, all deployed in Round 147)
+## Issues Fixed But Not Yet Deployed (next round should pass)
 
-| # | Fix |
-|---|-----|
-| 1 | RC selector defaulting from template labels |
-| 2 | Webhook matchConditions CEL evaluation |
-| 3 | Webhook timeout "deadline" in error message |
-| 4 | SMP array ordering (patch items first) |
-| 5 | Pod Succeeded conditions (PodInitialized=True) |
-| 6 | Defaults after mutation (SetDefaults twice) |
-| 7 | CRD OpenAPI items unwrap |
-| 8 | LIST resourceVersion (etcd mod_revision not timestamp) |
-| 9 | Init container restart tracking |
-| 10 | ResourceQuota cpu/memory aliases |
-| 11 | Exec websocket Success status on channel 3 |
-| 12 | Docker 409 wait (stop before remove, 500ms) |
-| 13 | Attach webhook validation |
-| 14 | Per-pod sync lock (prevent concurrent sync_pod) |
-| 15 | Skip unchanged status writes |
-| 16 | Pod resize memory_swap |
-| 17 | Pod conditions runtime.rs Succeeded path |
-| 18 | Webhook URL timeout param (?timeout=Ns) |
-| 19 | Pagination staleness (remove item count check) |
-| 20 | Webhook resource "pods" not "pods/attach" |
-| 21 | v1 protocol skip channel 3 status |
-| 22 | CR update validating webhooks |
-| 23 | Extended resource quota checking |
-| 24 | CRD raw JSON storage (preserve enum) |
-| 25 | RC orphan all-or-nothing (retry if any PATCH fails) |
-| 26 | GC debug logging |
-| 27 | GC owner re-verification before delete |
-| 28 | Kubelet hostPort admission (reject with Phase=Failed) |
-| 29 | Scheduler extended resource checking |
-| 30 | CRD OpenAPI x-kubernetes-group-version-kind extension |
-| 31 | start_pause_container blocks until running (CRI RunPodSandbox semantics) |
-| 32 | EmptyDir uses container-local path for POSIX permission support |
-| 33 | CRD structural pruning (remove unknown fields after webhook mutation) |
-| 34 | Webhook timeout error normalized to include "deadline" |
-| 35 | CRD groups in non-aggregated API discovery (/apis) |
+| Test | Fix # | What was wrong |
+|------|-------|---------------|
+| webhook.go:1481 | 20 | Resource sent as "pods/attach" instead of "pods" |
+| webhook.go:2164 | 22 | CR update handler didn't run validating webhooks |
+| webhook.go:1400 | 34 | Timeout error missing "deadline" (reqwest says "operation timed out") |
+| webhook.go:2491 | 18+34 | Missing ?timeout=Ns in URL + missing "deadline" |
+| webhook.go:2222 | 33 | CRD structural pruning not implemented — unknown fields persisted |
+| crd_publish_openapi.go (9 tests) | 24+30+35 | CRD update lost enum, missing GVK extension, CRD groups missing from /apis discovery |
+| garbage_collector.go:436 | 25+27 | Orphan finalizer removed before all pods orphaned + GC snapshot was racy |
+| resource_quota.go:302 | 23 | Extended resources (requests.example.com/foo) not checked |
+| chunking.go:194 | 19 | Item count change invalidated pagination tokens |
+| daemon_set.go:1276 | 27 | GC deleted DaemonSet pods (owner not in snapshot) |
+| statefulset.go:957 | 28 | Kubelet didn't reject pods with hostPort conflicts |
+| init_container.go:235 | 17 | Missed Succeeded path in runtime.rs |
+| init_container.go:440 | 9 | restart_count always 0, last_state always None |
+| pods.go:600 | 21 | v1 websocket protocol doesn't use channel 3 |
+| preemption.go:877 | 29 | Scheduler didn't check extended resources (fakecpu) |
+| output.go:263 (4 tests) | 32 | EmptyDir on host bind mount lost POSIX permissions |
+
+## Issues Expected to Be Fixed by Docker Timing Fix (31)
+
+These all fail because pods can't start — the pause container isn't fully running before app containers try to join its network namespace.
+
+| Test | Error |
+|------|-------|
+| aggregator.go:359 | sample-apiserver deployment not ready |
+| deployment.go:1259, :995 | RS never had desired availableReplicas |
+| replica_set.go:232 | pod responses timeout |
+| hostport.go:219 | pod2 startup timeout |
+| proxy.go:503 | pod didn't start |
+| service_latency.go:145 | deployment not ready |
+| service.go:251 (3 tests) | session affinity — no endpoints (pods not starting) |
+| service.go:768 | service not reachable — no endpoints |
+| service.go:3459 | service delete timeout |
+
+## All Fixes (35 total)
+
+| # | Fix | Deployed |
+|---|-----|---------|
+| 1 | RC selector defaulting from template labels | R147 |
+| 2 | Webhook matchConditions CEL evaluation | R147 |
+| 3 | Webhook timeout "deadline" in error message | R147 |
+| 4 | SMP array ordering (patch items first) | R147 |
+| 5 | Pod Succeeded conditions (PodInitialized=True) | R147 |
+| 6 | Defaults after mutation (SetDefaults twice) | R147 |
+| 7 | CRD OpenAPI items unwrap | R147 |
+| 8 | LIST resourceVersion (etcd mod_revision not timestamp) | R147 |
+| 9 | Init container restart tracking | R147 |
+| 10 | ResourceQuota cpu/memory aliases | R147 |
+| 11 | Exec websocket Success status on channel 3 | R147 |
+| 12 | Docker 409 wait (stop before remove, 500ms) | R147 |
+| 13 | Attach webhook validation | R147 |
+| 14 | Per-pod sync lock (prevent concurrent sync_pod) | R147 |
+| 15 | Skip unchanged status writes | R147 |
+| 16 | Pod resize memory_swap | R147 |
+| 17 | Pod conditions runtime.rs Succeeded path | Pending |
+| 18 | Webhook URL timeout param (?timeout=Ns) | Pending |
+| 19 | Pagination staleness (remove item count check) | Pending |
+| 20 | Webhook resource "pods" not "pods/attach" | Pending |
+| 21 | v1 protocol skip channel 3 status | Pending |
+| 22 | CR update validating webhooks | Pending |
+| 23 | Extended resource quota checking | Pending |
+| 24 | CRD raw JSON storage (preserve enum) | Pending |
+| 25 | RC orphan all-or-nothing (retry if any PATCH fails) | Pending |
+| 26 | GC debug logging | Pending |
+| 27 | GC owner re-verification before delete | Pending |
+| 28 | Kubelet hostPort admission (reject with Phase=Failed) | Pending |
+| 29 | Scheduler extended resource checking | Pending |
+| 30 | CRD OpenAPI x-kubernetes-group-version-kind extension | Pending |
+| 31 | start_pause_container blocks until running (CRI semantics) | Pending |
+| 32 | EmptyDir uses container-local path for POSIX permissions | Pending |
+| 33 | CRD structural pruning (remove unknown fields) | Pending |
+| 34 | Webhook timeout error normalized to include "deadline" | Pending |
+| 35 | CRD groups in non-aggregated API discovery (/apis) | Pending |
 
 ## Progress History
 
@@ -97,4 +95,4 @@
 |-------|------|------|-------|------|
 | 141 | 368 | 73 | 441 | 83.4% |
 | 146 | 379 | 62 | 441 | 85.9% |
-| 147 | 398 | 43 | 441 | 90.2% (all 31 fixes deployed) |
+| 147 | 398 | 43 | 441 | 90.2% |
