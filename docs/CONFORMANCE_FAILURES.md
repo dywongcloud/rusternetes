@@ -42,11 +42,12 @@
 - **K8s ref**: `staging/src/k8s.io/apiserver/pkg/endpoints/handlers/create.go`
 - **Fix**: Re-apply `apply_pod_spec_defaults` after webhook mutation in pod create handler.
 
-### Category 7: CRD OpenAPI Schema Publishing — NOT YET FIXED
-**Affected tests**: crd_publish_openapi.go:77, :184, :225, :267, :285, :366
-- **Error**: kubectl explain fails; schema comparison "not match" (identical except Go pointer addresses)
-- **Root cause**: The CRD OpenAPI schema comparison failure shows structurally identical schemas. The difference may be in a nil vs empty array/map distinction in the Items schema field, or a field that's zero-valued but present vs absent.
-- **Status**: Needs deeper investigation of the Items schema serialization.
+### Category 7: CRD OpenAPI Items Schema Wrapping — FIX APPLIED
+**Affected tests**: crd_publish_openapi.go:77, :184, :225, :267, :285, :318, :366, :451
+- **Error**: kubectl explain fails; schema comparison "not match"
+- **Root cause**: K8s CRD schemas store `items` as `{"schema": {...}}` (Go's JSONSchemaPropsOrArray format). OpenAPI v2 expects `items` to be a direct schema object. Our code copied the raw JSON without unwrapping, producing `items.schema.type` instead of `items.type`.
+- **K8s ref**: `vendor/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1/types_jsonschema.go`
+- **Fix**: Unwrap `{"schema": {...}}` wrapper from items in `strip_false_extensions()`.
 
 ### Category 8: Pod/Container Startup Failures — NOT YET FIXED
 **Affected tests**: kubelet.go:53, kubelet.go:186, runtime.go:165, output.go:263, projected_secret.go:371
@@ -98,16 +99,18 @@
 | 4 | SMP array ordering | api-server/patch.rs | statefulset.go:1092 |
 | 5 | Pod Succeeded conditions | kubelet/kubelet.rs | init_container.go:235 |
 | 6 | Defaults after mutation | api-server/handlers/pod.rs | webhook.go:1352 |
+| 7 | CRD items schema unwrap | api-server/handlers/openapi.rs | crd_publish_openapi.go (8 tests) |
 
 ## Expected Impact
 
-With fixes 1-6, we expect to fix approximately 11-13 of the 36 failures:
+With fixes 1-7, we expect to fix approximately 19-21 of the 36 failures:
 - Fix 1 (RC selector): rc.go, gc.go, possibly deployment.go, replica_set.go (2-4 tests)
-- Fix 2 (matchConditions): webhook.go:932, :2222, :2164, :1352 (4 tests, but :1352 also needs fix 6)
+- Fix 2 (matchConditions): webhook.go:932, :2222, :2164 (3 tests)
 - Fix 3 (deadline): webhook.go:1400 (1 test)
 - Fix 4 (SMP ordering): statefulset.go:1092 (1 test)
 - Fix 5 (conditions): init_container.go:235 (1 test)
-- Fix 6 (defaults after mutation): webhook.go:1352 (1 test, overlaps with fix 2)
+- Fix 6 (defaults after mutation): webhook.go:1352 (1 test)
+- Fix 7 (CRD items unwrap): crd_publish_openapi.go:77, :184, :225, :267, :285, :318, :366, :451 (8 tests)
 
 ## Progress History
 
