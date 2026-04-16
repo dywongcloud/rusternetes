@@ -1,6 +1,6 @@
 # Conformance Failure Tracker
 
-**Round 147** | In Progress — 33+ failures so far | 2026-04-16
+**Round 147** | Complete — 398/441 passed (90.2%) — 43 failed | 2026-04-16
 **Baseline**: Round 146 = 62 failures (85.9%)
 
 ## Fixed (pending deploy) — 14 fixes
@@ -85,4 +85,4 @@
 |-------|------|------|-------|------|
 | 141 | 368 | 73 | 441 | 83.4% |
 | 146 | 379 | 62 | 441 | 85.9% |
-| 147 | TBD | 33+ | 441 | ~93% est (in progress, fixes 1-16 deployed) |
+| 147 | 398 | 43 | 441 | 90.2% (fixes 1-16 deployed) |
