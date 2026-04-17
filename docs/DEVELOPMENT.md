@@ -9,19 +9,20 @@ How to build, test, and run Rusternetes locally.
 
 ## Project Structure
 
-Rusternetes is a Cargo workspace with 9 crates (161,000+ lines of Rust, 929 tests):
+Rusternetes is a Cargo workspace with 10 crates (161,000+ lines of Rust, 929 tests):
 
 | Crate | Purpose |
 |-------|---------|
 | `crates/common` | Shared resource types (Pod, Service, Deployment, etc.), errors, utilities |
 | `crates/api-server` | Axum-based REST API with 75+ handler files and router.rs |
-| `crates/storage` | Storage trait with etcd and in-memory backends |
+| `crates/storage` | Pluggable storage: etcd, SQLite (rhino), and in-memory backends |
 | `crates/controller-manager` | 31 reconciliation controllers |
 | `crates/kubelet` | Node agent, Docker container runtime via bollard |
 | `crates/kube-proxy` | iptables-based service routing (host network mode) |
 | `crates/scheduler` | Pod scheduling with affinity, taints, priority/preemption plugins |
 | `crates/kubectl` | CLI tool |
 | `crates/cloud-providers` | AWS/GCP/Azure integrations |
+| `crates/rusternetes` | All-in-one binary (all components as concurrent tokio tasks) |
 
 ## Build and Test
 

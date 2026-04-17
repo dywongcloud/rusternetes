@@ -5,7 +5,7 @@ server, scheduler, controller manager, kubelet, kube-proxy -- is written from
 scratch, implementing the real Kubernetes API surface, wire format, and
 behavioral semantics.
 
-**By the numbers:** 161,000+ lines of Rust across 9 crates. 31 controllers.
+**By the numbers:** 161,000+ lines of Rust across 10 crates. 31 controllers.
 75 API handler files. 307 registered routes. 929 tests. 328 conformance fixes
 applied across 8 rounds of testing against the official K8s e2e suite.
 
@@ -35,9 +35,10 @@ applied across 8 rounds of testing against the official K8s e2e suite.
 |  +-------------+-------------+                                     |
 |                |                                                   |
 |  +-------------v-------------+                                     |
-|  |     etcd Storage          |                                     |
+|  |  Storage (pluggable)      |                                     |
 |  |  /registry/{type}/...     |                                     |
 |  |  CAS via mod_revision     |                                     |
+|  |  etcd | SQLite (rhino)    |                                     |
 |  +---------------------------+                                     |
 +--------------------------------------------------------------------+
         |                              |
@@ -55,8 +56,10 @@ applied across 8 rounds of testing against the official K8s e2e suite.
                                +-------------------+
 ```
 
-All components communicate exclusively through the API server. Only the API
-server accesses etcd directly.
+All components communicate exclusively through the storage backend. The
+storage layer is pluggable: etcd (production), SQLite via rhino gRPC
+(lighter alternative), or embedded SQLite (all-in-one single binary).
+See [Storage Backends](storage/STORAGE_BACKENDS.md) for details.
 
 ---
 
@@ -67,16 +70,19 @@ rusternetes/
   crates/
     common/                # Shared types, 36 resource files in src/resources/
     api-server/            # Axum HTTPS API, 75 handler files, router.rs (2,135 lines)
-    storage/               # Storage trait, etcd + in-memory backends
+    storage/               # Storage trait, etcd/SQLite (rhino) + in-memory backends
     controller-manager/    # 31 controllers in src/controllers/
     scheduler/             # Filter/Score plugin architecture
     kubelet/               # Node agent, Docker runtime via bollard, CNI framework
     kube-proxy/            # iptables service routing, host network mode
     kubectl/               # CLI tool (get, create, apply, delete, logs, exec, ...)
     cloud-providers/       # AWS/GCP/Azure integrations
+    rusternetes/           # All-in-one binary (all components as tokio tasks)
   scripts/                 # Cluster bootstrap, cert generation, conformance runner
   docs/                    # Architecture, conformance, development guides
-  docker-compose.yml       # Full cluster definition
+  docker-compose.yml       # Full cluster with etcd
+  docker-compose.sqlite.yml # Full cluster with rhino/SQLite (no etcd)
+  Dockerfile.rhino         # Builds rhino gRPC server
 ```
 
 ---

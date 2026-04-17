@@ -1,6 +1,6 @@
 # Contributing to Rusternetes
 
-Thank you for your interest in contributing to Rusternetes. This is a Rust reimplementation of Kubernetes spanning 9 crates, 161,000+ lines of code, and 929 tests. This document covers everything you need to get started.
+Thank you for your interest in contributing to Rusternetes. This is a Rust reimplementation of Kubernetes spanning 10 crates, 161,000+ lines of code, and 929 tests. This document covers everything you need to get started.
 
 ## Prerequisites
 
@@ -149,12 +149,13 @@ The e2e log is written to `/tmp/sonobuoy/results/e2e.log` inside the e2e contain
 |---|---|
 | `common` | Shared resource types, error types, utilities |
 | `api-server` | Axum-based REST API with per-resource handler files |
-| `storage` | Storage trait with etcd and in-memory backends |
+| `storage` | Pluggable storage: etcd, SQLite (rhino), and in-memory backends |
 | `controller-manager` | 31 controllers following the reconciliation loop pattern |
 | `kubelet` | Container runtime via bollard, pod lifecycle, volumes, probes |
 | `kube-proxy` | iptables-based service routing |
 | `scheduler` | Pod scheduling with affinity, taints, tolerations, preemption |
 | `kubectl` | CLI tool |
+| `rusternetes` | All-in-one binary (all components as tokio tasks, embedded SQLite) |
 | `cloud-providers` | AWS, GCP, and Azure integrations |
 
 ## Code Style

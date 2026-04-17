@@ -12,7 +12,7 @@ full cluster via Docker Compose -- etcd, API server, scheduler, controller manag
 two kubelet nodes, kube-proxy, and CoreDNS -- and is actively tested against the
 upstream Kubernetes conformance suite.
 
-The codebase spans 161,000+ lines of Rust across 9 workspace crates, with 929 test
+The codebase spans 161,000+ lines of Rust across 10 workspace crates, with 929 test
 functions and 328 conformance fixes applied over 8 testing rounds.
 
 ---
@@ -37,7 +37,7 @@ functions and 328 conformance fixes applied over 8 testing rounds.
 |----------------------|----------------------------------------------------------------|
 | `common`             | 36 resource type definitions, error types, shared utilities    |
 | `api-server`         | 75 handler files, routing, admission control, watch/SSE        |
-| `storage`            | `Storage` trait with etcd and in-memory backends               |
+| `storage`            | Pluggable storage: etcd, SQLite (rhino), and in-memory backends |
 | `controller-manager` | 31 controllers for resource reconciliation                     |
 | `kubelet`            | Container lifecycle, volumes, probes, CNI networking           |
 | `kube-proxy`         | iptables rules for ClusterIP/NodePort/LoadBalancer services    |

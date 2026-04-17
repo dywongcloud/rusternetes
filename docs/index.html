@@ -92,8 +92,8 @@
 │  └────────┬─────────┘  └──────────────┘  └────────────────┘   │
 │           │                                                   │
 │  ┌────────▼─────────┐                                         │
-│  │  etcd Storage    │                                         │
-│  │  /registry/...   │                                         │
+│  │  Storage          │                                         │
+│  │  etcd | SQLite    │                                         │
 │  └──────────────────┘                                         │
 ├───────────────────────────────────────────────────────────────┤
 │                       Node Components                         │
@@ -200,7 +200,7 @@
   <section id="crates" class="section">
     <div class="section-inner">
       <h2>Cargo Manifest</h2>
-      <p class="section-sub">9 crates in the container yard. Modular Rust workspace, each crate ships independently.</p>
+      <p class="section-sub">10 crates in the container yard. Modular Rust workspace, each crate ships independently.</p>
       <div class="crates-grid">
         <div class="crate-card">
           <code>api-server</code>
@@ -224,7 +224,7 @@
         </div>
         <div class="crate-card">
           <code>storage</code>
-          <p>Storage trait with etcd and in-memory backends. Resource versioning via mod_revision.</p>
+          <p>Pluggable storage: etcd, SQLite (via rhino), and in-memory backends. Resource versioning via mod_revision.</p>
         </div>
         <div class="crate-card">
           <code>common</code>
@@ -237,6 +237,10 @@
         <div class="crate-card">
           <code>cloud-providers</code>
           <p>AWS, GCP, and Azure integrations for LoadBalancer and cloud-native features.</p>
+        </div>
+        <div class="crate-card">
+          <code>rusternetes</code>
+          <p>All-in-one binary. All components as tokio tasks in a single process with embedded SQLite.</p>
         </div>
       </div>
     </div>

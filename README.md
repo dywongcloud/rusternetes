@@ -2,7 +2,7 @@
 
 **A ground-up reimplementation of Kubernetes in Rust.**
 
-161,000+ lines of Rust across 9 crates. 31 controllers. 1,300+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 68% of conformance tests (299/441) across 118 rounds of testing.
+161,000+ lines of Rust across 10 crates. 31 controllers. 1,300+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 68% of conformance tests (299/441) across 118 rounds of testing.
 
 This isn't a wrapper around the Go codebase or a partial mock. Every component — API server, scheduler, controller manager, kubelet, kube-proxy — is written from scratch in Rust, implementing the actual Kubernetes API surface, wire format, and behavioral semantics.
 
@@ -18,7 +18,8 @@ This isn't a wrapper around the Go codebase or a partial mock. Every component �
 │  └────────┬─────────┘  └──────────────┘  └────────────────┘   │
 │           │                                                   │
 │  ┌────────▼─────────┐                                         │
-│  │  etcd Storage    │                                         │
+│  │ Storage          │                                         │
+│  │ etcd | SQLite    │                                         │
 │  └──────────────────┘                                         │
 ├───────────────────────────────────────────────────────────────┤
 │                       Node Components                         │
@@ -141,8 +142,11 @@ iptables-based service routing in host network mode:
 ### Storage
 Pluggable storage backend with `Storage` trait:
 - **etcd backend** — production use with optimistic concurrency (CAS via mod_revision)
+- **SQLite via rhino** — lightweight alternative, no etcd cluster needed. Available as a gRPC server (`docker-compose.sqlite.yml`) or embedded in-process (all-in-one binary)
 - **Memory backend** — unit testing
 - Key schema: `/registry/{resource_type}/{namespace}/{name}`
+
+See [Storage Backends](docs/storage/STORAGE_BACKENDS.md) for full details on deployment modes.
 
 ## Conformance
 
@@ -175,10 +179,11 @@ crates/
   scheduler/           Filter/score plugin scheduling
   kubelet/             Container runtime, probes, volumes
   kube-proxy/          iptables service routing
-  storage/             etcd + memory storage backends
+  storage/             Pluggable storage: etcd, SQLite (rhino), memory
   common/              Shared types (36 resource modules), errors, utilities
   kubectl/             CLI tool
   cloud-providers/     AWS, GCP, Azure integrations
+  rusternetes/         All-in-one binary (all components as tokio tasks)
 
 scripts/
   bootstrap-cluster.sh   Bootstrap CoreDNS, services, SA tokens
@@ -202,9 +207,21 @@ make pre-commit                # Format + clippy + test
 Docker cluster:
 ```bash
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build           # Build images
+docker compose build           # Build images (etcd mode)
 docker compose up -d           # Start cluster
 docker compose down            # Stop cluster
+```
+
+SQLite mode (no etcd):
+```bash
+docker compose -f docker-compose.sqlite.yml build
+docker compose -f docker-compose.sqlite.yml up -d
+```
+
+All-in-one binary (single process, embedded SQLite):
+```bash
+cargo build -p rusternetes
+./target/debug/rusternetes     # Full cluster in one binary
 ```
 
 High availability mode:
@@ -226,7 +243,8 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guide and [CONTRIBUTING.m
 | Security | [SECURITY.md](docs/SECURITY.md) |
 | CRDs | [CRD_IMPLEMENTATION.md](docs/CRD_IMPLEMENTATION.md) |
 | Networking | [CNI_INTEGRATION.md](docs/CNI_INTEGRATION.md) |
-| Storage | [DYNAMIC_PROVISIONING.md](docs/DYNAMIC_PROVISIONING.md) |
+| Storage Backends | [STORAGE_BACKENDS.md](docs/storage/STORAGE_BACKENDS.md) |
+| Volume Provisioning | [DYNAMIC_PROVISIONING.md](docs/DYNAMIC_PROVISIONING.md) |
 | All docs | [DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) |
 
 ## License

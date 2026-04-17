@@ -37,17 +37,18 @@ KUBECONFIG: `~/.kube/rusternetes-config`
 
 ## Architecture
 
-Rust reimplementation of Kubernetes. Workspace with 9 crates:
+Rust reimplementation of Kubernetes. Workspace with 10 crates:
 
 - **`common`** - Shared resource types (Pod, Deployment, Service, etc.), error types, utilities. All resource structs live in `src/resources/`. Error type in `src/error.rs` maps to Kubernetes StatusReason and implements Axum's `IntoResponse`.
 - **`api-server`** - Axum-based REST API. Routes in `src/router.rs` (~9400 lines). One handler file per resource type in `src/handlers/`. State in `src/state.rs` holds storage, auth, IP allocator, webhook manager, watch cache.
-- **`storage`** - `Storage` trait in `src/lib.rs` with etcd backend (`src/etcd.rs`) and memory backend (`src/memory.rs`). Keys follow `/registry/{resource_type}/{namespace}/{name}`. Resource versions map to etcd `mod_revision`.
+- **`storage`** - `Storage` trait in `src/lib.rs` with etcd backend (`src/etcd.rs`), SQLite backend via rhino (`src/rhino.rs`, behind `sqlite` feature), and memory backend (`src/memory.rs`). `StorageBackend` enum dispatches to the selected backend. Keys follow `/registry/{resource_type}/{namespace}/{name}`. Resource versions map to backend revision numbers.
 - **`controller-manager`** - 31 controllers in `src/controllers/`. Each has a struct with `storage: Arc<S>` + `interval: Duration`, an infinite `run()` loop, and `reconcile_one()` per resource.
 - **`kubelet`** - Container runtime via bollard (Docker API). Manages pod lifecycle, volumes, probes, networking.
 - **`kube-proxy`** - iptables-based service routing. Runs in host network mode. Reads both Endpoints and EndpointSlices.
 - **`scheduler`** - Pod scheduling with affinity, taints/tolerations, priority/preemption. Plugins in `src/plugins/`.
 - **`kubectl`** - CLI tool. Commands in `src/commands/`.
 - **`cloud-providers`** - AWS/GCP/Azure integrations.
+- **`rusternetes`** - All-in-one binary. Spawns api-server, scheduler, controller-manager, kubelet, and kube-proxy as concurrent tokio tasks sharing one `StorageBackend`. Defaults to embedded SQLite.
 
 ## Key Conventions
 

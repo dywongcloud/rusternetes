@@ -12,9 +12,12 @@ This guide documents the clean room setup and deployment of Rusternetes, a produ
 
 ## Architecture
 
-Rusternetes consists of 7 core components:
+Rusternetes consists of 7 core components. The storage backend is
+pluggable — etcd (default) or SQLite via rhino. See
+[Storage Backends](storage/STORAGE_BACKENDS.md) for deployment options
+including the all-in-one single binary.
 
-1. **etcd** - Distributed key-value store for cluster state
+1. **Storage** - etcd (distributed) or rhino/SQLite (lightweight)
 2. **api-server** - RESTful API server (port 6443)
 3. **scheduler** - Pod scheduling to nodes
 4. **controller-manager** - Deployment, ReplicaSet, Job, and other controllers
