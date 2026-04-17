@@ -20,9 +20,9 @@ RUN mkdir -p src/bin && \
     echo 'pub fn unused() {}' > src/lib.rs && \
     cargo build --release --bin rhino-server 2>/dev/null || true
 
-# Copy actual source and rebuild
+# Copy actual source and force rebuild (touch ensures Cargo sees the change)
 COPY src/ src/
-RUN cargo build --release --bin rhino-server
+RUN touch src/bin/server.rs src/lib.rs && cargo build --release --bin rhino-server
 
 FROM debian:sid-slim
 

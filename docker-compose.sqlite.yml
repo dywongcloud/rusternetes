@@ -32,6 +32,8 @@ services:
       - "0.0.0.0:2379"
       - "--endpoint"
       - "/data/db/state.db"
+      - "--max-connections"
+      - "20"
     healthcheck:
       test: ["CMD-SHELL", "true"]
       interval: 5s
