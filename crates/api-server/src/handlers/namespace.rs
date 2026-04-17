@@ -320,7 +320,7 @@ pub async fn delete_ns(
 /// Cascade delete all resources in a namespace
 /// This ensures proper cleanup when a namespace is deleted
 async fn cascade_delete_namespace_resources(
-    storage: &rusternetes_storage::etcd::EtcdStorage,
+    storage: &rusternetes_storage::StorageBackend,
     namespace: &str,
 ) -> Result<()> {
     use serde_json::Value;

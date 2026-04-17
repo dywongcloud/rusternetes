@@ -1,13 +1,20 @@
 use async_trait::async_trait;
+use rusternetes_common::authz::AuthzStorage;
 use rusternetes_common::Result;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub mod concurrency;
 pub mod etcd;
 pub mod memory;
+#[cfg(feature = "sqlite")]
+pub mod rhino;
 
 // Re-export MemoryStorage for convenient testing
 pub use memory::MemoryStorage;
+
+// Re-export RhinoStorage when sqlite feature is enabled
+#[cfg(feature = "sqlite")]
+pub use rhino::RhinoStorage;
 
 /// Storage trait for persisting Kubernetes resources
 #[async_trait]
@@ -115,6 +122,169 @@ impl<S: Storage> Storage for std::sync::Arc<S> {
 
     async fn is_revision_compacted(&self, revision: i64) -> Result<bool> {
         (**self).is_revision_compacted(revision).await
+    }
+}
+
+/// Configuration for selecting a storage backend.
+pub enum StorageConfig {
+    /// Use an external etcd cluster.
+    Etcd {
+        /// Etcd endpoint URLs (e.g. `["http://localhost:2379"]`).
+        endpoints: Vec<String>,
+    },
+    /// Use an embedded SQLite database via rhino (requires `sqlite` feature).
+    #[cfg(feature = "sqlite")]
+    Sqlite {
+        /// Path to the SQLite database file.
+        path: String,
+    },
+}
+
+/// Unified storage backend that dispatches to either etcd or SQLite at runtime.
+///
+/// This allows all components to remain generic over `S: Storage` while the
+/// concrete backend is chosen once at startup via `StorageConfig`.
+pub enum StorageBackend {
+    Etcd(etcd::EtcdStorage),
+    #[cfg(feature = "sqlite")]
+    Sqlite(rhino::RhinoStorage),
+}
+
+impl StorageBackend {
+    /// Create a new storage backend from the given configuration.
+    pub async fn new(config: StorageConfig) -> Result<Self> {
+        match config {
+            StorageConfig::Etcd { endpoints } => {
+                let storage = etcd::EtcdStorage::new(endpoints).await?;
+                Ok(StorageBackend::Etcd(storage))
+            }
+            #[cfg(feature = "sqlite")]
+            StorageConfig::Sqlite { path } => {
+                let storage = rhino::RhinoStorage::new(&path).await?;
+                Ok(StorageBackend::Sqlite(storage))
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl Storage for StorageBackend {
+    async fn create<T>(&self, key: &str, value: &T) -> Result<T>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        match self {
+            StorageBackend::Etcd(s) => Storage::create(s, key, value).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::create(s, key, value).await,
+        }
+    }
+
+    async fn get<T>(&self, key: &str) -> Result<T>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        match self {
+            StorageBackend::Etcd(s) => Storage::get(s, key).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::get(s, key).await,
+        }
+    }
+
+    async fn update<T>(&self, key: &str, value: &T) -> Result<T>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        match self {
+            StorageBackend::Etcd(s) => Storage::update(s, key, value).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::update(s, key, value).await,
+        }
+    }
+
+    async fn update_raw(&self, key: &str, value: &serde_json::Value) -> Result<()> {
+        match self {
+            StorageBackend::Etcd(s) => Storage::update_raw(s, key, value).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::update_raw(s, key, value).await,
+        }
+    }
+
+    async fn delete(&self, key: &str) -> Result<()> {
+        match self {
+            StorageBackend::Etcd(s) => Storage::delete(s, key).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::delete(s, key).await,
+        }
+    }
+
+    async fn list<T>(&self, prefix: &str) -> Result<Vec<T>>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        match self {
+            StorageBackend::Etcd(s) => Storage::list(s, prefix).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::list(s, prefix).await,
+        }
+    }
+
+    async fn watch(&self, prefix: &str) -> Result<WatchStream> {
+        match self {
+            StorageBackend::Etcd(s) => Storage::watch(s, prefix).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::watch(s, prefix).await,
+        }
+    }
+
+    async fn watch_from_revision(&self, prefix: &str, revision: i64) -> Result<WatchStream> {
+        match self {
+            StorageBackend::Etcd(s) => Storage::watch_from_revision(s, prefix, revision).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::watch_from_revision(s, prefix, revision).await,
+        }
+    }
+
+    async fn current_revision(&self) -> Result<i64> {
+        match self {
+            StorageBackend::Etcd(s) => Storage::current_revision(s).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::current_revision(s).await,
+        }
+    }
+
+    async fn is_revision_compacted(&self, revision: i64) -> Result<bool> {
+        match self {
+            StorageBackend::Etcd(s) => Storage::is_revision_compacted(s, revision).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => Storage::is_revision_compacted(s, revision).await,
+        }
+    }
+}
+
+// AuthzStorage for StorageBackend — delegates to the inner implementation.
+#[async_trait]
+impl rusternetes_common::authz::AuthzStorage for StorageBackend {
+    async fn get<T>(&self, key: &str, namespace: Option<&str>) -> Result<T>
+    where
+        T: DeserializeOwned + Send + Sync,
+    {
+        match self {
+            StorageBackend::Etcd(s) => AuthzStorage::get(s, key, namespace).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => AuthzStorage::get(s, key, namespace).await,
+        }
+    }
+
+    async fn list<T>(&self, namespace: Option<&str>) -> Result<Vec<T>>
+    where
+        T: Serialize + DeserializeOwned + Send + Sync,
+    {
+        match self {
+            StorageBackend::Etcd(s) => AuthzStorage::list(s, namespace).await,
+            #[cfg(feature = "sqlite")]
+            StorageBackend::Sqlite(s) => AuthzStorage::list(s, namespace).await,
+        }
     }
 }
 

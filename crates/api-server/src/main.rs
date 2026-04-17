@@ -27,8 +27,7 @@ use rusternetes_common::auth::TokenManager;
 use rusternetes_common::authz::RBACAuthorizer;
 use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_common::tls::TlsConfig;
-use rusternetes_storage::etcd::EtcdStorage;
-use rusternetes_storage::Storage;
+use rusternetes_storage::{StorageBackend, StorageConfig, Storage};
 use state::ApiServerState;
 use std::sync::Arc;
 use tracing::debug;
@@ -79,6 +78,14 @@ struct Args {
     #[arg(long)]
     skip_auth: bool,
 
+    /// Storage backend: "etcd" or "sqlite"
+    #[arg(long, default_value = "etcd")]
+    storage_backend: String,
+
+    /// SQLite database path (only used when --storage-backend=sqlite)
+    #[arg(long, default_value = "./data/rusternetes.db")]
+    data_dir: String,
+
     /// Prometheus server URL for custom metrics (optional)
     #[arg(long)]
     prometheus_url: Option<String>,
@@ -102,16 +109,24 @@ async fn main() -> Result<()> {
 
     info!("Starting Rusternetes API Server");
 
-    // Parse etcd endpoints
-    let etcd_endpoints: Vec<String> = args
-        .etcd_servers
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect();
-
     // Initialize storage
-    info!("Connecting to etcd: {:?}", etcd_endpoints);
-    let storage = Arc::new(EtcdStorage::new(etcd_endpoints).await?);
+    let storage_config = match args.storage_backend.as_str() {
+        #[cfg(feature = "sqlite")]
+        "sqlite" => {
+            info!("Using SQLite storage backend at: {}", args.data_dir);
+            StorageConfig::Sqlite { path: args.data_dir.clone() }
+        }
+        _ => {
+            let etcd_endpoints: Vec<String> = args
+                .etcd_servers
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            info!("Connecting to etcd: {:?}", etcd_endpoints);
+            StorageConfig::Etcd { endpoints: etcd_endpoints }
+        }
+    };
+    let storage = Arc::new(StorageBackend::new(storage_config).await?);
 
     // Initialize TokenManager — prefer RSA keys for RS256 (K8s OIDC compatible),
     // fall back to HMAC HS256 if no RSA keys found.

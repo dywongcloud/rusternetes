@@ -4,7 +4,7 @@
 //! to all subscribed client watches. This avoids creating N etcd watches
 //! for N clients, which overwhelms etcd and exhausts HTTP/2 stream limits.
 
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::StorageBackend;
 use rusternetes_storage::{Storage, WatchEvent, WatchStream};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -35,7 +35,7 @@ pub struct WatchCache {
     /// Map of resource prefix → broadcast sender
     /// Each prefix has one etcd watch that broadcasts to all subscribers
     watchers: RwLock<HashMap<String, broadcast::Sender<CachedWatchEvent>>>,
-    storage: Arc<EtcdStorage>,
+    storage: Arc<StorageBackend>,
     /// Current revision counter (approximation based on timestamp)
     revision: RwLock<i64>,
     /// Ring buffer of recent events per prefix for history replay
@@ -43,7 +43,7 @@ pub struct WatchCache {
 }
 
 impl WatchCache {
-    pub fn new(storage: Arc<EtcdStorage>) -> Self {
+    pub fn new(storage: Arc<StorageBackend>) -> Self {
         Self {
             watchers: RwLock::new(HashMap::new()),
             storage,

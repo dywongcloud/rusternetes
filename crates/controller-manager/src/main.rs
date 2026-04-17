@@ -19,7 +19,7 @@ use controllers::{
 };
 use rusternetes_common::cloud_provider::CloudProvider;
 use rusternetes_common::leader_election::{LeaderElectionConfig, LeaderElector};
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::{StorageBackend, StorageConfig};
 use std::sync::Arc;
 use tracing::{error, info, warn, Level};
 
@@ -33,6 +33,14 @@ struct Args {
     /// Etcd endpoints (comma-separated)
     #[arg(long, default_value = "http://localhost:2379")]
     etcd_servers: String,
+
+    /// Storage backend: "etcd" or "sqlite"
+    #[arg(long, default_value = "etcd")]
+    storage_backend: String,
+
+    /// SQLite database path (only used when --storage-backend=sqlite)
+    #[arg(long, default_value = "./data/rusternetes.db")]
+    data_dir: String,
 
     /// Log level
     #[arg(long, default_value = "info")]
@@ -89,15 +97,24 @@ async fn main() -> Result<()> {
 
     info!("Starting Rusternetes Controller Manager");
 
-    // Parse etcd endpoints
-    let etcd_endpoints: Vec<String> = args
-        .etcd_servers
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect();
-
     // Initialize storage
-    let storage = Arc::new(EtcdStorage::new(etcd_endpoints.clone()).await?);
+    let storage_config = match args.storage_backend.as_str() {
+        #[cfg(feature = "sqlite")]
+        "sqlite" => {
+            info!("Using SQLite storage backend at: {}", args.data_dir);
+            StorageConfig::Sqlite { path: args.data_dir.clone() }
+        }
+        _ => {
+            let etcd_endpoints: Vec<String> = args
+                .etcd_servers
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            info!("Connecting to etcd: {:?}", etcd_endpoints);
+            StorageConfig::Etcd { endpoints: etcd_endpoints }
+        }
+    };
+    let storage = Arc::new(StorageBackend::new(storage_config).await?);
 
     // Initialize cloud provider if configured
     #[cfg(feature = "cloud-providers")]
@@ -153,6 +170,12 @@ async fn main() -> Result<()> {
 
     // Initialize leader election if enabled
     let leader_elector = if args.enable_leader_election {
+        let etcd_endpoints: Vec<String> = args
+            .etcd_servers
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+
         let identity = args
             .leader_election_identity
             .unwrap_or_else(|| format!("controller-manager-{}", uuid::Uuid::new_v4()));
@@ -170,7 +193,7 @@ async fn main() -> Result<()> {
             "Leader election enabled - starting in follower mode"
         );
 
-        let elector = Arc::new(LeaderElector::new(etcd_endpoints.clone(), config).await?);
+        let elector = Arc::new(LeaderElector::new(etcd_endpoints, config).await?);
 
         // Start leader election in background
         let elector_clone = elector.clone();

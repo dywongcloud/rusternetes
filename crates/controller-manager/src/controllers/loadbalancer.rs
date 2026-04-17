@@ -6,7 +6,7 @@ use rusternetes_common::{
         Node, Service, ServiceType,
     },
 };
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::Storage;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;

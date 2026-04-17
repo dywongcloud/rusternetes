@@ -9,6 +9,10 @@ license.workspace = true
 name = "kube-proxy"
 path = "src/main.rs"
 
+[features]
+default = []
+sqlite = ["rusternetes-storage/sqlite"]
+
 [dependencies]
 rusternetes-common = { path = "../common" }
 rusternetes-storage = { path = "../storage" }

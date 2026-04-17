@@ -19,7 +19,7 @@ use config::{KubeletConfiguration, RuntimeConfig};
 use futures::StreamExt;
 use kubelet::Kubelet;
 use rusternetes_common::observability::MetricsRegistry;
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::{StorageBackend, StorageConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, warn, Level};
@@ -76,6 +76,14 @@ struct Args {
     /// Container network to connect pods to
     #[arg(long, default_value = "rusternetes-network")]
     network: String,
+
+    /// Storage backend: "etcd" or "sqlite"
+    #[arg(long, default_value = "etcd")]
+    storage_backend: String,
+
+    /// SQLite database path (only used when --storage-backend=sqlite)
+    #[arg(long, default_value = "./data/rusternetes.db")]
+    data_dir: String,
 }
 
 #[tokio::main]
@@ -126,7 +134,18 @@ async fn main() -> Result<()> {
     info!("{}", runtime_config.display());
 
     // Initialize storage
-    let storage = Arc::new(EtcdStorage::new(runtime_config.etcd_endpoints.clone()).await?);
+    let storage_config = match args.storage_backend.as_str() {
+        #[cfg(feature = "sqlite")]
+        "sqlite" => {
+            info!("Using SQLite storage backend at: {}", args.data_dir);
+            StorageConfig::Sqlite { path: args.data_dir.clone() }
+        }
+        _ => {
+            info!("Connecting to etcd: {:?}", runtime_config.etcd_endpoints);
+            StorageConfig::Etcd { endpoints: runtime_config.etcd_endpoints.clone() }
+        }
+    };
+    let storage = Arc::new(StorageBackend::new(storage_config).await?);
 
     // Discover cluster DNS IP if not provided
     let cluster_dns = match args.cluster_dns {

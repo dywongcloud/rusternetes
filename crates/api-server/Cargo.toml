@@ -9,6 +9,10 @@ license.workspace = true
 name = "api-server"
 path = "src/main.rs"
 
+[features]
+default = []
+sqlite = ["rusternetes-storage/sqlite"]
+
 [dependencies]
 rusternetes-common = { path = "../common", features = ["axum-support"] }
 rusternetes-storage = { path = "../storage" }

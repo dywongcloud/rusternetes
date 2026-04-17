@@ -8,7 +8,7 @@ use rusternetes_common::{
     },
     types::Phase,
 };
-use rusternetes_storage::{build_key, build_prefix, etcd::EtcdStorage, Storage, WatchEvent};
+use rusternetes_storage::{build_key, build_prefix, StorageBackend, Storage, WatchEvent};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -40,7 +40,7 @@ pub enum PodWorkerState {
 
 pub struct Kubelet {
     node_name: String,
-    storage: Arc<EtcdStorage>,
+    storage: Arc<StorageBackend>,
     runtime: Arc<ContainerRuntime>,
     sync_interval: Duration,
     eviction_manager: Mutex<EvictionManager>,
@@ -55,12 +55,12 @@ pub struct Kubelet {
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
-// All fields are Send+Sync: Arc<EtcdStorage>, Arc<ContainerRuntime>, Mutex<EvictionManager>
+// All fields are Send+Sync: Arc<StorageBackend>, Arc<ContainerRuntime>, Mutex<EvictionManager>
 
 impl Kubelet {
     pub async fn new(
         node_name: String,
-        storage: Arc<EtcdStorage>,
+        storage: Arc<StorageBackend>,
         sync_interval_secs: u64,
         volume_dir: String,
         cluster_dns: String,

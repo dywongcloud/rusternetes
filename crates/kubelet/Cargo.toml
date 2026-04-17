@@ -13,6 +13,10 @@ path = "src/main.rs"
 name = "rusternetes_kubelet"
 path = "src/lib.rs"
 
+[features]
+default = []
+sqlite = ["rusternetes-storage/sqlite"]
+
 [dependencies]
 rusternetes-common = { path = "../common" }
 rusternetes-storage = { path = "../storage" }

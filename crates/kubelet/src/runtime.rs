@@ -85,7 +85,7 @@ struct ProbeState {
 /// ContainerRuntime manages containers using Docker/Podman with CNI networking
 pub struct ContainerRuntime {
     docker: Docker,
-    storage: Option<Arc<rusternetes_storage::etcd::EtcdStorage>>,
+    storage: Option<Arc<rusternetes_storage::StorageBackend>>,
     volumes_base_path: String,
     cluster_dns: String,
     cluster_domain: String,
@@ -255,7 +255,7 @@ impl ContainerRuntime {
         &self.volumes_base_path
     }
 
-    pub fn with_storage(mut self, storage: Arc<rusternetes_storage::etcd::EtcdStorage>) -> Self {
+    pub fn with_storage(mut self, storage: Arc<rusternetes_storage::StorageBackend>) -> Self {
         self.storage = Some(storage);
         self
     }

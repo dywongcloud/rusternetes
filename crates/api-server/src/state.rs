@@ -5,19 +5,19 @@ use crate::watch_cache::WatchCache;
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager};
 use rusternetes_common::authz::Authorizer;
 use rusternetes_common::observability::MetricsRegistry;
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::StorageBackend;
 use std::sync::Arc;
 
 /// Shared state for the API server
 pub struct ApiServerState {
-    pub storage: Arc<EtcdStorage>,
+    pub storage: Arc<StorageBackend>,
     pub token_manager: Arc<TokenManager>,
     pub bootstrap_token_manager: Arc<BootstrapTokenManager>,
     pub authorizer: Arc<dyn Authorizer>,
     pub metrics: Arc<MetricsRegistry>,
     pub skip_auth: bool,
     pub ip_allocator: Arc<ClusterIPAllocator>,
-    pub webhook_manager: Arc<AdmissionWebhookManager<EtcdStorage>>,
+    pub webhook_manager: Arc<AdmissionWebhookManager<StorageBackend>>,
     pub watch_cache: Arc<WatchCache>,
     pub ca_cert_pem: Option<String>,
     pub prometheus_client: Option<Arc<PrometheusClient>>,
@@ -25,7 +25,7 @@ pub struct ApiServerState {
 
 impl ApiServerState {
     pub fn new(
-        storage: Arc<EtcdStorage>,
+        storage: Arc<StorageBackend>,
         token_manager: Arc<TokenManager>,
         authorizer: Arc<dyn Authorizer>,
         metrics: Arc<MetricsRegistry>,

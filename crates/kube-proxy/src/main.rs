@@ -3,7 +3,7 @@ mod proxy;
 
 use anyhow::Result;
 use clap::Parser;
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::{StorageBackend, StorageConfig};
 use std::sync::Arc;
 use tracing::{info, warn, Level};
 
@@ -20,6 +20,14 @@ struct Args {
     /// Etcd endpoints (comma-separated)
     #[arg(long, default_value = "http://localhost:2379")]
     etcd_servers: String,
+
+    /// Storage backend: "etcd" or "sqlite"
+    #[arg(long, default_value = "etcd")]
+    storage_backend: String,
+
+    /// SQLite database path (only used when --storage-backend=sqlite)
+    #[arg(long, default_value = "./data/rusternetes.db")]
+    data_dir: String,
 
     /// Log level
     #[arg(long, default_value = "info")]
@@ -57,16 +65,24 @@ async fn main() -> Result<()> {
         warn!("Kube-proxy requires iptables to be installed and accessible.");
     }
 
-    // Parse etcd endpoints
-    let etcd_endpoints: Vec<String> = args
-        .etcd_servers
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect();
-
     // Initialize storage
-    info!("Connecting to etcd at: {:?}", etcd_endpoints);
-    let storage = Arc::new(EtcdStorage::new(etcd_endpoints).await?);
+    let storage_config = match args.storage_backend.as_str() {
+        #[cfg(feature = "sqlite")]
+        "sqlite" => {
+            info!("Using SQLite storage backend at: {}", args.data_dir);
+            StorageConfig::Sqlite { path: args.data_dir.clone() }
+        }
+        _ => {
+            let etcd_endpoints: Vec<String> = args
+                .etcd_servers
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            info!("Connecting to etcd at: {:?}", etcd_endpoints);
+            StorageConfig::Etcd { endpoints: etcd_endpoints }
+        }
+    };
+    let storage = Arc::new(StorageBackend::new(storage_config).await?);
 
     // Initialize kube-proxy
     let mut kube_proxy = KubeProxy::new(storage)?;

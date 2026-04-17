@@ -221,18 +221,19 @@ mod tests {
     };
     use rusternetes_common::types::ObjectMeta;
 
-    // These tests require etcd because ApiServerState hardcodes Arc<EtcdStorage>.
-    // Making ApiServerState generic would require refactoring every handler.
+    // These tests require etcd because ApiServerState uses StorageBackend.
     async fn create_test_state() -> Arc<ApiServerState> {
         use rusternetes_common::auth::TokenManager;
         use rusternetes_common::authz::AlwaysAllowAuthorizer;
         use rusternetes_common::observability::MetricsRegistry;
-        use rusternetes_storage::etcd::EtcdStorage;
+        use rusternetes_storage::{StorageBackend, StorageConfig};
 
         let storage = Arc::new(
-            EtcdStorage::new(vec!["http://localhost:2379".to_string()])
-                .await
-                .expect("Failed to create storage"),
+            StorageBackend::new(StorageConfig::Etcd {
+                endpoints: vec!["http://localhost:2379".to_string()],
+            })
+            .await
+            .expect("Failed to create storage"),
         );
         let token_manager = Arc::new(TokenManager::new(b"test-secret"));
         let authorizer =

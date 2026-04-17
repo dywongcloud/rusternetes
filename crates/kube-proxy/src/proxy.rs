@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use rusternetes_common::resources::{EndpointSlice, Endpoints, Service, ServiceType};
-use rusternetes_storage::{etcd::EtcdStorage, Storage};
+use rusternetes_storage::{StorageBackend, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -9,7 +9,7 @@ use crate::iptables::IptablesManager;
 
 /// KubeProxy manages service networking through iptables rules
 pub struct KubeProxy {
-    storage: Arc<EtcdStorage>,
+    storage: Arc<StorageBackend>,
     iptables: IptablesManager,
     /// Hash of last synced state to avoid unnecessary flush+rebuild cycles.
     /// K8s uses iptables-restore for atomic updates; we approximate by skipping
@@ -18,7 +18,7 @@ pub struct KubeProxy {
 }
 
 impl KubeProxy {
-    pub fn new(storage: Arc<EtcdStorage>) -> Result<Self> {
+    pub fn new(storage: Arc<StorageBackend>) -> Result<Self> {
         let iptables = IptablesManager::new();
         iptables.initialize()?;
 

@@ -3,7 +3,7 @@ use rusternetes_common::{
     resources::{Node, Pod, PriorityClass},
     types::Phase,
 };
-use rusternetes_storage::{build_prefix, etcd::EtcdStorage, Storage};
+use rusternetes_storage::{build_prefix, StorageBackend, Storage};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::{debug, error, info, warn};
 
@@ -13,15 +13,15 @@ use crate::advanced::{
     check_topology_spread_constraints, NodeScore,
 };
 
-pub struct Scheduler<S: Storage + Send + Sync + 'static = EtcdStorage> {
+pub struct Scheduler<S: Storage + Send + Sync + 'static = StorageBackend> {
     storage: Arc<S>,
     interval: Duration,
     /// Name of this scheduler (default "default-scheduler")
     scheduler_name: String,
 }
 
-impl Scheduler<EtcdStorage> {
-    pub fn new(storage: Arc<EtcdStorage>, interval_secs: u64) -> Self {
+impl Scheduler<StorageBackend> {
+    pub fn new(storage: Arc<StorageBackend>, interval_secs: u64) -> Self {
         Self::new_with_name(storage, interval_secs, "default-scheduler".to_string())
     }
 }

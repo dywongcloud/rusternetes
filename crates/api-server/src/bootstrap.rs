@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use rusternetes_common::resources::Endpoints;
-use rusternetes_storage::etcd::EtcdStorage;
+use rusternetes_storage::StorageBackend;
 use rusternetes_storage::Storage;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -38,7 +38,7 @@ fn get_api_server_ip() -> Result<String> {
 /// Bootstrap the kubernetes Service and Endpoints in the default namespace
 /// This ensures the "kubernetes" service always points to this API server
 pub async fn bootstrap_kubernetes_service(
-    storage: Arc<EtcdStorage>,
+    storage: Arc<StorageBackend>,
     api_server_port: u16,
 ) -> Result<()> {
     info!("Bootstrapping kubernetes Service and Endpoints");
