@@ -22,7 +22,8 @@ COPY crates/kubectl/Cargo.toml ./crates/kubectl/
 COPY crates ./crates
 
 ENV CARGO_BUILD_JOBS=2
-RUN cargo build --release --bin kube-proxy
+ARG CARGO_FEATURES=""
+RUN cargo build --release $CARGO_FEATURES --bin kube-proxy
 
 FROM debian:sid-slim
 

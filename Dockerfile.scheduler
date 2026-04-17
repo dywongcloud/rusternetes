@@ -21,7 +21,8 @@ COPY crates/kubectl/Cargo.toml ./crates/kubectl/
 
 COPY crates ./crates
 
-RUN cargo build --release --bin scheduler
+ARG CARGO_FEATURES=""
+RUN cargo build --release $CARGO_FEATURES --bin scheduler
 
 FROM debian:sid-slim
 

@@ -1,0 +1,162 @@
+# Docker Compose for rusternetes with SQLite storage backend (no etcd)
+#
+# Usage:
+#   docker compose -f docker-compose.sqlite.yml build
+#   docker compose -f docker-compose.sqlite.yml up -d
+#   bash scripts/bootstrap-cluster.sh
+#
+# No etcd needed. All components share a SQLite database via a Docker volume.
+# Rhino (calfonso/rhino) is fetched from git during build.
+
+version: '3.8'
+
+services:
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-server
+      args:
+        CARGO_FEATURES: "--features sqlite"
+    container_name: rusternetes-api-server
+    ports:
+      - "6443:6443"
+    networks:
+      rusternetes-net:
+        aliases:
+          - api-server
+    volumes:
+      - ./.rusternetes/certs:/etc/kubernetes/pki:ro
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - sqlite-data:/data
+    environment:
+      - RUST_LOG=info
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    command:
+      - "--bind-address"
+      - "0.0.0.0:6443"
+      - "--storage-backend"
+      - "sqlite"
+      - "--data-dir"
+      - "/data/rusternetes.db"
+      - "--tls"
+      - "--tls-cert-file"
+      - "/etc/kubernetes/pki/api-server.crt"
+      - "--tls-key-file"
+      - "/etc/kubernetes/pki/api-server.key"
+      - "--skip-auth"
+      - "--log-level"
+      - "info"
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+      args:
+        CARGO_FEATURES: "--features sqlite"
+    container_name: rusternetes-scheduler
+    depends_on:
+      - api-server
+    networks:
+      - rusternetes-net
+    volumes:
+      - sqlite-data:/data
+    environment:
+      - RUST_LOG=info
+    command: ["--storage-backend", "sqlite", "--data-dir", "/data/rusternetes.db", "--interval", "1"]
+
+  controller-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.controller-manager
+      args:
+        CARGO_FEATURES: "--features sqlite"
+    container_name: rusternetes-controller-manager
+    depends_on:
+      - api-server
+    networks:
+      - rusternetes-net
+    volumes:
+      - ./.rusternetes/certs:/etc/kubernetes/pki:ro
+      - sqlite-data:/data
+    environment:
+      - RUST_LOG=info
+    command: ["--storage-backend", "sqlite", "--data-dir", "/data/rusternetes.db", "--sync-interval", "1"]
+
+  kubelet:
+    build:
+      context: .
+      dockerfile: Dockerfile.kubelet
+      args:
+        CARGO_FEATURES: "--features sqlite"
+    container_name: rusternetes-kubelet
+    privileged: true
+    depends_on:
+      - api-server
+    networks:
+      - rusternetes-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ${KUBELET_VOLUMES_PATH}:${KUBELET_VOLUMES_PATH}:rw
+      - ./.rusternetes/certs:/root/.rusternetes/certs:ro
+      - sqlite-data:/data
+    environment:
+      - RUST_LOG=info
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
+      - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}
+    command: ["--node-name", "node-1", "--storage-backend", "sqlite", "--data-dir", "/data/rusternetes.db", "--cluster-dns", "10.96.0.10", "--metrics-port", "10250", "--sync-interval", "3"]
+
+  kubelet2:
+    build:
+      context: .
+      dockerfile: Dockerfile.kubelet
+      args:
+        CARGO_FEATURES: "--features sqlite"
+    container_name: rusternetes-kubelet2
+    privileged: true
+    depends_on:
+      - api-server
+    networks:
+      - rusternetes-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ${KUBELET_VOLUMES_PATH}:${KUBELET_VOLUMES_PATH}:rw
+      - ./.rusternetes/certs:/root/.rusternetes/certs:ro
+      - sqlite-data:/data
+    environment:
+      - RUST_LOG=info
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
+      - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}
+    command: ["--node-name", "node-2", "--storage-backend", "sqlite", "--data-dir", "/data/rusternetes.db", "--cluster-dns", "10.96.0.10", "--metrics-port", "10251", "--sync-interval", "3"]
+
+  kube-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.kube-proxy
+      args:
+        CARGO_FEATURES: "--features sqlite"
+    container_name: rusternetes-kube-proxy
+    privileged: true
+    network_mode: host
+    user: "0:0"
+    depends_on:
+      - api-server
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    volumes:
+      - sqlite-data:/data
+    environment:
+      - RUST_LOG=info
+    command: ["--node-name", "node-1", "--storage-backend", "sqlite", "--data-dir", "/data/rusternetes.db"]
+
+networks:
+  rusternetes-net:
+    driver: bridge
+    name: rusternetes-network
+
+volumes:
+  sqlite-data:
+    driver: local

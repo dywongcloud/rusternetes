@@ -26,7 +26,8 @@ COPY crates/kubectl/Cargo.toml ./crates/kubectl/
 COPY crates ./crates
 
 # Build the api-server
-RUN cargo build --release --bin api-server
+ARG CARGO_FEATURES=""
+RUN cargo build --release $CARGO_FEATURES --bin api-server
 
 FROM debian:sid-slim
 
