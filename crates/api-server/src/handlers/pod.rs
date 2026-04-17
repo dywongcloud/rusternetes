@@ -974,10 +974,13 @@ pub async fn list(
         continue_token,
     };
 
-    // Compute resource version from max item RV (etcd mod_revision).
-    // DO NOT use timestamps — they create revision space mismatches with etcd,
-    // causing LIST+WATCH to fail because watches start from a revision etcd never reaches.
-    let resource_version = crate::handlers::list_resource_version(&pods);
+    // Use the current etcd revision as the list resourceVersion.
+    // K8s returns the etcd revision at the time of the LIST, not the max item RV.
+    // This ensures LIST+WATCH consistency AND that successive lists have different RVs.
+    let resource_version = match state.storage.current_revision().await {
+        Ok(rev) => rev.to_string(),
+        Err(_) => crate::handlers::list_resource_version(&pods),
+    };
 
     // Apply pagination
     let paginated = match rusternetes_common::paginate(pods, pagination_params, &resource_version) {
@@ -1085,7 +1088,7 @@ pub async fn list_all_pods(
         continue_token,
     };
 
-    let resource_version = crate::handlers::list_resource_version(&pods);
+    let resource_version = match state.storage.current_revision().await { Ok(rev) => rev.to_string(), Err(_) => "1".to_string() };
 
     // Apply pagination
     let paginated = match rusternetes_common::paginate(pods, pagination_params, &resource_version) {

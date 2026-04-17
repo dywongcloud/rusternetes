@@ -375,7 +375,7 @@ pub async fn list(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut deployments, &params)?;
 
-    let resource_version = crate::handlers::list_resource_version(&deployments);
+    let resource_version = match state.storage.current_revision().await { Ok(rev) => rev.to_string(), Err(_) => "1".to_string() };
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
@@ -450,7 +450,7 @@ pub async fn list_all_deployments(
     // Apply field and label selector filtering
     crate::handlers::filtering::apply_selectors(&mut deployments, &params)?;
 
-    let resource_version = crate::handlers::list_resource_version(&deployments);
+    let resource_version = match state.storage.current_revision().await { Ok(rev) => rev.to_string(), Err(_) => "1".to_string() };
 
     // Check if table format is requested
     let accept = headers.get("accept").and_then(|v| v.to_str().ok());
