@@ -16,6 +16,7 @@
       </a>
       <div class="nav-links">
         <a href="#architecture">Architecture</a>
+        <a href="#deploy">Deploy</a>
         <a href="#features">Features</a>
         <a href="#crates">Crates</a>
         <a href="#quickstart">Quick Start</a>
@@ -31,11 +32,11 @@
       <p class="hero-sub">
         A ground-up reimplementation of the Kubernetes control plane and node components.
         Memory-safe. Fast. Conformance-tested against the official K8s test suite.
-        Containers all the way down.
+        Runs as a full cluster &mdash; or as a single binary with SQLite.
       </p>
       <div class="hero-stats">
         <div class="stat">
-          <span class="stat-num">9</span>
+          <span class="stat-num">10</span>
           <span class="stat-label">Crates</span>
         </div>
         <div class="stat">
@@ -110,7 +111,42 @@
     </div>
   </section>
 
-  <section id="features" class="section section-alt">
+  <section id="deploy" class="section section-alt">
+    <div class="section-inner">
+      <h2>Deploy Your Way</h2>
+      <p class="section-sub">Full Kubernetes in a multi-node cluster. Or in a single binary. Your call.</p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#9881;</div>
+          <h3>Multi-Node with etcd</h3>
+          <p>The standard production deployment. Separate containers for each component, backed by an etcd cluster with Raft consensus. High availability with leader election, multi-master, and horizontal scaling.</p>
+          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>docker compose up -d</code></pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128256;</div>
+          <h3>Swap the Database</h3>
+          <p>Don't want to run etcd? Drop in <a href="https://github.com/calfonso/rhino" style="color: #e8a058;">Rhino</a> &mdash; an etcd-compatible gRPC server backed by SQLite, PostgreSQL, or MySQL. Same Kubernetes API, same binaries, zero etcd infrastructure. Just change the compose file.</p>
+          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>docker compose -f docker-compose.sqlite.yml up -d</code></pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128640;</div>
+          <h3>Single Binary, Single Process</h3>
+          <p>All five Kubernetes components running as concurrent tokio tasks in one process with an embedded SQLite database. No containers. No external dependencies. Full Kubernetes API in a single binary.</p>
+          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>./rusternetes --data-dir ./cluster.db</code></pre>
+        </div>
+      </div>
+      <div style="margin-top: 2em;">
+        <p class="section-sub" style="font-size: 1em; max-width: 52em;">
+          The all-in-one binary is purpose-built for environments where a full Kubernetes cluster is overkill:
+          edge devices, CI/CD pipelines, local development, IoT gateways, embedded systems, and
+          air-gapped environments. Your entire cluster state lives in a single SQLite file &mdash;
+          back it up with <code style="color: #e8a058;">cp</code>, inspect it with <code style="color: #e8a058;">sqlite3</code>, move it to another machine.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="section">
     <div class="section-inner">
       <h2>Features</h2>
       <p class="section-sub">Everything you need to run real workloads, built from scratch.</p>
@@ -185,12 +221,12 @@
           <h3>Operations</h3>
           <ul>
             <li>High availability (multi-master)</li>
-            <li>etcd clustering (3-5 nodes)</li>
+            <li>Pluggable storage (etcd / SQLite / Postgres / MySQL)</li>
+            <li>Single-binary all-in-one mode</li>
             <li>Leader election</li>
             <li>Prometheus metrics</li>
             <li>OpenTelemetry tracing</li>
             <li>Garbage collection</li>
-            <li>TTL controllers</li>
           </ul>
         </div>
       </div>

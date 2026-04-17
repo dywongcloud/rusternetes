@@ -32,30 +32,56 @@ This isn't a wrapper around the Go codebase or a partial mock. Every component �
 └───────────────────────────────────────────────────────────────┘
 ```
 
+## Deploy Your Way
+
+Rusternetes supports three deployment modes from the same codebase:
+
+**Full cluster with etcd** — the standard production deployment with separate containers per component, backed by an etcd cluster with Raft consensus and leader election.
+
+**Swap the database** — replace etcd with [Rhino](https://github.com/calfonso/rhino), an etcd-compatible gRPC server written in Rust that stores everything in SQLite, PostgreSQL, or MySQL. Same Kubernetes API, same binaries, zero etcd infrastructure. Just change the compose file.
+
+**Single binary, single process** — all five components running as concurrent tokio tasks in one process with an embedded SQLite database. No containers, no external dependencies. Your entire cluster state lives in a single SQLite file — back it up with `cp`, inspect it with `sqlite3`, move it to another machine.
+
+The all-in-one mode is built for environments where a full K8s cluster is overkill: edge devices, CI/CD pipelines, local development, IoT gateways, embedded systems, and air-gapped environments.
+
 ## Quick Start
 
+### Full cluster (Docker Compose + etcd)
+
 ```bash
-# Build
 git clone https://github.com/calfonso/rusternetes.git
 cd rusternetes
-cargo build --release
 
-# Start a full cluster with Docker Compose
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
 docker compose build
 docker compose up -d
-
-# Bootstrap CoreDNS, services, and ServiceAccount tokens
 bash scripts/bootstrap-cluster.sh
 
-# Use it — standard kubectl works
 export KUBECONFIG=~/.kube/rusternetes-config
 kubectl get nodes
-kubectl get pods -A
 kubectl create deployment nginx --image=nginx
 ```
 
-**Prerequisites:** Docker Desktop (macOS) or Docker/Podman in rootful mode (Linux). See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed setup.
+### Full cluster with SQLite (no etcd)
+
+Same cluster, but [Rhino](https://github.com/calfonso/rhino) replaces etcd. No recompilation needed — same binaries.
+
+```bash
+docker compose -f docker-compose.sqlite.yml build
+docker compose -f docker-compose.sqlite.yml up -d
+bash scripts/bootstrap-cluster.sh
+```
+
+### All-in-one binary
+
+Full Kubernetes in a single process with embedded SQLite:
+
+```bash
+cargo build -p rusternetes
+./target/release/rusternetes --data-dir ./cluster.db
+```
+
+**Prerequisites:** Docker Desktop (macOS) or Docker/Podman in rootful mode (Linux) for the kubelet to manage containers. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed setup.
 
 ## What's Implemented
 
@@ -202,31 +228,6 @@ cargo test                     # All workspace tests
 cargo test -p rusternetes_api_server  # Single crate
 cargo clippy --all-targets --all-features -- -D warnings
 make pre-commit                # Format + clippy + test
-```
-
-Docker cluster:
-```bash
-export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build           # Build images (etcd mode)
-docker compose up -d           # Start cluster
-docker compose down            # Stop cluster
-```
-
-SQLite mode (no etcd):
-```bash
-docker compose -f docker-compose.sqlite.yml build
-docker compose -f docker-compose.sqlite.yml up -d
-```
-
-All-in-one binary (single process, embedded SQLite):
-```bash
-cargo build -p rusternetes
-./target/debug/rusternetes     # Full cluster in one binary
-```
-
-High availability mode:
-```bash
-docker compose -f docker-compose.ha.yml up
 ```
 
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guide and [CONTRIBUTING.md](docs/CONTRIBUTING.md) for contribution guidelines.
