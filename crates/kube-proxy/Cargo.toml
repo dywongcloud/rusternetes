@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "rusternetes_kube_proxy"
+path = "src/lib.rs"
+
 [[bin]]
 name = "kube-proxy"
 path = "src/main.rs"

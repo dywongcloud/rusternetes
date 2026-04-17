@@ -3443,6 +3443,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusternetes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rusternetes-api-server",
+ "rusternetes-common",
+ "rusternetes-controller-manager",
+ "rusternetes-kube-proxy",
+ "rusternetes-kubelet",
+ "rusternetes-scheduler",
+ "rusternetes-storage",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "rusternetes-api-server"
 version = "0.1.0"
 dependencies = [

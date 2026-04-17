@@ -63,7 +63,6 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialize tracing
     let level = match args.log_level.as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
@@ -77,21 +76,16 @@ async fn main() -> Result<()> {
 
     info!("Starting Rusternetes Scheduler");
 
-    // Initialize storage
     let storage_config = match args.storage_backend.as_str() {
         #[cfg(feature = "sqlite")]
         "sqlite" => {
             info!("Using SQLite storage backend at: {}", args.data_dir);
-            StorageConfig::Sqlite { path: args.data_dir.clone() }
+            StorageConfig::Sqlite { path: args.data_dir }
         }
         _ => {
-            let etcd_endpoints: Vec<String> = args
-                .etcd_servers
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            info!("Connecting to etcd: {:?}", etcd_endpoints);
-            StorageConfig::Etcd { endpoints: etcd_endpoints }
+            let endpoints: Vec<String> = args.etcd_servers.split(',').map(|s| s.trim().to_string()).collect();
+            info!("Connecting to etcd: {:?}", endpoints);
+            StorageConfig::Etcd { endpoints }
         }
     };
     let storage = Arc::new(StorageBackend::new(storage_config).await?);
@@ -100,45 +94,33 @@ async fn main() -> Result<()> {
     let metrics = Arc::new(MetricsRegistry::new().with_scheduler_metrics()?);
     let metrics_clone = metrics.clone();
 
-    // Start metrics server
     let metrics_addr = format!("0.0.0.0:{}", args.metrics_port);
     info!("Starting metrics server on {}", metrics_addr);
 
     tokio::spawn(async move {
         let app = Router::new().route("/metrics", get(|| async move { metrics_clone.gather() }));
-
         let listener = tokio::net::TcpListener::bind(&metrics_addr).await.unwrap();
         axum::serve(listener, app).await.unwrap();
     });
 
-    // Initialize leader election if enabled
+    // Leader election
     if args.enable_leader_election {
-        let etcd_endpoints: Vec<String> = args
-            .etcd_servers
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
+        let etcd_endpoints: Vec<String> = args.etcd_servers.split(',').map(|s| s.trim().to_string()).collect();
 
-        let identity = args
-            .leader_election_identity
+        let identity = args.leader_election_identity
             .unwrap_or_else(|| format!("scheduler-{}", Uuid::new_v4()));
 
         let config = LeaderElectionConfig {
             identity: identity.clone(),
-            lock_key: args.leader_election_lock_key.clone(),
+            lock_key: args.leader_election_lock_key,
             lease_duration: args.leader_election_lease_duration,
             renew_interval: args.leader_election_lease_duration / 3,
             retry_interval: 2,
         };
 
-        info!(
-            identity = %identity,
-            "Leader election enabled - starting in follower mode"
-        );
+        info!(identity = %identity, "Leader election enabled - starting in follower mode");
 
         let elector = Arc::new(LeaderElector::new(etcd_endpoints, config).await?);
-
-        // Start leader election in background
         let elector_clone = elector.clone();
         tokio::spawn(async move {
             if let Err(e) = elector_clone.run().await {
@@ -146,22 +128,15 @@ async fn main() -> Result<()> {
             }
         });
 
-        // Create scheduler
         let scheduler = Scheduler::new(storage, args.interval);
-
-        // Wait to become leader before running scheduler
         loop {
             while !elector.is_leader().await {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
             info!("Scheduler starting (leader acquired)");
-
-            // Run scheduler
             if let Err(e) = scheduler.run().await {
                 tracing::error!("Scheduler error: {}", e);
             }
-
-            // Check if we're still the leader
             if !elector.is_leader().await {
                 warn!("Scheduler stopped (lost leadership)");
                 continue;
@@ -170,8 +145,6 @@ async fn main() -> Result<()> {
         }
     } else {
         warn!("Leader election disabled - running in single-instance mode");
-
-        // Create and run scheduler directly
         let scheduler = Scheduler::new(storage, args.interval);
         scheduler.run().await?;
     }

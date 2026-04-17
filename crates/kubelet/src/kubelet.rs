@@ -458,19 +458,20 @@ impl Kubelet {
         // Get current node resource statistics
         let node_stats = get_node_stats();
 
-        // Check if eviction is needed
-        let mut eviction_manager = self.eviction_manager.lock().unwrap();
-        let active_signals = eviction_manager.check_eviction_needed(&node_stats);
+        // Check if eviction is needed — scoped block ensures the MutexGuard
+        // is dropped before any subsequent .await points.
+        let active_signals = {
+            let mut eviction_manager = self.eviction_manager.lock().unwrap();
+            let active_signals = eviction_manager.check_eviction_needed(&node_stats);
 
-        // Update node conditions based on resource pressure
-        if !active_signals.is_empty() {
-            info!("Resource pressure detected: {:?}", active_signals);
-            eviction_manager.update_node_conditions(&mut node, &active_signals)?;
-        } else {
-            // Clear pressure conditions if no active signals
-            eviction_manager.update_node_conditions(&mut node, &[])?;
-        }
-        drop(eviction_manager); // Release lock before async operations
+            if !active_signals.is_empty() {
+                info!("Resource pressure detected: {:?}", active_signals);
+                eviction_manager.update_node_conditions(&mut node, &active_signals)?;
+            } else {
+                eviction_manager.update_node_conditions(&mut node, &[])?;
+            }
+            active_signals
+        };
 
         // Ensure default node labels are always set (K8s kubelet updateDefaultLabels)
         let labels = node.metadata.labels.get_or_insert_with(HashMap::new);
@@ -3201,10 +3202,10 @@ impl Kubelet {
 
         // For each active signal, select pods for eviction
         for signal in signals {
-            let eviction_manager = self.eviction_manager.lock().unwrap();
-            let pods_to_evict =
-                eviction_manager.select_pods_for_eviction(&node_pods, &pod_stats, signal);
-            drop(eviction_manager); // Release lock
+            let pods_to_evict = {
+                let eviction_manager = self.eviction_manager.lock().unwrap();
+                eviction_manager.select_pods_for_eviction(&node_pods, &pod_stats, signal)
+            };
 
             for pod_key in pods_to_evict {
                 warn!(
