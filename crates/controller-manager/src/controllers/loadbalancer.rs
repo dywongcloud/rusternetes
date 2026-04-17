@@ -108,7 +108,7 @@ impl<S: Storage> LoadBalancerController<S> {
             })
             .collect();
 
-        info!(
+        debug!(
             "Found {} LoadBalancer services to reconcile",
             lb_services.len()
         );

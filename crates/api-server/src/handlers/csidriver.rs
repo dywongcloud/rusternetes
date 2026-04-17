@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_csidriver(
     State(state): State<Arc<ApiServerState>>,
@@ -53,7 +53,7 @@ pub async fn get_csidriver(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<CSIDriver>> {
-    info!("Getting CSIDriver: {}", name);
+    debug!("Getting CSIDriver: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "csidrivers")
         .with_api_group("storage.k8s.io")
@@ -77,7 +77,7 @@ pub async fn list_csidrivers(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<CSIDriver>>> {
-    info!("Listing all CSIDrivers");
+    debug!("Listing all CSIDrivers");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "csidrivers")
         .with_api_group("storage.k8s.io");

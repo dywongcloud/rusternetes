@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_deviceclass(
     State(state): State<Arc<ApiServerState>>,
@@ -77,7 +77,7 @@ pub async fn get_deviceclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<DeviceClass>> {
-    info!("Getting DeviceClass: {}", name);
+    debug!("Getting DeviceClass: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "deviceclasses")
         .with_api_group("resource.k8s.io")
@@ -139,7 +139,7 @@ pub async fn list_deviceclasses(
         .await;
     }
 
-    info!("Listing all DeviceClasses");
+    debug!("Listing all DeviceClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "deviceclasses")
         .with_api_group("resource.k8s.io");

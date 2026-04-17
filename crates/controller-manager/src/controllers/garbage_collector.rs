@@ -121,16 +121,12 @@ impl<S: Storage + 'static> GarbageCollector<S> {
             let mut deleted_count = 0;
             let mut failed_count = 0;
 
-            for batch in confirmed_orphans.chunks(self.delete_batch_size) {
-                let batch_results = self.delete_batch_with_retry(batch).await;
-
-                for result in batch_results {
-                    match result {
-                        Ok(_) => deleted_count += 1,
-                        Err(e) => {
-                            failed_count += 1;
-                            error!("Failed to delete orphan after retries: {}", e);
-                        }
+            for orphan in &confirmed_orphans {
+                match self.delete_orphan(orphan).await {
+                    Ok(_) => deleted_count += 1,
+                    Err(e) => {
+                        failed_count += 1;
+                        error!("Failed to delete orphan {}: {}", orphan.key, e);
                     }
                 }
             }
@@ -864,7 +860,11 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         None
     }
 
-    /// Delete a batch of orphans with retry logic
+    /// Delete a batch of orphans with retry logic (no re-verification).
+    /// NOTE: For orphan deletion, use `delete_orphan()` which re-verifies
+    /// owner existence before deleting. This method is kept for non-orphan
+    /// batch deletions where re-verification is not needed.
+    #[allow(dead_code)]
     async fn delete_batch_with_retry(&self, orphans: &[ResourceInfo]) -> Vec<Result<(), String>> {
         use futures::future::join_all;
 

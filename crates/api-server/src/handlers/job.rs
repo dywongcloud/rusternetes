@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -92,7 +92,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Job>> {
-    info!("Getting job: {}/{}", namespace, name);
+    debug!("Getting job: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "jobs")
@@ -253,7 +253,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing jobs in namespace: {}", namespace);
+    debug!("Listing jobs in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "jobs")
@@ -316,7 +316,7 @@ pub async fn list_all_jobs(
         .await;
     }
 
-    info!("Listing all jobs");
+    debug!("Listing all jobs");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "jobs").with_api_group("batch");

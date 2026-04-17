@@ -17,7 +17,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// Create a new CustomResourceDefinition
 pub async fn create_crd(
@@ -323,7 +323,7 @@ pub async fn get_crd(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<CustomResourceDefinition>> {
-    info!("Getting CustomResourceDefinition: {}", name);
+    debug!("Getting CustomResourceDefinition: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "customresourcedefinitions")
         .with_api_group("apiextensions.k8s.io")
@@ -360,7 +360,7 @@ pub async fn list_crds(
         .await;
     }
 
-    info!("Listing all CustomResourceDefinitions");
+    debug!("Listing all CustomResourceDefinitions");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "customresourcedefinitions")
         .with_api_group("apiextensions.k8s.io");
@@ -739,13 +739,200 @@ fn validate_crd(crd: &CustomResourceDefinition) -> Result<()> {
     Ok(())
 }
 
-// Use the macro to create a PATCH handler for cluster-scoped CustomResourceDefinition
-crate::patch_handler_cluster!(
-    patch_crd,
-    CustomResourceDefinition,
-    "customresourcedefinitions",
-    "apiextensions.k8s.io"
-);
+/// Custom PATCH handler for CustomResourceDefinitions that stores raw JSON.
+///
+/// CRDs cannot use the generic typed PATCH handler because round-tripping through
+/// the `CustomResourceDefinition` struct loses nested schema fields (like `enum`
+/// in `JSONSchemaPropsOrArray`) due to serde untagged enum limitations.
+/// K8s stores CRDs as raw JSON in etcd — we must do the same.
+///
+/// This mirrors the approach already used by create_crd and update_crd (Fix 24).
+pub async fn patch_crd(
+    State(state): State<Arc<ApiServerState>>,
+    Extension(auth_ctx): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>> {
+    info!("Patching cluster-scoped customresourcedefinitions {}", name);
+
+    // Check authorization
+    let attrs = RequestAttributes::new(auth_ctx.user, "patch", "customresourcedefinitions")
+        .with_api_group("apiextensions.k8s.io")
+        .with_name(&name);
+
+    match state.authorizer.authorize(&attrs).await? {
+        Decision::Allow => {}
+        Decision::Deny(reason) => {
+            return Err(rusternetes_common::Error::Forbidden(reason));
+        }
+    }
+
+    // Detect server-side apply
+    let is_apply = headers
+        .get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("apply-patch"))
+        .unwrap_or(false);
+
+    let key = build_key("customresourcedefinitions", None, &name);
+
+    if is_apply {
+        if let Some(field_manager) = params.get("fieldManager") {
+            info!(
+                "Server-side apply for customresourcedefinitions {} by manager {}",
+                name, field_manager
+            );
+
+            // Get current resource as raw JSON (if exists)
+            let current_json: Option<serde_json::Value> =
+                state.storage.get::<serde_json::Value>(&key).await.ok();
+
+            // Parse desired resource
+            let desired_json: serde_json::Value =
+                serde_json::from_slice(&body).map_err(|e| {
+                    rusternetes_common::Error::InvalidResource(format!("Invalid resource: {}", e))
+                })?;
+
+            let force = params
+                .get("force")
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
+
+            let apply_params = if force {
+                rusternetes_common::server_side_apply::ApplyParams::new(field_manager.clone())
+                    .with_force()
+            } else {
+                rusternetes_common::server_side_apply::ApplyParams::new(field_manager.clone())
+            };
+
+            let result = rusternetes_common::server_side_apply::server_side_apply(
+                current_json.as_ref(),
+                &desired_json,
+                &apply_params,
+            )
+            .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+            match result {
+                rusternetes_common::server_side_apply::ApplyResult::Success(mut applied_json) => {
+                    // Set the last-applied-configuration annotation
+                    if let Some(metadata) = applied_json.get_mut("metadata") {
+                        if let Some(obj) = metadata.as_object_mut() {
+                            let ann = obj
+                                .entry("annotations")
+                                .or_insert_with(|| serde_json::json!({}));
+                            if let Some(ann_obj) = ann.as_object_mut() {
+                                ann_obj.insert(
+                                    "kubectl.kubernetes.io/last-applied-configuration".to_string(),
+                                    serde_json::Value::String(
+                                        serde_json::to_string(&desired_json).unwrap_or_default(),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+
+                    // Store raw JSON directly — no typed round-trip
+                    let saved: serde_json::Value = if current_json.is_some() {
+                        state.storage.update(&key, &applied_json).await?
+                    } else {
+                        state.storage.create(&key, &applied_json).await?
+                    };
+
+                    return Ok(Json(saved));
+                }
+                rusternetes_common::server_side_apply::ApplyResult::Conflicts(conflicts) => {
+                    let conflict_details: Vec<String> = conflicts
+                        .iter()
+                        .map(|c| {
+                            format!(
+                                "Field '{}' is owned by '{}' (applying as '{}')",
+                                c.field, c.current_manager, c.applying_manager
+                            )
+                        })
+                        .collect();
+
+                    return Err(rusternetes_common::Error::Conflict(format!(
+                        "Apply conflict: {}. Use force=true to override.",
+                        conflict_details.join("; ")
+                    )));
+                }
+            }
+        }
+    }
+
+    // Standard PATCH operation (not server-side apply)
+    let content_type = headers
+        .get("x-original-content-type")
+        .or_else(|| headers.get("content-type"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/strategic-merge-patch+json");
+
+    let patch_type = crate::patch::PatchType::from_content_type(content_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Get current resource as raw JSON — preserves all nested schema fields
+    let current_json: serde_json::Value = state.storage.get(&key).await?;
+
+    // Parse patch document
+    let patch_json: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+        rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e))
+    })?;
+
+    // Apply patch to raw JSON
+    let mut patched_json = crate::patch::apply_patch(&current_json, &patch_json, patch_type)
+        .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+
+    // Increment metadata.generation when spec changes
+    {
+        let old_spec = current_json.get("spec");
+        let new_spec = patched_json.get("spec");
+        let spec_changed = match (old_spec, new_spec) {
+            (Some(old), Some(new)) => old != new,
+            (None, Some(_)) => true,
+            (Some(_), None) => true,
+            (None, None) => false,
+        };
+        if spec_changed {
+            if let Some(metadata) = patched_json.get_mut("metadata") {
+                if let Some(meta_obj) = metadata.as_object_mut() {
+                    let current_gen = meta_obj
+                        .get("generation")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    meta_obj.insert("generation".to_string(), serde_json::json!(current_gen + 1));
+                }
+            }
+        }
+    }
+
+    // Validate that the patched JSON can still be parsed as a CRD (catch structural errors)
+    // but do NOT use the typed struct for storage — store the raw JSON directly.
+    let _validate: CustomResourceDefinition =
+        serde_json::from_value(patched_json.clone()).map_err(|e| {
+            rusternetes_common::Error::InvalidResource(format!(
+                "Patched CRD is not valid: {}",
+                e
+            ))
+        })?;
+
+    // Check if this is a dry-run request
+    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    if is_dry_run {
+        info!(
+            "Dry-run: customresourcedefinitions {} patch validated (not applied)",
+            name
+        );
+        return Ok(Json(patched_json));
+    }
+
+    // Store raw JSON directly — preserves enum, nested schemas, etc.
+    let updated: serde_json::Value = state.storage.update(&key, &patched_json).await?;
+
+    Ok(Json(updated))
+}
 
 #[cfg(test)]
 mod tests {

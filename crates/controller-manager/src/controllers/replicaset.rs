@@ -108,7 +108,7 @@ impl<S: Storage> ReplicaSetController<S> {
         let current_replicas = replicaset_pods.len() as i32;
         let desired_replicas = replicaset.spec.replicas;
 
-        info!(
+        debug!(
             "ReplicaSet {}/{}: current={}, ready={}, available={}, desired={}",
             namespace,
             replicaset.metadata.name,

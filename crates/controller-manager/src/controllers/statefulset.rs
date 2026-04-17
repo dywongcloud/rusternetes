@@ -53,7 +53,7 @@ impl<S: Storage> StatefulSetController<S> {
             return Ok(());
         }
 
-        info!("Reconciling StatefulSet {}/{}", namespace, name);
+        debug!("Reconciling StatefulSet {}/{}", namespace, name);
 
         let desired_replicas = statefulset.spec.replicas.unwrap_or(1);
 
@@ -137,7 +137,7 @@ impl<S: Storage> StatefulSetController<S> {
             .filter(|p| p.metadata.deletion_timestamp.is_none())
             .count() as i32;
 
-        info!(
+        debug!(
             "StatefulSet {}/{}: desired={}, current={}",
             namespace, name, desired_replicas, current_replicas
         );
@@ -419,7 +419,7 @@ impl<S: Storage> StatefulSetController<S> {
             && update_strategy == "RollingUpdate"
         {
             let update_revision = Self::compute_revision(&statefulset.spec.template);
-            info!(
+            debug!(
                 "StatefulSet {}/{}: rolling update check, update_revision={}",
                 namespace, name, update_revision
             );
@@ -451,7 +451,7 @@ impl<S: Storage> StatefulSetController<S> {
                     .and_then(|l| l.get("controller-revision-hash"))
                     .map(|s| s.as_str())
                     .unwrap_or("");
-                info!(
+                debug!(
                     "StatefulSet {}/{}: pod {} revision={} vs update_revision={}",
                     namespace, name, pod.metadata.name, pod_revision, update_revision
                 );
@@ -698,7 +698,7 @@ impl<S: Storage> StatefulSetController<S> {
                 "revision": 1
             });
             if let Err(e) = self.storage.create(&cr_key, &cr).await {
-                info!(
+                debug!(
                     "ControllerRevision {} already exists or failed: {}",
                     cr_name, e
                 );
@@ -802,7 +802,7 @@ impl<S: Storage> StatefulSetController<S> {
             .pointer("/spec/containers/0/image")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        info!(
+        debug!(
             "compute_revision: image={}, hash={}, json_len={}",
             image,
             revision,
@@ -889,7 +889,7 @@ impl<S: Storage> StatefulSetController<S> {
         match self.storage.create(&key, &pod).await {
             Ok(_) => Ok(()),
             Err(rusternetes_common::Error::AlreadyExists(_)) => {
-                info!("Pod {} already exists, skipping creation", pod_name);
+                debug!("Pod {} already exists, skipping creation", pod_name);
                 Ok(())
             }
             Err(e) => Err(e.into()),
@@ -973,7 +973,7 @@ impl<S: Storage> StatefulSetController<S> {
         match self.storage.create(&key, &pod).await {
             Ok(_) => Ok(()),
             Err(rusternetes_common::Error::AlreadyExists(_)) => {
-                info!("Pod {} already exists, skipping creation", pod_name);
+                debug!("Pod {} already exists, skipping creation", pod_name);
                 Ok(())
             }
             Err(e) => Err(e.into()),

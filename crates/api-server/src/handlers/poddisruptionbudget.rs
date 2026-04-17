@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -67,7 +67,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<PodDisruptionBudget>> {
-    info!("Getting poddisruptionbudget: {}/{}", namespace, name);
+    debug!("Getting poddisruptionbudget: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "poddisruptionbudgets")
@@ -229,7 +229,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing poddisruptionbudgets in namespace: {}", namespace);
+    debug!("Listing poddisruptionbudgets in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "poddisruptionbudgets")
@@ -291,7 +291,7 @@ pub async fn list_all(
         .await;
     }
 
-    info!("Listing all poddisruptionbudgets");
+    debug!("Listing all poddisruptionbudgets");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "poddisruptionbudgets")
@@ -320,7 +320,7 @@ pub async fn get_status(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<PodDisruptionBudget>> {
-    info!("Getting poddisruptionbudget status: {}/{}", namespace, name);
+    debug!("Getting poddisruptionbudget status: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "poddisruptionbudgets/status")

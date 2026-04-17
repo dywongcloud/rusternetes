@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_servicecidr(
     State(state): State<Arc<ApiServerState>>,
@@ -73,7 +73,7 @@ pub async fn get_servicecidr(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ServiceCIDR>> {
-    info!("Getting ServiceCIDR: {}", name);
+    debug!("Getting ServiceCIDR: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "servicecidrs")
@@ -182,7 +182,7 @@ pub async fn list_servicecidrs(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
 ) -> Result<Response> {
-    info!("Listing ServiceCIDRs");
+    debug!("Listing ServiceCIDRs");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "servicecidrs")

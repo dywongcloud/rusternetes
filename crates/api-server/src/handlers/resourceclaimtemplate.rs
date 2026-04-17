@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_resourceclaimtemplate(
     State(state): State<Arc<ApiServerState>>,
@@ -82,7 +82,7 @@ pub async fn get_resourceclaimtemplate(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ResourceClaimTemplate>> {
-    info!("Getting ResourceClaimTemplate: {}/{}", namespace, name);
+    debug!("Getting ResourceClaimTemplate: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "resourceclaimtemplates")
         .with_api_group("resource.k8s.io")
@@ -149,7 +149,7 @@ pub async fn list_resourceclaimtemplates(
         .await;
     }
 
-    info!("Listing ResourceClaimTemplates in namespace: {}", namespace);
+    debug!("Listing ResourceClaimTemplates in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaimtemplates")
         .with_api_group("resource.k8s.io")
@@ -209,7 +209,7 @@ pub async fn list_all_resourceclaimtemplates(
         .await;
     }
 
-    info!("Listing all ResourceClaimTemplates");
+    debug!("Listing all ResourceClaimTemplates");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaimtemplates")
         .with_api_group("resource.k8s.io");

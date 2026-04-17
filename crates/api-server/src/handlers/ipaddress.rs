@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_ipaddress(
     State(state): State<Arc<ApiServerState>>,
@@ -57,7 +57,7 @@ pub async fn get_ipaddress(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<IPAddress>> {
-    info!("Getting IPAddress: {}", name);
+    debug!("Getting IPAddress: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "ipaddresses")
@@ -200,7 +200,7 @@ pub async fn list_ipaddresses(
         .await;
     }
 
-    info!("Listing IPAddresses");
+    debug!("Listing IPAddresses");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "ipaddresses")

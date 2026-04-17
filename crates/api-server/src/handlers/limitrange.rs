@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -69,7 +69,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<LimitRange>> {
-    info!("Getting LimitRange: {} in namespace: {}", name, namespace);
+    debug!("Getting LimitRange: {} in namespace: {}", name, namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "limitranges")
@@ -214,7 +214,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing LimitRanges in namespace: {}", namespace);
+    debug!("Listing LimitRanges in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "limitranges")
@@ -255,7 +255,7 @@ pub async fn list_all(
         .await;
     }
 
-    info!("Listing all LimitRanges");
+    debug!("Listing all LimitRanges");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "limitranges").with_api_group("");

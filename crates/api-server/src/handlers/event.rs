@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 /// List all events in a namespace
 pub async fn list(
@@ -56,7 +56,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing events in namespace: {}", namespace);
+    debug!("Listing events in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "events")
@@ -124,7 +124,7 @@ pub async fn list_all(
         .await;
     }
 
-    info!("Listing all events across all namespaces");
+    debug!("Listing all events across all namespaces");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "events").with_api_group("");
@@ -157,7 +157,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Event>> {
-    info!("Getting event: {}/{}", namespace, name);
+    debug!("Getting event: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "events")

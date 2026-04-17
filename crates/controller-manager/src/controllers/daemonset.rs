@@ -9,7 +9,7 @@ use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Check whether a set of tolerations tolerates all NoSchedule and NoExecute taints on a node.
 fn pod_tolerates_node_taints(tolerations: &[Toleration], taints: &[Taint]) -> bool {
@@ -87,7 +87,7 @@ impl<S: Storage> DaemonSetController<S> {
             return Ok(());
         }
 
-        info!("Reconciling DaemonSet {}/{}", namespace, name);
+        debug!("Reconciling DaemonSet {}/{}", namespace, name);
 
         // Ensure a ControllerRevision exists for the current template.
         // K8s uses FNV-32a hash of the template (via controller.ComputeHash).
@@ -197,7 +197,7 @@ impl<S: Storage> DaemonSetController<S> {
                     .and_then(|s| s.taints.as_deref())
                     .unwrap_or(&[]);
                 if !pod_tolerates_node_taints(tolerations, taints) {
-                    info!(
+                    debug!(
                         "DaemonSet {}/{}: skipping node {} due to untolerated taints",
                         namespace, name, node.metadata.name
                     );
@@ -207,7 +207,7 @@ impl<S: Storage> DaemonSetController<S> {
             })
             .collect();
 
-        info!(
+        debug!(
             "DaemonSet {}/{}: {} eligible nodes",
             namespace,
             name,
@@ -343,7 +343,7 @@ impl<S: Storage> DaemonSetController<S> {
                     Err(e) => {
                         let err_str = format!("{}", e);
                         if err_str.contains("already exists") || err_str.contains("AlreadyExists") {
-                            info!(
+                            debug!(
                                 "DaemonSet pod on node {} already exists, skipping",
                                 node_name
                             );
@@ -520,7 +520,7 @@ impl<S: Storage> DaemonSetController<S> {
         spec.node_name = Some(node_name.to_string());
 
         // Debug: Check if NODE_NAME env var has valueFrom before and after
-        info!("Before injection - Checking environment variables in pod template:");
+        debug!("Before injection - Checking environment variables in pod template:");
         for container in &spec.containers {
             if let Some(env) = &container.env {
                 for env_var in env {
@@ -528,7 +528,7 @@ impl<S: Storage> DaemonSetController<S> {
                         || env_var.name.contains("SONOBUOY_NS")
                         || env_var.name.contains("SONOBUOY_PLUGIN_POD")
                     {
-                        info!(
+                        debug!(
                             "  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
                             container.name,
                             env_var.name,
@@ -547,7 +547,7 @@ impl<S: Storage> DaemonSetController<S> {
         self.inject_service_account_token(&mut spec, namespace);
 
         // Debug: Check again after injection
-        info!("After injection - Checking environment variables:");
+        debug!("After injection - Checking environment variables:");
         for container in &spec.containers {
             if let Some(env) = &container.env {
                 for env_var in env {
@@ -555,7 +555,7 @@ impl<S: Storage> DaemonSetController<S> {
                         || env_var.name.contains("SONOBUOY_NS")
                         || env_var.name.contains("SONOBUOY_PLUGIN_POD")
                     {
-                        info!(
+                        debug!(
                             "  Container '{}': {} - value={:?}, value_from.field_ref={:?}",
                             container.name,
                             env_var.name,
@@ -663,7 +663,7 @@ impl<S: Storage> DaemonSetController<S> {
             // Check if volume already exists
             if !volumes.iter().any(|v| v.name == "kube-api-access") {
                 volumes.push(sa_token_volume);
-                info!(
+                debug!(
                     "Injected service account token volume for DaemonSet pod in namespace {}",
                     namespace
                 );

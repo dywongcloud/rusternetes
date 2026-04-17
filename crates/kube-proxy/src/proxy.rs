@@ -124,7 +124,7 @@ impl KubeProxy {
             }
         }
 
-        info!(
+        debug!(
             "Kube-proxy sync: {} services, {} endpoints, {} endpointslices",
             services.len(),
             endpoints_map.len(),
@@ -146,10 +146,19 @@ impl KubeProxy {
         for svc in &services {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             svc.spec.cluster_ip.hash(&mut h);
+            svc.spec.session_affinity.hash(&mut h);
+            // Include session affinity timeout in hash so config changes trigger resync
+            svc.spec
+                .session_affinity_config
+                .as_ref()
+                .and_then(|c| c.client_ip.as_ref())
+                .and_then(|c| c.timeout_seconds)
+                .hash(&mut h);
             for port in &svc.spec.ports {
                 port.port.hash(&mut h);
                 port.name.hash(&mut h);
                 port.protocol.hash(&mut h);
+                port.node_port.hash(&mut h);
             }
             // XOR makes it order-independent
             current_hash ^= h.finish();
@@ -208,7 +217,7 @@ impl KubeProxy {
             }
         }
 
-        info!("Kube-proxy sync completed");
+        debug!("Kube-proxy sync completed");
         Ok(())
     }
 
@@ -258,7 +267,7 @@ impl KubeProxy {
             })
             .unwrap_or(false);
         if !has_valid_cluster_ip {
-            info!(
+            debug!(
                 "Service {}/{} has no valid ClusterIP ({:?}), skipping iptables rules",
                 namespace, name, cluster_ip
             );
@@ -280,7 +289,7 @@ impl KubeProxy {
         if endpoint_addresses.is_empty()
             && endpointslice_entries.map(|e| e.is_empty()).unwrap_or(true)
         {
-            info!(
+            debug!(
                 "Service {}/{} (ClusterIP={}) has no ready endpoints, rules will have 0 backends",
                 namespace,
                 name,

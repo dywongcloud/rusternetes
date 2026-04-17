@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -62,7 +62,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<PriorityClass>> {
-    info!("Getting PriorityClass: {}", name);
+    debug!("Getting PriorityClass: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "priorityclasses")
@@ -211,7 +211,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing PriorityClasses");
+    debug!("Listing PriorityClasses");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "priorityclasses")

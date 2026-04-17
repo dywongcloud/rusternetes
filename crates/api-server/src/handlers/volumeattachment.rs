@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_volumeattachment(
     State(state): State<Arc<ApiServerState>>,
@@ -53,7 +53,7 @@ pub async fn get_volumeattachment(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<VolumeAttachment>> {
-    info!("Getting VolumeAttachment: {}", name);
+    debug!("Getting VolumeAttachment: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "volumeattachments")
         .with_api_group("storage.k8s.io")
@@ -77,7 +77,7 @@ pub async fn list_volumeattachments(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<VolumeAttachment>>> {
-    info!("Listing all VolumeAttachments");
+    debug!("Listing all VolumeAttachments");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumeattachments")
         .with_api_group("storage.k8s.io");

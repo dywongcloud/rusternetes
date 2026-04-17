@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_storageclass(
     State(state): State<Arc<ApiServerState>>,
@@ -54,7 +54,7 @@ pub async fn get_storageclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<StorageClass>> {
-    info!("Getting StorageClass: {}", name);
+    debug!("Getting StorageClass: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "storageclasses")
         .with_api_group("storage.k8s.io")
@@ -90,7 +90,7 @@ pub async fn list_storageclasses(
         .await;
     }
 
-    info!("Listing all StorageClasses");
+    debug!("Listing all StorageClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "storageclasses")
         .with_api_group("storage.k8s.io");

@@ -9,7 +9,7 @@ use rusternetes_common::{
     List, Result,
 };
 use std::sync::Arc;
-use tracing::info;
+use tracing::debug;
 
 /// Get a specific component status
 pub async fn get(
@@ -17,7 +17,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ComponentStatus>> {
-    info!("Getting componentstatus: {}", name);
+    debug!("Getting componentstatus: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "componentstatuses")
@@ -50,7 +50,7 @@ pub async fn list(
     State(_state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
 ) -> Result<Json<List<ComponentStatus>>> {
-    info!("Listing componentstatuses");
+    debug!("Listing componentstatuses");
 
     // Check authorization
     let attrs =

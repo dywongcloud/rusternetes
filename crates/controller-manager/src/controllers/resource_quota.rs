@@ -95,7 +95,7 @@ impl<S: Storage> ResourceQuotaController<S> {
         // Save updated quota
         self.storage.update(&key, &updated_quota).await?;
 
-        info!("Updated quota {}/{} status", namespace, quota_name);
+        debug!("Updated quota {}/{} status", namespace, quota_name);
 
         Ok(())
     }

@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_replicationcontroller(
     State(state): State<Arc<ApiServerState>>,
@@ -232,7 +232,7 @@ pub async fn list_replicationcontrollers(
         .await;
     }
 
-    info!("Listing replicationcontrollers in namespace: {}", namespace);
+    debug!("Listing replicationcontrollers in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "replicationcontrollers")
@@ -288,7 +288,7 @@ pub async fn list_all_replicationcontrollers(
         .await;
     }
 
-    info!("Listing all replicationcontrollers");
+    debug!("Listing all replicationcontrollers");
 
     // Check authorization (cluster-wide list)
     let attrs =

@@ -74,7 +74,7 @@ impl<S: Storage> NetworkPolicyController<S> {
         // Find all pods in the namespace that match the policy's pod selector
         let affected_pods = self.find_affected_pods(policy).await?;
 
-        info!(
+        debug!(
             "NetworkPolicy {}/{} affects {} pods",
             namespace,
             policy_name,

@@ -15,7 +15,7 @@ use rusternetes_storage::{build_key, build_prefix, Storage};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 // Removed - using HashMap<String, String> for query params
 
@@ -153,7 +153,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<Namespace>> {
-    info!("Getting namespace: {}", name);
+    debug!("Getting namespace: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "namespaces")
@@ -427,7 +427,7 @@ pub async fn list(
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false)
     {
-        info!("Watching namespaces");
+        debug!("Watching namespaces");
         // Parse WatchParams from the query parameters
         let watch_params = watch::WatchParams {
             resource_version: crate::handlers::watch::normalize_resource_version(
@@ -457,7 +457,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing namespaces");
+    debug!("Listing namespaces");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "namespaces").with_api_group("");

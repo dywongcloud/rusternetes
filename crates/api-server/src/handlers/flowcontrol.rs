@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 // PriorityLevelConfiguration handlers
 
@@ -55,7 +55,7 @@ pub async fn get_priority_level_configuration(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<PriorityLevelConfiguration>> {
-    info!("Getting PriorityLevelConfiguration: {}", name);
+    debug!("Getting PriorityLevelConfiguration: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "prioritylevelconfigurations")
         .with_api_group("flowcontrol.apiserver.k8s.io")
@@ -192,7 +192,7 @@ pub async fn list_priority_level_configurations(
         .await;
     }
 
-    info!("Listing PriorityLevelConfigurations");
+    debug!("Listing PriorityLevelConfigurations");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "prioritylevelconfigurations")
         .with_api_group("flowcontrol.apiserver.k8s.io");
@@ -266,7 +266,7 @@ pub async fn get_flow_schema(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<FlowSchema>> {
-    info!("Getting FlowSchema: {}", name);
+    debug!("Getting FlowSchema: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "flowschemas")
         .with_api_group("flowcontrol.apiserver.k8s.io")
@@ -383,7 +383,7 @@ pub async fn list_flow_schemas(
         .await;
     }
 
-    info!("Listing FlowSchemas");
+    debug!("Listing FlowSchemas");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "flowschemas")
         .with_api_group("flowcontrol.apiserver.k8s.io");

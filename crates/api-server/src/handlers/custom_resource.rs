@@ -20,7 +20,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// Create a new custom resource instance
 pub async fn create_custom_resource(
@@ -328,7 +328,7 @@ pub async fn list_custom_resources(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((group, version, plural, namespace)): Path<(String, String, String, Option<String>)>,
 ) -> Result<Json<List<CustomResource>>> {
-    info!("Listing custom resources {}/{}/{}", group, version, plural);
+    debug!("Listing custom resources {}/{}/{}", group, version, plural);
 
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
@@ -916,9 +916,10 @@ pub async fn delete_custom_resource(
 
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
-    let _crd = get_crd_for_resource(&state, &crd_name).await?;
+    let crd = get_crd_for_resource(&state, &crd_name).await?;
 
     // Check authorization
+    let user_for_webhook = auth_ctx.user.clone();
     let attrs = if let Some(ref ns) = namespace {
         RequestAttributes::new(auth_ctx.user.clone(), "delete", &plural)
             .with_api_group(&group)
@@ -947,6 +948,52 @@ pub async fn delete_custom_resource(
 
     // Get the resource to check if it exists
     let cr: CustomResource = state.storage.get(&key).await?;
+
+    // Run validating webhooks for DELETE operations.
+    // K8s runs validating admission (including webhooks) before deletion.
+    // Mutating webhooks are NOT called on DELETE in K8s — only validating.
+    {
+        use crate::admission_webhook::AdmissionWebhookClient;
+        let kind = crd.spec.names.kind.clone();
+        let gvk = rusternetes_common::admission::GroupVersionKind {
+            group: group.clone(),
+            version: version.clone(),
+            kind: kind.clone(),
+        };
+        let gvr = rusternetes_common::admission::GroupVersionResource {
+            group: group.clone(),
+            version: version.clone(),
+            resource: plural.clone(),
+        };
+        let user_info = rusternetes_common::admission::UserInfo {
+            username: user_for_webhook.username.clone(),
+            uid: user_for_webhook.uid.clone(),
+            groups: user_for_webhook.groups.clone(),
+        };
+        let cr_value = serde_json::to_value(&cr).ok();
+        match state
+            .webhook_manager
+            .run_validating_webhooks(
+                &rusternetes_common::admission::Operation::Delete,
+                &gvk,
+                &gvr,
+                namespace.as_deref(),
+                &name,
+                cr_value,
+                None,
+                &user_info,
+            )
+            .await?
+        {
+            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
+    }
 
     // Check for dry-run
     if crate::handlers::dryrun::is_dry_run(&params) {

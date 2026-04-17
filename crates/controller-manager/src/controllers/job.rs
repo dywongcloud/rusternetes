@@ -50,7 +50,7 @@ impl<S: Storage> JobController<S> {
             return Ok(());
         }
 
-        info!("Reconciling Job {}/{}", namespace, name);
+        debug!("Reconciling Job {}/{}", namespace, name);
 
         // For completed/failed jobs, still update terminating count
         // (pods may still be shutting down after job completion).

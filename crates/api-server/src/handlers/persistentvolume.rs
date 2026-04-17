@@ -14,7 +14,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_pv(
     State(state): State<Arc<ApiServerState>>,
@@ -75,7 +75,7 @@ pub async fn get_pv(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<PersistentVolume>> {
-    info!("Getting PersistentVolume: {}", name);
+    debug!("Getting PersistentVolume: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "persistentvolumes")
         .with_api_group("")
@@ -132,7 +132,7 @@ pub async fn list_pvs(
         .await;
     }
 
-    info!("Listing all PersistentVolumes");
+    debug!("Listing all PersistentVolumes");
 
     let attrs =
         RequestAttributes::new(auth_ctx.user, "list", "persistentvolumes").with_api_group("");

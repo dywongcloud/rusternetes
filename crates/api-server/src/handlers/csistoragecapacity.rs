@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_csistoragecapacity(
     State(state): State<Arc<ApiServerState>>,
@@ -123,7 +123,7 @@ pub async fn list_csistoragecapacities(
         .await;
     }
 
-    info!("Listing CSIStorageCapacities in namespace: {}", namespace);
+    debug!("Listing CSIStorageCapacities in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "csistoragecapacities")
         .with_api_group("storage.k8s.io")
@@ -186,7 +186,7 @@ pub async fn list_all_csistoragecapacities(
         .await;
     }
 
-    info!("Listing all CSIStorageCapacities across all namespaces");
+    debug!("Listing all CSIStorageCapacities across all namespaces");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "csistoragecapacities")
         .with_api_group("storage.k8s.io");

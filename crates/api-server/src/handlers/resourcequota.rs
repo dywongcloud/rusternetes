@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -235,7 +235,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing ResourceQuotas in namespace: {}", namespace);
+    debug!("Listing ResourceQuotas in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourcequotas")
@@ -276,7 +276,7 @@ pub async fn list_all(
         .await;
     }
 
-    info!("Listing all ResourceQuotas");
+    debug!("Listing all ResourceQuotas");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourcequotas").with_api_group("");

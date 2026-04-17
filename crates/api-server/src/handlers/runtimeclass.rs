@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_runtimeclass(
     State(state): State<Arc<ApiServerState>>,
@@ -62,7 +62,7 @@ pub async fn get_runtimeclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<RuntimeClass>> {
-    info!("Getting RuntimeClass: {}", name);
+    debug!("Getting RuntimeClass: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "runtimeclasses")
@@ -196,7 +196,7 @@ pub async fn list_runtimeclasses(
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false)
     {
-        info!("Watching RuntimeClasses");
+        debug!("Watching RuntimeClasses");
         let watch_params = crate::handlers::watch::WatchParams {
             resource_version: crate::handlers::watch::normalize_resource_version(
                 params.get("resourceVersion").cloned(),
@@ -224,7 +224,7 @@ pub async fn list_runtimeclasses(
         .await;
     }
 
-    info!("Listing RuntimeClasses");
+    debug!("Listing RuntimeClasses");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "runtimeclasses")

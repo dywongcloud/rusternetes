@@ -816,7 +816,9 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
         return (false, vec![]);
     }
 
-    // Find pods running on this node (skip terminated pods)
+    // Find all non-terminal pods on this node (K8s considers Pending and
+    // Running pods as resource consumers and potential preemption victims).
+    // Only skip terminal pods (Succeeded/Failed) and pods already terminating.
     let node_pods: Vec<&Pod> = all_pods
         .iter()
         .filter(|p| {
@@ -829,10 +831,16 @@ pub fn check_preemption(node: &Node, pod: &Pod, all_pods: &[Pod]) -> (bool, Vec<
             if !on_this_node {
                 return false;
             }
-            // Only count Running, non-terminating pods as resource consumers
+            // Skip terminal pods (Succeeded/Failed) and terminating pods
             let phase = p.status.as_ref().and_then(|s| s.phase.as_ref());
-            matches!(phase, Some(rusternetes_common::types::Phase::Running))
-                && p.metadata.deletion_timestamp.is_none()
+            if matches!(
+                phase,
+                Some(rusternetes_common::types::Phase::Succeeded)
+                    | Some(rusternetes_common::types::Phase::Failed)
+            ) {
+                return false;
+            }
+            p.metadata.deletion_timestamp.is_none()
         })
         .collect();
 

@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Create endpoints
 pub async fn create_endpoints(
@@ -71,7 +71,7 @@ pub async fn get_endpoints(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Endpoints>> {
-    info!("Getting endpoints: {}/{}", namespace, name);
+    debug!("Getting endpoints: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "endpoints")
@@ -99,7 +99,7 @@ pub async fn list_endpoints(
     Path(namespace): Path<String>,
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
-    info!("Listing endpoints in namespace: {}", namespace);
+    debug!("Listing endpoints in namespace: {}", namespace);
 
     // Check if this is a watch request
     if params.watch.unwrap_or(false) {
@@ -147,7 +147,7 @@ pub async fn list_all_endpoints(
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<WatchParams>,
 ) -> Result<Response> {
-    info!("Listing all endpoints");
+    debug!("Listing all endpoints");
 
     // Check if this is a watch request
     if params.watch.unwrap_or(false) {

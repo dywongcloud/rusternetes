@@ -90,7 +90,7 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             return Ok(());
         }
 
-        info!(
+        debug!(
             "VPA {}/{} found {} target pods",
             namespace,
             name,
@@ -111,7 +111,7 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
             return Ok(());
         }
 
-        info!(
+        debug!(
             "Generated {} container recommendations for VPA {}/{}",
             recommendations.len(),
             namespace,
@@ -388,7 +388,7 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
                 }),
             };
 
-            info!(
+            debug!(
                 "Recommendation for container {}: target CPU={}, memory={}",
                 container_name,
                 format_cpu(final_target_cpu),
@@ -505,7 +505,7 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         let key = rusternetes_storage::build_key("verticalpodautoscalers", Some(namespace), name);
         self.storage.update(&key, &updated_vpa).await?;
 
-        info!(
+        debug!(
             "Updated VPA {}/{} status with recommendations",
             namespace, name
         );

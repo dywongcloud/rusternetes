@@ -14,7 +14,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -147,7 +147,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ServiceAccount>> {
-    info!("Getting service account: {}/{}", namespace, name);
+    debug!("Getting service account: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "serviceaccounts")
@@ -302,7 +302,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing service accounts in namespace: {}", namespace);
+    debug!("Listing service accounts in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "serviceaccounts")
@@ -365,7 +365,7 @@ pub async fn list_all_serviceaccounts(
         .await;
     }
 
-    info!("Listing all serviceaccounts");
+    debug!("Listing all serviceaccounts");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "serviceaccounts").with_api_group("");

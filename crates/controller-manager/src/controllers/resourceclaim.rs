@@ -7,7 +7,7 @@ use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// ResourceClaimController manages the allocation of devices for ResourceClaims
 ///
@@ -87,7 +87,7 @@ impl<S: Storage> ResourceClaimController<S> {
             return Ok(());
         }
 
-        info!(
+        debug!(
             "Allocating devices for ResourceClaim {}/{}",
             namespace, name
         );
@@ -96,7 +96,7 @@ impl<S: Storage> ResourceClaimController<S> {
         let mut allocation_results = Vec::new();
 
         for request in &claim.spec.devices.requests {
-            info!("Processing device request: {}", request.name);
+            debug!("Processing device request: {}", request.name);
 
             // Try to allocate from exact request
             if let Some(exact) = &request.exactly {
@@ -111,7 +111,7 @@ impl<S: Storage> ResourceClaimController<S> {
                     }
                 };
 
-                info!("Found DeviceClass: {}", device_class_name);
+                debug!("Found DeviceClass: {}", device_class_name);
 
                 // Find suitable devices from ResourceSlices
                 let devices = self
@@ -123,7 +123,7 @@ impl<S: Storage> ResourceClaimController<S> {
                     continue;
                 }
 
-                info!(
+                debug!(
                     "Found {} suitable device(s) for request {}",
                     devices.len(),
                     request.name
@@ -193,7 +193,7 @@ impl<S: Storage> ResourceClaimController<S> {
         // Get all ResourceSlices
         let slices: Vec<ResourceSlice> = self.storage.list("/registry/resourceslices/").await?;
 
-        info!(
+        debug!(
             "Checking {} ResourceSlice(s) for suitable devices",
             slices.len()
         );

@@ -47,7 +47,7 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
     async fn reconcile_pdb(&self, pdb: &PodDisruptionBudget) -> rusternetes_common::Result<()> {
         let namespace = pdb.metadata.namespace.as_deref().unwrap_or("default");
 
-        info!(
+        debug!(
             "Reconciling PodDisruptionBudget: {}/{}",
             namespace, pdb.metadata.name
         );
@@ -81,7 +81,7 @@ impl<S: Storage> PodDisruptionBudgetController<S> {
         // disruptions_allowed = current_healthy - desired_healthy
         let disruptions_allowed = healthy_pods - desired_healthy;
 
-        info!(
+        debug!(
             "PDB {}/{}: desired_healthy={}, disruptions_allowed={}",
             namespace, pdb.metadata.name, desired_healthy, disruptions_allowed
         );

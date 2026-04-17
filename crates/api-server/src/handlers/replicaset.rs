@@ -14,7 +14,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -86,7 +86,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ReplicaSet>> {
-    info!("Getting replicaset: {}/{}", namespace, name);
+    debug!("Getting replicaset: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "replicasets")
@@ -261,7 +261,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing replicasets in namespace: {}", namespace);
+    debug!("Listing replicasets in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "replicasets")
@@ -341,7 +341,7 @@ pub async fn list_all_replicasets(
         .await;
     }
 
-    info!("Listing all replicasets");
+    debug!("Listing all replicasets");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "replicasets").with_api_group("apps");

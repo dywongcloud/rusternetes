@@ -9,7 +9,7 @@ use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub struct PVBinderController<S: Storage> {
     storage: Arc<S>,
@@ -58,8 +58,8 @@ impl<S: Storage> PVBinderController<S> {
 
         let pvc_spec = &pvc.spec;
 
-        info!("Looking for PV to bind to PVC {}/{}", namespace, pvc_name);
-        info!(
+        debug!("Looking for PV to bind to PVC {}/{}", namespace, pvc_name);
+        debug!(
             "PVC requirements: storage_class={:?}, capacity={:?}, access_modes={:?}",
             pvc_spec.storage_class_name,
             pvc_spec
@@ -73,11 +73,11 @@ impl<S: Storage> PVBinderController<S> {
         // Get all available PVs
         let pvs: Vec<PersistentVolume> = self.storage.list("/registry/persistentvolumes/").await?;
 
-        info!("Found {} PVs to check for binding", pvs.len());
+        debug!("Found {} PVs to check for binding", pvs.len());
 
         // Find a matching available PV
         for mut pv in pvs {
-            info!("Checking PV {} (storage_class={:?}, capacity={:?}, access_modes={:?}, claim_ref={:?})",
+            debug!("Checking PV {} (storage_class={:?}, capacity={:?}, access_modes={:?}, claim_ref={:?})",
                 pv.metadata.name,
                 pv.spec.storage_class_name,
                 pv.spec.capacity,
@@ -91,7 +91,7 @@ impl<S: Storage> PVBinderController<S> {
 
             // Check if PV matches PVC requirements
             let matches = self.pv_matches_pvc(&pv.spec, pvc_spec);
-            info!(
+            debug!(
                 "PV {} matches PVC requirements: {}",
                 pv.metadata.name, matches
             );
@@ -159,7 +159,7 @@ impl<S: Storage> PVBinderController<S> {
             return Ok(());
         }
 
-        info!("No matching PV found for PVC {}/{}", namespace, pvc_name);
+        debug!("No matching PV found for PVC {}/{}", namespace, pvc_name);
         Ok(())
     }
 
@@ -219,7 +219,7 @@ impl<S: Storage> PVBinderController<S> {
             (Some((pv_num, pv_unit)), Some((pvc_num, pvc_unit))) => {
                 // Units must match
                 if pv_unit != pvc_unit {
-                    info!(
+                    debug!(
                         "Storage units don't match: PV has {}, PVC needs {}",
                         pv_unit, pvc_unit
                     );
@@ -227,14 +227,14 @@ impl<S: Storage> PVBinderController<S> {
                 }
                 // PV must have at least as much storage as PVC
                 let sufficient = pv_num >= pvc_num;
-                info!(
+                debug!(
                     "Storage comparison: PV has {}{}, PVC needs {}{} -> sufficient: {}",
                     pv_num, pv_unit, pvc_num, pvc_unit, sufficient
                 );
                 sufficient
             }
             _ => {
-                info!(
+                debug!(
                     "Failed to parse storage values: PV='{}', PVC='{}'",
                     pv_storage, pvc_storage
                 );

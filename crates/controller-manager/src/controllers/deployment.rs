@@ -274,7 +274,7 @@ impl<S: Storage> DeploymentController<S> {
             }
         }
 
-        info!(
+        debug!(
             "Found {} ReplicaSets owned by deployment {}/{}",
             owned_replicasets.len(),
             namespace,

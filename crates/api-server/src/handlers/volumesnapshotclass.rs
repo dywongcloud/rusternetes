@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_volumesnapshotclass(
     State(state): State<Arc<ApiServerState>>,
@@ -53,7 +53,7 @@ pub async fn get_volumesnapshotclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<VolumeSnapshotClass>> {
-    info!("Getting VolumeSnapshotClass: {}", name);
+    debug!("Getting VolumeSnapshotClass: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "volumesnapshotclasses")
         .with_api_group("snapshot.storage.k8s.io")
@@ -77,7 +77,7 @@ pub async fn list_volumesnapshotclasses(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<VolumeSnapshotClass>>> {
-    info!("Listing all VolumeSnapshotClasses");
+    debug!("Listing all VolumeSnapshotClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumesnapshotclasses")
         .with_api_group("snapshot.storage.k8s.io");

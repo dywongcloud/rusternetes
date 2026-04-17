@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 // ===== ValidatingWebhookConfiguration Handlers =====
 
@@ -122,7 +122,7 @@ pub async fn get_validating_webhook(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ValidatingWebhookConfiguration>> {
-    info!("Getting ValidatingWebhookConfiguration: {}", name);
+    debug!("Getting ValidatingWebhookConfiguration: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "validatingwebhookconfigurations")
@@ -249,7 +249,7 @@ pub async fn list_validating_webhooks(
         .await;
     }
 
-    info!("Listing ValidatingWebhookConfigurations");
+    debug!("Listing ValidatingWebhookConfigurations");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "validatingwebhookconfigurations")
@@ -382,7 +382,7 @@ pub async fn get_mutating_webhook(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<MutatingWebhookConfiguration>> {
-    info!("Getting MutatingWebhookConfiguration: {}", name);
+    debug!("Getting MutatingWebhookConfiguration: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "mutatingwebhookconfigurations")
@@ -509,7 +509,7 @@ pub async fn list_mutating_webhooks(
         .await;
     }
 
-    info!("Listing MutatingWebhookConfigurations");
+    debug!("Listing MutatingWebhookConfigurations");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "mutatingwebhookconfigurations")

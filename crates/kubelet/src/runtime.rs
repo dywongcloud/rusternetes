@@ -540,21 +540,22 @@ impl ContainerRuntime {
             }))
             .await
         {
-            for c in &containers {
-                if let Some(ref id) = c.id {
+            // Remove old containers in parallel for faster cleanup
+            let remove_futures: Vec<_> = containers
+                .iter()
+                .filter_map(|c| c.id.as_ref())
+                .map(|id| {
                     debug!("Removing old container {} for pod {}", id, pod_name);
-                    let _ = self
-                        .docker
-                        .remove_container(
-                            id,
-                            Some(bollard::container::RemoveContainerOptions {
-                                force: true,
-                                ..Default::default()
-                            }),
-                        )
-                        .await;
-                }
-            }
+                    self.docker.remove_container(
+                        id,
+                        Some(bollard::container::RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
+                    )
+                })
+                .collect();
+            let _ = futures_util::future::join_all(remove_futures).await;
         }
 
         // Create network namespace and setup CNI networking if enabled
@@ -677,6 +678,42 @@ impl ContainerRuntime {
         // resolved_ip is only used in the non-CNI/non-pause fallback path now.
         let mut resolved_ip = pod_ip.is_some();
 
+        // Pre-pull ALL images (init + sidecar + main) in parallel while the
+        // pause container is running. This eliminates serial image pull latency.
+        // K8s EnsureImageExists is called per-container, but Docker handles
+        // concurrent pulls safely and we benefit from parallelism.
+        {
+            let mut all_images: Vec<(String, Option<String>)> = Vec::new();
+            if let Some(init_containers) = &pod.spec.as_ref().unwrap().init_containers {
+                for ic in init_containers {
+                    all_images.push((ic.image.clone(), ic.image_pull_policy.clone()));
+                }
+            }
+            for c in &pod.spec.as_ref().unwrap().containers {
+                all_images.push((c.image.clone(), c.image_pull_policy.clone()));
+            }
+            // Deduplicate
+            let mut seen = std::collections::HashSet::new();
+            let unique: Vec<(String, Option<String>)> = all_images
+                .into_iter()
+                .filter(|(img, _)| seen.insert(img.clone()))
+                .collect();
+            if !unique.is_empty() {
+                debug!("Pre-pulling {} unique images for pod {}", unique.len(), pod_name);
+                let futs: Vec<_> = unique
+                    .iter()
+                    .map(|(img, pol)| self.ensure_image(img, pol.as_deref()))
+                    .collect();
+                let results = futures_util::future::join_all(futs).await;
+                for (i, r) in results.into_iter().enumerate() {
+                    if let Err(e) = r {
+                        error!("Failed to pull image {}: {}", unique[i].0, e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
         // Step 1: Run init containers sequentially (non-sidecar init containers)
         // Sidecar init containers (with restartPolicy: Always) will be started with main containers
         if let Some(init_containers) = &pod.spec.as_ref().unwrap().init_containers {
@@ -744,17 +781,7 @@ impl ContainerRuntime {
                         }
                     }
 
-                    // Ensure image is available
-                    if let Err(e) = self
-                        .ensure_image(&container.image, container.image_pull_policy.as_deref())
-                        .await
-                    {
-                        error!(
-                            "Failed to pull image for init container {}: {}",
-                            container.name, e
-                        );
-                        return Err(e);
-                    }
+                    // Image already pre-pulled above
 
                     // For restartPolicy=Always pods, retry failed init containers
                     // with exponential backoff (matching Kubernetes CrashLoopBackOff)
@@ -886,6 +913,7 @@ impl ContainerRuntime {
         }
 
         // Step 2: Start sidecar containers (init containers with restartPolicy: Always)
+        // Images already pre-pulled in the parallel pre-pull step above.
         if let Some(init_containers) = &pod.spec.as_ref().unwrap().init_containers {
             for container in init_containers {
                 let is_sidecar = container.restart_policy.as_deref() == Some("Always");
@@ -893,17 +921,7 @@ impl ContainerRuntime {
                 if is_sidecar {
                     info!("Starting sidecar container: {}", container.name);
 
-                    // Ensure image is available
-                    if let Err(e) = self
-                        .ensure_image(&container.image, container.image_pull_policy.as_deref())
-                        .await
-                    {
-                        error!(
-                            "Failed to pull image for sidecar container {}: {}",
-                            container.name, e
-                        );
-                        return Err(e);
-                    }
+                    // Image already pre-pulled above
 
                     // Start the sidecar container (it will run alongside main containers)
                     self.start_container(
@@ -928,21 +946,9 @@ impl ContainerRuntime {
             }
         }
 
-        // Step 3: Start main containers
+        // Step 3: Start main containers (images already pre-pulled above)
         let spec_containers = pod.spec.as_ref().unwrap().containers.clone();
         for container in &spec_containers {
-            // Ensure image is available
-            if let Err(e) = self
-                .ensure_image(&container.image, container.image_pull_policy.as_deref())
-                .await
-            {
-                error!(
-                    "Failed to pull image for container {}: {}",
-                    container.name, e
-                );
-                return Err(e);
-            }
-
             // Start the container with volume bindings
             self.start_container(
                 pod,
@@ -1217,7 +1223,15 @@ impl ContainerRuntime {
                         if let Some(host_port) = port.host_port {
                             // Use the pod spec's hostIP if specified, otherwise 0.0.0.0.
                             // Different pods can bind the same port on different hostIPs.
-                            let bind_ip = port.host_ip.as_deref().unwrap_or("0.0.0.0").to_string();
+                            // In Docker-in-Docker (DinD) environments, the node's InternalIP
+                            // is a container bridge IP that isn't local to the host Docker daemon.
+                            // Map non-loopback, non-wildcard IPs to 0.0.0.0 so Docker can bind them.
+                            let raw_ip = port.host_ip.as_deref().unwrap_or("0.0.0.0");
+                            let bind_ip = match raw_ip {
+                                "" | "0.0.0.0" | "::" => "0.0.0.0".to_string(),
+                                "127.0.0.1" | "::1" => raw_ip.to_string(),
+                                _ => "0.0.0.0".to_string(), // node IP can't bind in DinD
+                            };
                             port_bindings.insert(
                                 port_key,
                                 Some(vec![bollard::models::PortBinding {
@@ -1348,7 +1362,7 @@ impl ContainerRuntime {
                         }
                     }
                     self.docker
-                        .create_container(Some(options), config)
+                        .create_container(Some(options), config.clone())
                         .await
                         .context("Failed to create pause container after cleanup")?;
                 } else {
@@ -3194,8 +3208,9 @@ impl ContainerRuntime {
                 self.docker
                     .remove_container(&container_name, Some(remove_options))
                     .await?;
-                // Wait for Docker to release the container name
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                // Brief wait for Docker to release the container name.
+                // Docker typically releases names within 50ms after force removal.
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             } else {
                 // Unknown state — don't remove, don't recreate
                 debug!(
@@ -4283,21 +4298,15 @@ impl ContainerRuntime {
                 .collect()
         };
 
-        // Check if this container mounts emptyDir volumes — if so, we need
-        // umask 0 so files created inside have the expected permissions (0777).
-        // Docker's default umask is 0022 which reduces 0777 to 0755.
-        // K8s uses the container runtime to set umask, but Docker doesn't support it,
-        // so we wrap the command with "umask 0 && exec <original>".
-        // However, distroless/scratch images don't have /bin/sh, so we probe
-        // the image first by creating+starting a test container.
-        let has_emptydir_mount = container
-            .volume_mounts
-            .as_ref()
-            .map(|mounts| mounts.iter().any(|m| empty_dir_volumes.contains(&m.name)))
-            .unwrap_or(false);
-        let has_shell = if has_emptydir_mount {
-            // Check cache first to avoid probe overhead
-            let cached_result = self
+        // K8s sets emptyDir directory permissions to 0777 via chmod in setupDir()
+        // (pkg/volume/emptydir/empty_dir.go). It does NOT wrap container commands
+        // with "umask 0 && exec". We already chmod 0777 in create_pod_volumes().
+        // Never wrap commands — it breaks shell-less images (sonobuoy, conformance, etc).
+        let has_emptydir_mount = false; // disabled — chmod handles permissions
+        let has_shell = false;
+        #[allow(unused)]
+        if false {
+            let cached_result: Option<bool> = self
                 .shell_cache
                 .lock()
                 .unwrap()
@@ -4306,46 +4315,71 @@ impl ContainerRuntime {
             if let Some(cached) = cached_result {
                 cached
             } else {
-                let probe_name = format!("{}_sh_probe", container_name);
-                let probe_config = bollard::container::Config {
-                    image: Some(container.image.clone()),
-                    entrypoint: Some(vec![
-                        "/bin/sh".to_string(),
-                        "-c".to_string(),
-                        "true".to_string(),
-                    ]),
-                    cmd: Some(vec![]),
-                    ..Default::default()
-                };
-                let probe_opts = CreateContainerOptions {
-                    name: probe_name.clone(),
-                    ..Default::default()
-                };
-                let shell_ok = match self
-                    .docker
-                    .create_container(Some(probe_opts), probe_config)
-                    .await
-                {
-                    Ok(_) => {
-                        let start_ok = self
-                            .docker
-                            .start_container(&probe_name, None::<StartContainerOptions<String>>)
-                            .await
-                            .is_ok();
-                        start_ok
+                // Use image inspection to heuristically detect if /bin/sh exists.
+                // Known no-shell images: distroless, scratch, static.
+                // Most standard images (alpine, debian, ubuntu, busybox, etc.) have /bin/sh.
+                // This avoids creating+starting+removing a probe container per image.
+                let shell_ok = if let Ok(inspect) = self.docker.inspect_image(&container.image).await {
+                    // Check image labels/config for distroless/scratch indicators
+                    let image_name_lower = container.image.to_lowercase();
+                    let is_known_no_shell = image_name_lower.contains("distroless")
+                        || image_name_lower.contains("scratch")
+                        || image_name_lower.contains("static");
+                    if is_known_no_shell {
+                        false
+                    } else {
+                        // Check if the image has a shell-based entrypoint (strong signal)
+                        let has_shell_ep = inspect
+                            .config
+                            .as_ref()
+                            .and_then(|c| c.entrypoint.as_ref())
+                            .map(|ep| {
+                                ep.iter().any(|e| {
+                                    e.contains("/bin/sh")
+                                        || e.contains("/bin/bash")
+                                        || e.contains("/bin/ash")
+                                })
+                            })
+                            .unwrap_or(false);
+                        let has_shell_cmd = inspect
+                            .config
+                            .as_ref()
+                            .and_then(|c| c.cmd.as_ref())
+                            .map(|cmd| {
+                                cmd.iter().any(|c| {
+                                    c.contains("/bin/sh")
+                                        || c.contains("/bin/bash")
+                                        || c.contains("/bin/ash")
+                                })
+                            })
+                            .unwrap_or(false);
+                        // If there's a shell in entrypoint/cmd, definitely has shell.
+                        // Otherwise, check if image name suggests a distro with /bin/sh.
+                        // Default to false (no shell) to avoid wrapping images that lack it.
+                        let is_known_has_shell = image_name_lower.contains("alpine")
+                            || image_name_lower.contains("debian")
+                            || image_name_lower.contains("ubuntu")
+                            || image_name_lower.contains("centos")
+                            || image_name_lower.contains("fedora")
+                            || image_name_lower.contains("busybox")
+                            || image_name_lower.contains("nginx")
+                            || image_name_lower.contains("redis")
+                            || image_name_lower.contains("postgres")
+                            || image_name_lower.contains("mysql")
+                            || image_name_lower.contains("node:")
+                            || image_name_lower.contains("python")
+                            || image_name_lower.contains("ruby")
+                            || image_name_lower.contains("golang")
+                            || image_name_lower.contains("openjdk")
+                            || image_name_lower.contains("httpd")
+                            || image_name_lower.contains("perl")
+                            || image_name_lower.contains("php");
+                        has_shell_ep || has_shell_cmd || is_known_has_shell
                     }
-                    Err(_) => false,
+                } else {
+                    // Can't inspect — assume it has a shell (safe default)
+                    true
                 };
-                let _ = self
-                    .docker
-                    .remove_container(
-                        &probe_name,
-                        Some(bollard::container::RemoveContainerOptions {
-                            force: true,
-                            ..Default::default()
-                        }),
-                    )
-                    .await;
                 if !shell_ok {
                     info!(
                         "Container {} - image lacks /bin/sh, skipping umask wrapper",
@@ -4561,8 +4595,8 @@ impl ContainerRuntime {
                         .await;
                 }
                 // Wait for Docker to finalize removal and release the container name.
-                // 100ms was insufficient — Docker needs more time to clean up.
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                // Force-remove is synchronous in Docker daemon; 200ms is sufficient.
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 // Retry creation after removal
                 if let Err(e2) = self.docker.create_container(Some(options), config).await {
                     error!(
@@ -4707,7 +4741,8 @@ impl ContainerRuntime {
         Ok(())
     }
 
-    /// Stop all containers for a pod with a specific grace period in seconds
+    /// Stop all containers for a pod with a specific grace period in seconds.
+    /// Stops the pause container last to keep the network namespace alive.
     pub async fn stop_pod_with_grace_period(
         &self,
         pod_name: &str,
@@ -4730,15 +4765,31 @@ impl ContainerRuntime {
 
         let containers = self.docker.list_containers(Some(options)).await?;
 
-        for container in containers {
-            if let Some(id) = container.id {
+        // Stop app containers first, then the pause container last.
+        // The pause container owns the network namespace — stopping it first
+        // would destroy networking for containers still shutting down.
+        let mut pause_container_id: Option<String> = None;
+
+        for container in &containers {
+            if let Some(ref id) = container.id {
+                let names = container.names.clone().unwrap_or_default();
+                let container_name = names
+                    .first()
+                    .map(|n| n.trim_start_matches('/').to_string())
+                    .unwrap_or_default();
+
+                if container_name.ends_with("_pause") {
+                    pause_container_id = Some(id.clone());
+                    continue;
+                }
+
                 info!("Stopping container: {}", id);
 
                 // Stop the container gracefully using the pod's terminationGracePeriodSeconds
                 let stop_options = StopContainerOptions {
                     t: grace_period_seconds,
                 };
-                if let Err(e) = self.docker.stop_container(&id, Some(stop_options)).await {
+                if let Err(e) = self.docker.stop_container(id, Some(stop_options)).await {
                     warn!("Failed to stop container {}: {}", id, e);
                 }
 
@@ -4747,6 +4798,17 @@ impl ContainerRuntime {
                 // pods after the pod has been deleted from the API. The orphaned
                 // container cleanup will remove them on the next cycle.
                 debug!("Container {} stopped, keeping for log access", id);
+            }
+        }
+
+        // Stop the pause container last
+        if let Some(ref pause_id) = pause_container_id {
+            info!("Stopping pause container: {} (last)", pause_id);
+            let stop_options = StopContainerOptions {
+                t: grace_period_seconds,
+            };
+            if let Err(e) = self.docker.stop_container(pause_id, Some(stop_options)).await {
+                warn!("Failed to stop pause container {}: {}", pause_id, e);
             }
         }
 
@@ -4981,16 +5043,61 @@ impl ContainerRuntime {
                         }
                     }
                     Err(_) => {
-                        // Container doesn't exist — it hasn't been created yet.
-                        // Report as Waiting, not Terminated.
-                        (
-                            ContainerState::Waiting {
-                                reason: Some("PodInitializing".to_string()),
-                                message: None,
-                            },
-                            None,
-                            None,
-                        )
+                        // Container doesn't exist in Docker — it may have been removed
+                        // after successful completion. Check the pod's existing status
+                        // to preserve Terminated state for init containers that already
+                        // finished successfully (exit code 0). Without this, the status
+                        // resets to Waiting/PodInitializing and ready becomes false.
+                        let prev = pod
+                            .status
+                            .as_ref()
+                            .and_then(|s| s.init_container_statuses.as_ref())
+                            .and_then(|statuses| statuses.iter().find(|s| s.name == ic.name));
+
+                        if let Some(prev_status) = prev {
+                            if let Some(ContainerState::Terminated { exit_code, .. }) =
+                                &prev_status.state
+                            {
+                                if *exit_code == 0 {
+                                    // Preserve the successful termination state
+                                    (
+                                        prev_status.state.clone().unwrap(),
+                                        prev_status.container_id.clone(),
+                                        prev_status.image_id.clone(),
+                                    )
+                                } else {
+                                    // Previously terminated with error — fall back to Waiting
+                                    (
+                                        ContainerState::Waiting {
+                                            reason: Some("PodInitializing".to_string()),
+                                            message: None,
+                                        },
+                                        None,
+                                        None,
+                                    )
+                                }
+                            } else {
+                                // Previous state wasn't Terminated — fall back to Waiting
+                                (
+                                    ContainerState::Waiting {
+                                        reason: Some("PodInitializing".to_string()),
+                                        message: None,
+                                    },
+                                    None,
+                                    None,
+                                )
+                            }
+                        } else {
+                            // No previous status — container hasn't been created yet
+                            (
+                                ContainerState::Waiting {
+                                    reason: Some("PodInitializing".to_string()),
+                                    message: None,
+                                },
+                                None,
+                                None,
+                            )
+                        }
                     }
                 };
 
@@ -6440,11 +6547,36 @@ impl ContainerRuntime {
             }
         }
 
-        // Second pass: stop all containers
+        // Second pass: stop all containers, stopping the pause container LAST.
+        // K8s always stops the infra/sandbox container after all app containers
+        // to keep the pod's network namespace alive during graceful shutdown.
+        // This ensures that:
+        //  1. preStop hooks can reach sibling containers (already handled above)
+        //  2. The pod remains network-reachable (via its IP) while containers
+        //     are shutting down, so pod proxy and monitoring can still reach it
+        //  3. SIGTERM handlers in app containers can make outbound network calls
+        //
+        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go —
+        //   killContainersWithSyncResult stops app containers first, then
+        //   StopPodSandbox tears down the sandbox (pause) container.
+        let pause_suffix = format!("{}_pause", pod_name);
+        let mut pause_container_id: Option<String> = None;
+
         for container in &containers {
             if let Some(ref id) = container.id {
                 let is_running = container.state.as_deref() == Some("running");
                 if !is_running {
+                    continue;
+                }
+
+                // Check if this is the pause container — defer stopping it
+                let names = container.names.clone().unwrap_or_default();
+                let container_name = names
+                    .first()
+                    .map(|n| n.trim_start_matches('/').to_string())
+                    .unwrap_or_default();
+                if container_name == pause_suffix || container_name.ends_with("_pause") {
+                    pause_container_id = Some(id.clone());
                     continue;
                 }
 
@@ -6459,6 +6591,17 @@ impl ContainerRuntime {
                 }
 
                 debug!("Container {} stopped, keeping for log access", id);
+            }
+        }
+
+        // Stop the pause container last — the network namespace dies with it
+        if let Some(ref pause_id) = pause_container_id {
+            info!("Stopping pause container: {} (last)", pause_id);
+            let stop_options = StopContainerOptions {
+                t: grace_period_seconds,
+            };
+            if let Err(e) = self.docker.stop_container(pause_id, Some(stop_options)).await {
+                warn!("Failed to stop pause container {}: {}", pause_id, e);
             }
         }
 

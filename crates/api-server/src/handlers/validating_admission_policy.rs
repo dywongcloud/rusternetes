@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 // ===== ValidatingAdmissionPolicy Handlers =====
 
@@ -61,7 +61,7 @@ pub async fn get_validating_admission_policy(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ValidatingAdmissionPolicy>> {
-    info!("Getting ValidatingAdmissionPolicy: {}", name);
+    debug!("Getting ValidatingAdmissionPolicy: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "validatingadmissionpolicies")
@@ -188,7 +188,7 @@ pub async fn list_validating_admission_policies(
         .await;
     }
 
-    info!("Listing ValidatingAdmissionPolicies");
+    debug!("Listing ValidatingAdmissionPolicies");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "validatingadmissionpolicies")
@@ -277,7 +277,7 @@ pub async fn get_validating_admission_policy_binding(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ValidatingAdmissionPolicyBinding>> {
-    info!("Getting ValidatingAdmissionPolicyBinding: {}", name);
+    debug!("Getting ValidatingAdmissionPolicyBinding: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "validatingadmissionpolicybindings")
@@ -406,7 +406,7 @@ pub async fn list_validating_admission_policy_bindings(
         .await;
     }
 
-    info!("Listing ValidatingAdmissionPolicyBindings");
+    debug!("Listing ValidatingAdmissionPolicyBindings");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "validatingadmissionpolicybindings")

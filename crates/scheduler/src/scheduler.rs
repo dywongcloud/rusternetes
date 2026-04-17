@@ -96,7 +96,7 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
             return Ok(());
         }
 
-        info!("Found {} pending pods to schedule", pending_pods.len());
+        debug!("Found {} pending pods to schedule", pending_pods.len());
 
         // Get all nodes
         let nodes_prefix = build_prefix("nodes", None);
@@ -109,6 +109,18 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
 
         // Load all PriorityClasses for pod priority resolution
         let priority_classes = self.load_priority_classes().await?;
+
+        // Sort pending pods by priority (descending) — K8s scheduling queue
+        // processes higher-priority pods first. Without this, lower-priority
+        // replacement pods (from RS controller) can be scheduled before the
+        // preemptor, consuming the resources that preemption freed and causing
+        // a live-lock: preempt → replacement scheduled → preempt again → ...
+        let mut pending_pods = pending_pods;
+        pending_pods.sort_by(|a, b| {
+            let a_pri = self.get_pod_priority_sync(a, &priority_classes);
+            let b_pri = self.get_pod_priority_sync(b, &priority_classes);
+            b_pri.cmp(&a_pri) // Descending: highest priority first
+        });
 
         // Re-read all_pods before each scheduling decision. K8s re-evaluates
         // cluster state per-pod. Using stale pod data causes preemption to
@@ -471,7 +483,7 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         mut pod: Pod,
         node_name: &str,
     ) -> rusternetes_common::Result<()> {
-        info!(
+        debug!(
             "Binding pod {}/{} to node {}",
             pod.metadata
                 .namespace

@@ -140,7 +140,7 @@ impl<S: Storage> ReplicationControllerController<S> {
         // Get all pods in namespace
         let pods_prefix = build_prefix("pods", Some(namespace));
         let all_pods: Vec<Pod> = self.storage.list(&pods_prefix).await?;
-        info!(
+        debug!(
             "Found {} total pods in namespace {}",
             all_pods.len(),
             namespace
@@ -175,7 +175,7 @@ impl<S: Storage> ReplicationControllerController<S> {
         let current_replicas = active_rc_pods.len() as i32;
         let desired_replicas = rc.spec.replicas.unwrap_or(1);
 
-        info!(
+        debug!(
             "ReplicationController {}/{}: current={}, desired={} (matched {} pods)",
             namespace,
             rc.metadata.name,

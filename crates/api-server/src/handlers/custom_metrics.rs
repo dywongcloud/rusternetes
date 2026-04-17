@@ -14,7 +14,7 @@ use rusternetes_common::{
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Deserialize)]
 pub struct MetricQuery {
@@ -238,7 +238,7 @@ pub async fn get_namespace_metric(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, metric_name)): Path<(String, String)>,
 ) -> Result<Json<MetricValue>> {
-    info!("Getting namespace metric {} for {}", metric_name, namespace);
+    debug!("Getting namespace metric {} for {}", metric_name, namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "namespaces")

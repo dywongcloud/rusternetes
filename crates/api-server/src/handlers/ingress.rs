@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -64,7 +64,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Ingress>> {
-    info!("Getting ingress: {}/{}", namespace, name);
+    debug!("Getting ingress: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "ingresses")
@@ -225,7 +225,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing ingresses in namespace: {}", namespace);
+    debug!("Listing ingresses in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "ingresses")
@@ -288,7 +288,7 @@ pub async fn list_all_ingresses(
         .await;
     }
 
-    info!("Listing all ingresses");
+    debug!("Listing all ingresses");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "ingresses")

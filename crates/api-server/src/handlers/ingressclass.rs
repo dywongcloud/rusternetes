@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_ingressclass(
     State(state): State<Arc<ApiServerState>>,
@@ -56,7 +56,7 @@ pub async fn get_ingressclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<IngressClass>> {
-    info!("Getting IngressClass: {}", name);
+    debug!("Getting IngressClass: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "ingressclasses")
@@ -186,7 +186,7 @@ pub async fn list_ingressclasses(
         .await;
     }
 
-    info!("Listing IngressClasses");
+    debug!("Listing IngressClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "ingressclasses")
         .with_api_group("networking.k8s.io");

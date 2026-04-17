@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_volumesnapshot(
     State(state): State<Arc<ApiServerState>>,
@@ -59,7 +59,7 @@ pub async fn get_volumesnapshot(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<VolumeSnapshot>> {
-    info!("Getting VolumeSnapshot: {}/{}", namespace, name);
+    debug!("Getting VolumeSnapshot: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "volumesnapshots")
         .with_api_group("snapshot.storage.k8s.io")
@@ -85,7 +85,7 @@ pub async fn list_volumesnapshots(
     Path(namespace): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<VolumeSnapshot>>> {
-    info!("Listing VolumeSnapshots in namespace: {}", namespace);
+    debug!("Listing VolumeSnapshots in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumesnapshots")
         .with_api_group("snapshot.storage.k8s.io")
@@ -113,7 +113,7 @@ pub async fn list_all_volumesnapshots(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<VolumeSnapshot>>> {
-    info!("Listing all VolumeSnapshots");
+    debug!("Listing all VolumeSnapshots");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumesnapshots")
         .with_api_group("snapshot.storage.k8s.io");

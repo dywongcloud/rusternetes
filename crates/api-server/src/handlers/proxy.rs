@@ -20,7 +20,49 @@ use rusternetes_common::{
 };
 use rusternetes_storage::Storage;
 use std::{collections::HashMap, sync::Arc};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+
+/// Parse a resource identifier in Kubernetes proxy format.
+///
+/// Matches the behavior of `k8s.io/apimachinery/pkg/util/net.SplitSchemeNamePort`:
+/// - `"name"` -> (scheme="", name="name", port="")
+/// - `"name:port"` -> (scheme="", name="name", port="port")
+/// - `"scheme:name:port"` -> (scheme="scheme", name="name", port="port")
+///
+/// Valid schemes are "", "http", and "https".
+fn split_scheme_name_port(id: &str) -> Option<(&str, &str, &str)> {
+    let parts: Vec<&str> = id.splitn(4, ':').collect();
+    match parts.len() {
+        1 => {
+            // "name"
+            if parts[0].is_empty() {
+                None
+            } else {
+                Some(("", parts[0], ""))
+            }
+        }
+        2 => {
+            // "name:port"
+            if parts[0].is_empty() {
+                None
+            } else {
+                Some(("", parts[0], parts[1]))
+            }
+        }
+        3 => {
+            // "scheme:name:port"
+            let scheme = parts[0];
+            if scheme != "http" && scheme != "https" {
+                return None;
+            }
+            if parts[1].is_empty() {
+                return None;
+            }
+            Some((scheme, parts[1], parts[2]))
+        }
+        _ => None,
+    }
+}
 
 /// Proxy HTTP requests to a node
 ///
@@ -116,11 +158,20 @@ pub async fn proxy_service(
         namespace, service_name, path
     );
 
+    // Parse service name — Kubernetes proxy subresource format:
+    //   "name", "name:port", or "scheme:name:port"
+    // K8s ref: k8s.io/apimachinery/pkg/util/net.SplitSchemeNamePort
+    let (scheme, actual_service_name, port_id) =
+        split_scheme_name_port(&service_name).unwrap_or(("", service_name.as_str(), ""));
+
+    // Determine the URL scheme — default to http when unspecified
+    let url_scheme = if scheme.is_empty() { "http" } else { scheme };
+
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "services/proxy")
         .with_api_group("")
         .with_namespace(&namespace)
-        .with_name(&service_name);
+        .with_name(actual_service_name);
 
     match state.authorizer.authorize(&attrs).await? {
         Decision::Allow => {}
@@ -129,61 +180,66 @@ pub async fn proxy_service(
         }
     }
 
-    // Parse service name — format may be "name" or "name:portname"
-    let (actual_service_name, port_name) = if let Some(idx) = service_name.find(':') {
-        (&service_name[..idx], Some(&service_name[idx + 1..]))
-    } else {
-        (service_name.as_str(), None)
-    };
-
     // Get the service to find its ClusterIP and port
     let service_key =
         rusternetes_storage::build_key("services", Some(&namespace), actual_service_name);
     let service: rusternetes_common::resources::Service = state.storage.get(&service_key).await?;
 
-    // Find the port — by name if specified, otherwise first port
-    let port = if let Some(pn) = port_name {
+    // Resolve the service port:
+    // 1. If port_id is a number, match by port number
+    // 2. If port_id is a name, match by port name
+    // 3. If port_id is empty, use the first port
+    // K8s ref: pkg/registry/core/service/storage/storage.go ResourceLocation
+    let port_id_as_num: Option<u16> = if port_id.is_empty() {
+        None
+    } else {
+        port_id.parse::<u16>().ok()
+    };
+
+    let matched_service_port = if port_id.is_empty() {
+        // No port specified — use first
+        service.spec.ports.first()
+    } else if let Some(num) = port_id_as_num {
+        // Port specified as number — match by port number, fallback to first
         service
             .spec
             .ports
             .iter()
-            .find(|p| p.name.as_deref() == Some(pn))
-            .map(|p| p.port)
-            .or_else(|| pn.parse::<u16>().ok())
-            .unwrap_or_else(|| service.spec.ports.first().map(|p| p.port).unwrap_or(80))
+            .find(|p| p.port == num)
+            .or_else(|| service.spec.ports.first())
     } else {
-        service.spec.ports.first().map(|p| p.port).unwrap_or(80)
+        // Port specified as name — match by name, fallback to first
+        service
+            .spec
+            .ports
+            .iter()
+            .find(|p| p.name.as_deref() == Some(port_id))
+            .or_else(|| service.spec.ports.first())
     };
 
-    // Get ClusterIP as fallback
-    let cluster_ip = service
-        .spec
-        .cluster_ip
-        .clone()
-        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let service_port = matched_service_port.map(|p| p.port).unwrap_or(80);
 
-    // Try to find a pod endpoint IP for direct proxying (more reliable than ClusterIP DNAT)
-    let target_port = match service
-        .spec
-        .ports
-        .iter()
-        .find(|p| port_name.map_or(true, |pn| p.name.as_deref() == Some(pn)))
-    {
-        Some(sp) => match &sp.target_port {
-            Some(rusternetes_common::resources::IntOrString::Int(p)) => *p as u16,
-            Some(rusternetes_common::resources::IntOrString::String(s)) => {
-                s.parse::<u16>().unwrap_or(port)
-            }
-            None => port,
-        },
-        None => port,
-    };
+    // Resolve target port (what the pod actually listens on)
+    let target_port = matched_service_port
+        .and_then(|sp| {
+            sp.target_port.as_ref().map(|tp| match tp {
+                rusternetes_common::resources::IntOrString::Int(p) => *p as u16,
+                rusternetes_common::resources::IntOrString::String(s) => {
+                    s.parse::<u16>().unwrap_or(service_port)
+                }
+            })
+        })
+        .unwrap_or(service_port);
 
-    // Look up endpoint IPs from EndpointSlices
+    // Look up endpoint IPs — try EndpointSlices first, then fall back to Endpoints.
+    // The API server container does NOT have kube-proxy's iptables rules,
+    // so ClusterIP DNAT is not available. We MUST resolve to a pod IP.
+    let mut endpoint_ip: Option<String> = None;
+
+    // Strategy 1: EndpointSlices
     let es_prefix = rusternetes_storage::build_prefix("endpointslices", Some(&namespace));
     let endpoint_slices: Vec<rusternetes_common::resources::EndpointSlice> =
         state.storage.list(&es_prefix).await.unwrap_or_default();
-    let mut endpoint_ip = None;
     for es in &endpoint_slices {
         let svc = es
             .metadata
@@ -205,12 +261,50 @@ pub async fn proxy_service(
         }
     }
 
-    // Use endpoint IP if available, otherwise fall back to ClusterIP
+    // Strategy 2: Endpoints (legacy API) — fall back when no EndpointSlice is found.
+    // Some tests create Endpoints directly, and the EndpointSlice mirroring controller
+    // may not have run yet.
+    if endpoint_ip.is_none() {
+        let ep_key =
+            rusternetes_storage::build_key("endpoints", Some(&namespace), actual_service_name);
+        if let Ok(endpoints) =
+            state.storage.get::<rusternetes_common::resources::Endpoints>(&ep_key).await
+        {
+            for subset in &endpoints.subsets {
+                if let Some(addrs) = &subset.addresses {
+                    if let Some(addr) = addrs.first() {
+                        endpoint_ip = Some(addr.ip.clone());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Build target URL — always prefer endpoint IP over ClusterIP
     let path = path.trim_start_matches('/');
-    let target_url = if let Some(ep_ip) = endpoint_ip {
-        format!("http://{}:{}/{}", ep_ip, target_port, path)
+    let target_url = if let Some(ep_ip) = &endpoint_ip {
+        debug!(
+            "Service proxy resolved endpoint: {}://{}:{} (service {}/{})",
+            url_scheme, ep_ip, target_port, namespace, actual_service_name
+        );
+        format!("{}://{}:{}/{}", url_scheme, ep_ip, target_port, path)
     } else {
-        format!("http://{}:{}/{}", cluster_ip, port, path)
+        // Last resort — use ClusterIP. This only works if kube-proxy rules
+        // are somehow visible to the API server container (unlikely).
+        let cluster_ip = service
+            .spec
+            .cluster_ip
+            .clone()
+            .unwrap_or_else(|| "127.0.0.1".to_string());
+        warn!(
+            "Service proxy: no endpoints found for {}/{}, falling back to ClusterIP {}",
+            namespace, actual_service_name, cluster_ip
+        );
+        format!(
+            "{}://{}:{}/{}",
+            url_scheme, cluster_ip, service_port, path
+        )
     };
 
     // Forward the request
@@ -256,17 +350,20 @@ pub async fn proxy_pod(
         namespace, pod_name, path
     );
 
-    // Parse pod name — format may be "name" or "name:port" (Kubernetes proxy subresource convention)
-    let (actual_pod_name, explicit_port) = if let Some(idx) = pod_name.rfind(':') {
-        let maybe_port = &pod_name[idx + 1..];
-        if let Ok(p) = maybe_port.parse::<u16>() {
-            (&pod_name[..idx], Some(p))
-        } else {
-            (pod_name.as_str(), None)
-        }
+    // Parse pod name — Kubernetes proxy subresource format:
+    //   "name", "name:port", or "scheme:name:port"
+    // K8s ref: k8s.io/apimachinery/pkg/util/net.SplitSchemeNamePort
+    let (scheme, actual_pod_name, port_str) =
+        split_scheme_name_port(&pod_name).unwrap_or(("", pod_name.as_str(), ""));
+
+    let explicit_port: Option<u16> = if port_str.is_empty() {
+        None
     } else {
-        (pod_name.as_str(), None)
+        port_str.parse::<u16>().ok()
     };
+
+    // Determine the URL scheme — default to http when unspecified
+    let url_scheme = if scheme.is_empty() { "http" } else { scheme };
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "pods/proxy")
@@ -285,11 +382,16 @@ pub async fn proxy_pod(
     let pod_key = rusternetes_storage::build_key("pods", Some(&namespace), actual_pod_name);
     let pod: rusternetes_common::resources::Pod = state.storage.get(&pod_key).await?;
 
-    // Get pod IP
+    // Get pod IP from status.podIPs (preferred) or status.podIP
     let pod_ip = pod
         .status
         .as_ref()
-        .and_then(|s| s.pod_ip.clone())
+        .and_then(|s| {
+            s.pod_i_ps
+                .as_ref()
+                .and_then(|ips| ips.first().map(|p| p.ip.clone()))
+                .or_else(|| s.pod_ip.clone())
+        })
         .ok_or_else(|| {
             rusternetes_common::Error::NotFound(format!(
                 "Pod {}/{} has no IP address yet",
@@ -297,28 +399,64 @@ pub async fn proxy_pod(
             ))
         })?;
 
-    // Use explicit port from URL if provided, otherwise first container port, otherwise 80
+    // Use explicit port from URL if provided, otherwise first container port
+    // (scan all containers like K8s does), otherwise default to 80.
+    // K8s ref: pkg/registry/core/pod/strategy.go ResourceLocation
     let port: u16 = if let Some(p) = explicit_port {
         p
     } else {
         pod.spec
             .as_ref()
-            .and_then(|spec| spec.containers.first())
-            .and_then(|c| c.ports.as_ref())
-            .and_then(|ports| ports.first())
-            .map(|p| p.container_port)
+            .and_then(|spec| {
+                spec.containers.iter().find_map(|c| {
+                    c.ports
+                        .as_ref()
+                        .and_then(|ports| ports.first())
+                        .map(|p| p.container_port)
+                })
+            })
             .unwrap_or(80)
     };
 
+    debug!(
+        "Pod proxy resolved: {}://{}:{} (pod {}/{})",
+        url_scheme, pod_ip, port, namespace, actual_pod_name
+    );
+
     // Build target URL
     let path = path.trim_start_matches('/');
-    let target_url = format!("http://{}:{}/{}", pod_ip, port, path);
+    let target_url = format!("{}://{}:{}/{}", url_scheme, pod_ip, port, path);
 
     // Forward the request
     proxy_request(target_url, method, headers, params, body).await
 }
 
-/// Helper function to proxy an HTTP request to a target URL
+/// Create a shared reqwest client for proxy requests.
+/// Using a shared client enables connection pooling and avoids the overhead
+/// of creating a new TLS context per request.
+fn get_proxy_client() -> &'static reqwest::Client {
+    use std::sync::OnceLock;
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true) // For kubelet self-signed certs
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(2))
+            // Disable automatic redirect following — proxy should forward redirects
+            // to the client as-is, not follow them internally.
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("Failed to create proxy HTTP client")
+    })
+}
+
+/// Helper function to proxy an HTTP request to a target URL.
+///
+/// K8s proxy endpoints return raw HTTP responses, NOT K8s Status JSON objects.
+/// On connection errors, returns 502 Bad Gateway with a plain text error message.
+/// On success, forwards the upstream response (status, headers, body) verbatim.
+///
+/// K8s ref: staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go
 async fn proxy_request(
     target_url: String,
     method: Method,
@@ -338,69 +476,140 @@ async fn proxy_request(
 
     info!("Forwarding {} request to {}", method, full_url);
 
-    // Create HTTP client with timeouts
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true) // For kubelet self-signed certs
-        .timeout(std::time::Duration::from_secs(30))
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| {
-            rusternetes_common::Error::Internal(format!("Failed to create HTTP client: {}", e))
-        })?;
+    let client = get_proxy_client();
 
     // Convert axum body to bytes
     let body_bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|e| {
         rusternetes_common::Error::Internal(format!("Failed to read request body: {}", e))
     })?;
 
-    // Build the request
-    let mut request = client
-        .request(
-            method.as_str().parse().unwrap_or(reqwest::Method::GET),
-            &full_url,
-        )
-        .body(body_bytes.to_vec());
-
-    // Forward headers (filter out hop-by-hop headers)
+    // Collect forwarded headers (filter out hop-by-hop headers)
+    let mut forward_headers: Vec<(String, String)> = Vec::new();
     for (name, value) in headers.iter() {
         let name_str = name.as_str();
         if !is_hop_by_hop_header(name_str) {
             if let Ok(val_str) = value.to_str() {
-                request = request.header(name_str, val_str);
+                forward_headers.push((name_str.to_string(), val_str.to_string()));
             }
         }
     }
 
-    // Execute the request
-    let response = request.send().await.map_err(|e| {
-        warn!("Proxy request failed: {}", e);
-        rusternetes_common::Error::Internal(format!("Proxy request failed: {}", e))
-    })?;
+    // Retry loop for transient connection errors.
+    // Docker bridge networking can have brief connectivity gaps when containers
+    // are starting or when the bridge is under load. Retrying with backoff
+    // handles these transient failures.
+    let max_retries = 3u32;
+    let mut last_error = String::new();
 
-    // Convert response to axum response
-    let status = response.status();
-    let mut axum_response = Response::builder()
-        .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
+    for attempt in 0..=max_retries {
+        if attempt > 0 {
+            // Exponential backoff: 100ms, 200ms, 400ms
+            let delay = std::time::Duration::from_millis(100 * (1 << (attempt - 1)));
+            tokio::time::sleep(delay).await;
+            info!(
+                "Proxy retry attempt {} for {} (last error: {})",
+                attempt, full_url, last_error
+            );
+        }
 
-    // Copy response headers
-    for (name, value) in response.headers().iter() {
-        let name_str = name.as_str();
-        if !is_hop_by_hop_header(name_str) {
-            axum_response = axum_response.header(name_str, value);
+        // Build the request
+        let req_method: reqwest::Method = method
+            .as_str()
+            .parse()
+            .unwrap_or(reqwest::Method::GET);
+        let mut request = client
+            .request(req_method, &full_url)
+            .body(body_bytes.to_vec());
+
+        // Forward headers
+        for (name, value) in &forward_headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
+
+        // Execute the request
+        match request.send().await {
+            Ok(response) => {
+                // Successfully connected — forward the response verbatim.
+                let status = response.status();
+                let mut axum_response = Response::builder().status(
+                    StatusCode::from_u16(status.as_u16())
+                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                );
+
+                // Copy response headers
+                for (name, value) in response.headers().iter() {
+                    let name_str = name.as_str();
+                    if !is_hop_by_hop_header(name_str) {
+                        axum_response = axum_response.header(name_str, value);
+                    }
+                }
+
+                // Get response body
+                let resp_bytes = match response.bytes().await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        warn!("Failed to read proxy response body: {}", e);
+                        // Return 502 with plain text error — NOT a K8s Status JSON.
+                        // K8s proxy endpoints never wrap errors in Status objects.
+                        return Ok(Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .header("Content-Type", "text/plain")
+                            .body(Body::from(format!(
+                                "the backend attempted to proxy but the response body was unreadable: {}",
+                                e
+                            )))
+                            .unwrap());
+                    }
+                };
+
+                // Build final response
+                return axum_response
+                    .body(Body::from(resp_bytes.to_vec()))
+                    .map_err(|e| {
+                        rusternetes_common::Error::Internal(format!(
+                            "Failed to build response: {}",
+                            e
+                        ))
+                    });
+            }
+            Err(e) => {
+                last_error = e.to_string();
+                // Only retry on connection errors, not on timeouts or other errors
+                let is_connect_error = e.is_connect();
+                if !is_connect_error || attempt == max_retries {
+                    warn!(
+                        "Proxy request to {} failed after {} attempts: {}",
+                        full_url,
+                        attempt + 1,
+                        e
+                    );
+                    // Return 502 Bad Gateway with plain text error — NOT a K8s Status JSON.
+                    // K8s proxy endpoints return raw HTTP errors, not Status objects.
+                    // The Go test client (DoRaw) expects either a successful raw response
+                    // or an HTTP error it can retry on.
+                    return Ok(Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .header("Content-Type", "text/plain")
+                        .body(Body::from(format!(
+                            "error trying to reach backend: {}",
+                            e
+                        )))
+                        .unwrap());
+                }
+                // Connection error — retry
+            }
         }
     }
 
-    // Get response body
-    let body_bytes = response.bytes().await.map_err(|e| {
-        rusternetes_common::Error::Internal(format!("Failed to read response body: {}", e))
-    })?;
-
-    // Build final response
-    axum_response
-        .body(Body::from(body_bytes.to_vec()))
-        .map_err(|e| {
-            rusternetes_common::Error::Internal(format!("Failed to build response: {}", e))
-        })
+    // Should not reach here due to the loop logic, but just in case
+    Ok(Response::builder()
+        .status(StatusCode::BAD_GATEWAY)
+        .header("Content-Type", "text/plain")
+        .body(Body::from(format!(
+            "error trying to reach backend: {}",
+            last_error
+        )))
+        .unwrap())
 }
 
 /// Check if a header is a hop-by-hop header that should not be forwarded
@@ -430,5 +639,42 @@ mod tests {
         assert!(is_hop_by_hop_header("transfer-encoding"));
         assert!(!is_hop_by_hop_header("Content-Type"));
         assert!(!is_hop_by_hop_header("Authorization"));
+    }
+
+    #[test]
+    fn test_split_scheme_name_port_plain_name() {
+        assert_eq!(split_scheme_name_port("myname"), Some(("", "myname", "")));
+    }
+
+    #[test]
+    fn test_split_scheme_name_port_name_and_port() {
+        assert_eq!(
+            split_scheme_name_port("myname:8080"),
+            Some(("", "myname", "8080"))
+        );
+    }
+
+    #[test]
+    fn test_split_scheme_name_port_scheme_name_port() {
+        assert_eq!(
+            split_scheme_name_port("http:myname:8080"),
+            Some(("http", "myname", "8080"))
+        );
+        assert_eq!(
+            split_scheme_name_port("https:myname:443"),
+            Some(("https", "myname", "443"))
+        );
+    }
+
+    #[test]
+    fn test_split_scheme_name_port_invalid() {
+        // Empty name
+        assert_eq!(split_scheme_name_port(""), None);
+        // Empty name with port
+        assert_eq!(split_scheme_name_port(":8080"), None);
+        // Invalid scheme
+        assert_eq!(split_scheme_name_port("ftp:myname:21"), None);
+        // Empty name with valid scheme
+        assert_eq!(split_scheme_name_port("http::8080"), None);
     }
 }

@@ -14,7 +14,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -164,7 +164,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ConfigMap>> {
-    info!("Getting configmap: {} in namespace: {}", name, namespace);
+    debug!("Getting configmap: {} in namespace: {}", name, namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "configmaps")
@@ -198,6 +198,7 @@ pub async fn update(
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
 
     // Check authorization
+    let user_for_webhook = auth_ctx.user.clone();
     let attrs = RequestAttributes::new(auth_ctx.user, "update", "configmaps")
         .with_api_group("")
         .with_namespace(&namespace)
@@ -233,6 +234,72 @@ pub async fn update(
         .await
     {
         return Err(e);
+    }
+
+    // Run admission webhooks (mutating + validating) for UPDATE
+    {
+        use crate::admission_webhook::AdmissionWebhookClient;
+        let gvr = rusternetes_common::admission::GroupVersionResource {
+            group: "".to_string(),
+            version: "v1".to_string(),
+            resource: "configmaps".to_string(),
+        };
+        let user = &user_for_webhook;
+        let user_info = rusternetes_common::admission::UserInfo {
+            username: user.username.clone(),
+            uid: user.uid.clone(),
+            groups: user.groups.clone(),
+        };
+        let cm_val = serde_json::to_value(&configmap).ok();
+        // Run mutating webhooks
+        let (_response, mutated_obj) = state
+            .webhook_manager
+            .run_mutating_webhooks(
+                &rusternetes_common::admission::Operation::Update,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &name,
+                cm_val.clone(),
+                None,
+                &user_info,
+            )
+            .await?;
+        // Check if the mutating webhook DENIED the request.
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = &_response {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
+        }
+        if let Some(mutated) = mutated_obj {
+            if let Ok(m) = serde_json::from_value::<ConfigMap>(mutated) {
+                configmap = m;
+            }
+        }
+        // Run validating webhooks
+        match state
+            .webhook_manager
+            .run_validating_webhooks(
+                &rusternetes_common::admission::Operation::Update,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &name,
+                serde_json::to_value(&configmap).ok(),
+                None,
+                &user_info,
+            )
+            .await?
+        {
+            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
     }
 
     let key = build_key("configmaps", Some(&namespace), &name);
@@ -377,7 +444,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing configmaps in namespace: {}", namespace);
+    debug!("Listing configmaps in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "configmaps")
@@ -440,7 +507,7 @@ pub async fn list_all_configmaps(
         .await;
     }
 
-    info!("Listing all configmaps");
+    debug!("Listing all configmaps");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "configmaps").with_api_group("");

@@ -654,13 +654,13 @@ impl IptablesManager {
             return Err(anyhow::anyhow!("Failed to add jump rule: {}", stderr));
         }
 
-        info!("Added jump rule from {} to {}", from_chain, to_chain);
+        debug!("Added jump rule from {} to {}", from_chain, to_chain);
         Ok(())
     }
 
     /// Flush all rules in our custom chains and clean up per-endpoint chains
     pub fn flush_rules(&self) -> Result<()> {
-        info!("Flushing kube-proxy iptables rules");
+        debug!("Flushing kube-proxy iptables rules");
 
         self.flush_chain("nat", &self.services_chain)?;
         self.flush_chain("nat", &self.nodeports_chain)?;
@@ -795,7 +795,7 @@ impl IptablesManager {
             return Ok(());
         }
 
-        info!(
+        debug!(
             "Adding ClusterIP rules for {}:{} ({}) with {} endpoints (affinity={})",
             service_ip,
             port,
@@ -1007,7 +1007,7 @@ impl IptablesManager {
             return Ok(());
         }
 
-        info!(
+        debug!(
             "Adding NodePort rules for port {} ({}) with {} endpoints (affinity={})",
             node_port,
             protocol,
@@ -1320,7 +1320,7 @@ impl IptablesManager {
                     .unwrap_or_default();
 
                 if endpoints.is_empty() {
-                    info!(
+                    debug!(
                         "No endpoints matched for service {}/{}:{} (target_port={:?}, endpointslice_entries={})",
                         namespace,
                         service.metadata.name,
@@ -1423,8 +1423,18 @@ impl IptablesManager {
             }
         }
 
-        // NodePort rules — add DNAT rules to RUSTERNETES-NODEPORTS chain
+        // NodePort rules — add DNAT rules to RUSTERNETES-NODEPORTS chain.
+        // Session affinity for NodePort reuses the same KUBE-SEP-* chains and
+        // AFFINITY-* recent names created by the ClusterIP section above.
+        // This matches K8s behavior where NodePort traffic goes through the same
+        // KUBE-SVC chain and thus shares affinity state with ClusterIP traffic.
+        // K8s ref: pkg/proxy/iptables/proxier.go — writeServiceToEndpointRules
         for service in services {
+            let cluster_ip = match &service.spec.cluster_ip {
+                Some(ip) if !ip.is_empty() && ip != "None" => ip,
+                _ => continue,
+            };
+
             let namespace = service.metadata.namespace.as_deref().unwrap_or("default");
             for svc_port in &service.spec.ports {
                 let node_port = match svc_port.node_port {
@@ -1432,6 +1442,7 @@ impl IptablesManager {
                     _ => continue,
                 };
                 let proto = svc_port.protocol.as_deref().unwrap_or("TCP").to_lowercase();
+                let port = svc_port.port;
 
                 let svc_key = format!("{}/{}", namespace, service.metadata.name);
                 let np_target_port = svc_port.target_port.as_ref().and_then(|tp| match tp {
@@ -1467,25 +1478,80 @@ impl IptablesManager {
                     continue;
                 }
 
-                let n = endpoints.len();
-                for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
-                    let is_last = idx == n - 1;
-                    let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+                let session_affinity = service.spec.session_affinity.as_deref() == Some("ClientIP");
+                let affinity_timeout = service
+                    .spec
+                    .session_affinity_config
+                    .as_ref()
+                    .and_then(|c| c.client_ip.as_ref())
+                    .and_then(|c| c.timeout_seconds)
+                    .unwrap_or(10800);
 
-                    let mut rule = format!(
-                        "-A {} -p {} --dport {}",
-                        self.nodeports_chain, proto, node_port
-                    );
-                    if !is_last {
-                        let prob = 1.0 / (n - idx) as f64;
-                        rule.push_str(&format!(
-                            " -m statistic --mode random --probability {:.10}",
-                            prob
+                let n = endpoints.len();
+
+                if session_affinity && n > 1 && self.recent_available {
+                    // Session affinity for NodePort: reuse the same SEP chains and
+                    // recent names as ClusterIP. The SEP chains (KUBE-SEP-*) were
+                    // already defined in the ClusterIP section above and contain
+                    // the --set + DNAT rules. We just need --rcheck rules and
+                    // probability fallback rules in the nodeports chain.
+                    let timeout_str = affinity_timeout.to_string();
+                    for (idx, _) in endpoints.iter().enumerate() {
+                        let sep_chain =
+                            format!("KUBE-SEP-{}-{}-{}", cluster_ip.replace('.', ""), port, idx);
+                        let recent_name =
+                            format!("AFFINITY-{}-{}-{}", cluster_ip.replace('.', ""), port, idx);
+
+                        // Affinity check: if client IP was recently seen, jump to SEP chain
+                        rules.push_str(&format!(
+                            "-A {} -p {} --dport {} -m recent --name {} --rcheck --seconds {} --reap -j {}\n",
+                            self.nodeports_chain, proto, node_port,
+                            recent_name, timeout_str, sep_chain
                         ));
                     }
-                    rule.push_str(&format!(" -j DNAT --to-destination {}", dnat_target));
-                    rules.push_str(&rule);
-                    rules.push('\n');
+
+                    // Probability-based fallback for new connections
+                    for (idx, _) in endpoints.iter().enumerate() {
+                        let is_last = idx == n - 1;
+                        let sep_chain =
+                            format!("KUBE-SEP-{}-{}-{}", cluster_ip.replace('.', ""), port, idx);
+
+                        let mut rule = format!(
+                            "-A {} -p {} --dport {}",
+                            self.nodeports_chain, proto, node_port
+                        );
+                        if !is_last {
+                            let prob = 1.0 / (n - idx) as f64;
+                            rule.push_str(&format!(
+                                " -m statistic --mode random --probability {:.10}",
+                                prob
+                            ));
+                        }
+                        rule.push_str(&format!(" -j {}", sep_chain));
+                        rules.push_str(&rule);
+                        rules.push('\n');
+                    }
+                } else {
+                    // No session affinity or single endpoint: direct DNAT
+                    for (idx, (endpoint_ip, endpoint_port)) in endpoints.iter().enumerate() {
+                        let is_last = idx == n - 1;
+                        let dnat_target = format!("{}:{}", endpoint_ip, endpoint_port);
+
+                        let mut rule = format!(
+                            "-A {} -p {} --dport {}",
+                            self.nodeports_chain, proto, node_port
+                        );
+                        if !is_last {
+                            let prob = 1.0 / (n - idx) as f64;
+                            rule.push_str(&format!(
+                                " -m statistic --mode random --probability {:.10}",
+                                prob
+                            ));
+                        }
+                        rule.push_str(&format!(" -j DNAT --to-destination {}", dnat_target));
+                        rules.push_str(&rule);
+                        rules.push('\n');
+                    }
                 }
             }
         }
@@ -1499,7 +1565,7 @@ impl IptablesManager {
     pub fn apply_nat_rules_atomic(&self, rules: &str) -> Result<()> {
         use std::io::Write;
 
-        info!(
+        debug!(
             "Applying {} bytes of NAT rules via iptables-restore",
             rules.len()
         );
@@ -1543,7 +1609,7 @@ impl IptablesManager {
             return Err(anyhow::anyhow!("iptables-restore failed: {}", stderr));
         }
 
-        info!("iptables-restore applied successfully");
+        debug!("iptables-restore applied successfully");
 
         // Clean up old SEP chains AFTER successful restore.
         // These chains are no longer referenced by the new rules.

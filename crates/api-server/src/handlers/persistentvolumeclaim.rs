@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_pvc(
     State(state): State<Arc<ApiServerState>>,
@@ -82,7 +82,7 @@ pub async fn get_pvc(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<PersistentVolumeClaim>> {
-    info!("Getting PersistentVolumeClaim: {}/{}", namespace, name);
+    debug!("Getting PersistentVolumeClaim: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "persistentvolumeclaims")
         .with_namespace(&namespace)
@@ -142,7 +142,7 @@ pub async fn list_pvcs(
         .await;
     }
 
-    info!("Listing PersistentVolumeClaims in namespace: {}", namespace);
+    debug!("Listing PersistentVolumeClaims in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "persistentvolumeclaims")
         .with_namespace(&namespace)
@@ -204,7 +204,7 @@ pub async fn list_all_pvcs(
         .await;
     }
 
-    info!("Listing all persistentvolumeclaims");
+    debug!("Listing all persistentvolumeclaims");
 
     // Check authorization (cluster-wide list)
     let attrs =

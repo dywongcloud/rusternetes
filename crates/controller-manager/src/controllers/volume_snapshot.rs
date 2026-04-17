@@ -11,7 +11,7 @@ use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct VolumeSnapshotController<S: Storage> {
     storage: Arc<S>,
@@ -67,7 +67,7 @@ impl<S: Storage> VolumeSnapshotController<S> {
         let vs_name = &vs.metadata.name;
         let namespace = vs.metadata.namespace.as_deref().unwrap_or("default");
 
-        info!("Processing VolumeSnapshot {}/{}", namespace, vs_name);
+        debug!("Processing VolumeSnapshot {}/{}", namespace, vs_name);
 
         // Get the VolumeSnapshotClass
         let vsc_name = &vs.spec.volume_snapshot_class_name;
@@ -78,7 +78,7 @@ impl<S: Storage> VolumeSnapshotController<S> {
             .await
             .with_context(|| format!("VolumeSnapshotClass {} not found", vsc_name))?;
 
-        info!(
+        debug!(
             "Found VolumeSnapshotClass {} with driver {}",
             vsc_name, vsc.driver
         );
@@ -129,7 +129,7 @@ impl<S: Storage> VolumeSnapshotController<S> {
             .get::<VolumeSnapshotContent>(&content_key)
             .await
         {
-            info!("VolumeSnapshotContent {} already exists", content_name);
+            debug!("VolumeSnapshotContent {} already exists", content_name);
             // Update VolumeSnapshot status if needed
             self.update_snapshot_status(vs, &content_name, true).await?;
             return Ok(());

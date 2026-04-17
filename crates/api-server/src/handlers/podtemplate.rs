@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_podtemplate(
     State(state): State<Arc<ApiServerState>>,
@@ -63,7 +63,7 @@ pub async fn get_podtemplate(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<PodTemplate>> {
-    info!("Getting podtemplate: {} in namespace: {}", name, namespace);
+    debug!("Getting podtemplate: {} in namespace: {}", name, namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "podtemplates")
@@ -222,7 +222,7 @@ pub async fn list_podtemplates(
         .await;
     }
 
-    info!("Listing podtemplates in namespace: {}", namespace);
+    debug!("Listing podtemplates in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "podtemplates")
@@ -319,7 +319,7 @@ pub async fn list_all_podtemplates(
         .await;
     }
 
-    info!("Listing all podtemplates");
+    debug!("Listing all podtemplates");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "podtemplates").with_api_group("");

@@ -5,7 +5,7 @@ use rusternetes_storage::Storage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct CronJobController<S: Storage> {
     storage: Arc<S>,
@@ -51,11 +51,11 @@ impl<S: Storage> CronJobController<S> {
             return Ok(());
         }
 
-        info!("Reconciling CronJob {}/{}", namespace, name);
+        debug!("Reconciling CronJob {}/{}", namespace, name);
 
         // Check if CronJob is suspended
         if cronjob.spec.suspend.unwrap_or(false) {
-            info!("CronJob {}/{} is suspended", namespace, name);
+            debug!("CronJob {}/{} is suspended", namespace, name);
             return Ok(());
         }
 

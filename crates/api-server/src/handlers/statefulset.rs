@@ -14,7 +14,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -73,7 +73,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<StatefulSet>> {
-    info!("Getting statefulset: {}/{}", namespace, name);
+    debug!("Getting statefulset: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "statefulsets")
@@ -287,7 +287,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing statefulsets in namespace: {}", namespace);
+    debug!("Listing statefulsets in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "statefulsets")
@@ -350,7 +350,7 @@ pub async fn list_all_statefulsets(
         .await;
     }
 
-    info!("Listing all statefulsets");
+    debug!("Listing all statefulsets");
 
     // Check authorization (cluster-wide list)
     let attrs =

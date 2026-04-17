@@ -239,7 +239,7 @@ impl Kubelet {
                             );
                             match lease_storage.create(&lease_key, &lease).await {
                                 Ok(_) => {
-                                    tracing::info!(
+                                    tracing::debug!(
                                         "Lease heartbeat: created lease for node {}",
                                         lease_node_name
                                     );
@@ -407,7 +407,7 @@ impl Kubelet {
         // Debug: log what we're trying to store
         let node_json = serde_json::to_string_pretty(&node)
             .unwrap_or_else(|_| "failed to serialize".to_string());
-        info!("Registering node with spec: {}", node_json);
+        debug!("Registering node with spec: {}", node_json);
 
         // Try to create, if it exists, update it
         match self.storage.create(&key, &node).await {
@@ -894,7 +894,7 @@ impl Kubelet {
                         namespace, pod_name, e
                     );
                 } else {
-                    info!(
+                    debug!(
                         "Pod {}/{} deleted from storage (terminated)",
                         namespace, pod_name
                     );
@@ -959,7 +959,7 @@ impl Kubelet {
                 .map(|f| !f.is_empty())
                 .unwrap_or(false);
             if has_finalizers {
-                info!(
+                debug!(
                     "Pod {}/{} has finalizers, keeping in storage with deletionTimestamp",
                     namespace, pod_name
                 );
@@ -1072,14 +1072,17 @@ impl Kubelet {
         // etc.) can then delete and recreate it.
         if matches!(current_phase, Phase::Pending) && !is_running {
             if let Some(spec) = &pod.spec {
-                let pod_host_ports: Vec<(u16, String)> = spec
+                // Collect (hostPort, protocol, hostIP) tuples from all containers.
+                // K8s ref: pkg/scheduler/framework/types.go — HostPortInfo.Add
+                let pod_host_ports: Vec<(u16, String, String)> = spec
                     .containers
                     .iter()
                     .flat_map(|c| c.ports.iter().flatten())
                     .filter_map(|p| {
                         p.host_port.map(|hp| {
+                            let proto = p.protocol.clone().unwrap_or_else(|| "TCP".to_string());
                             let ip = p.host_ip.clone().unwrap_or_default();
-                            (hp, ip)
+                            (hp, proto, ip)
                         })
                     })
                     .collect();
@@ -1088,10 +1091,14 @@ impl Kubelet {
                     // Get all pods on this node
                     let all_pods_prefix = build_prefix("pods", None);
                     let all_pods: Vec<Pod> = self.storage.list(&all_pods_prefix).await.unwrap_or_default();
+                    let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
                     let active_on_node: Vec<&Pod> = all_pods
                         .iter()
                         .filter(|p| {
-                            p.metadata.name != pod.metadata.name
+                            // Filter by namespace+name to avoid matching wrong pod
+                            let same_pod = p.metadata.name == pod.metadata.name
+                                && p.metadata.namespace.as_deref().unwrap_or("default") == pod_ns;
+                            !same_pod
                                 && p.spec.as_ref().and_then(|s| s.node_name.as_deref()) == Some(&self.node_name)
                                 && !matches!(
                                     p.status.as_ref().and_then(|s| s.phase.as_ref()),
@@ -1101,23 +1108,30 @@ impl Kubelet {
                         })
                         .collect();
 
-                    for (port, ip) in &pod_host_ports {
+                    for (port, proto, ip) in &pod_host_ports {
                         for existing in &active_on_node {
                             if let Some(existing_spec) = &existing.spec {
                                 for c in &existing_spec.containers {
                                     for ep in c.ports.iter().flatten() {
                                         if let Some(ehp) = ep.host_port {
-                                            if ehp == *port {
+                                            let eproto = ep.protocol.as_deref().unwrap_or("TCP");
+                                            // Must match port AND protocol to conflict
+                                            // K8s ref: pkg/scheduler/framework/types.go — CheckConflict
+                                            if ehp == *port && eproto == proto {
                                                 let eip = ep.host_ip.clone().unwrap_or_default();
-                                                let conflict = ip.is_empty()
-                                                    || eip.is_empty()
-                                                    || ip == "0.0.0.0"
-                                                    || eip == "0.0.0.0"
+                                                // Check hostIP overlap:
+                                                // - Empty/"0.0.0.0"/"::" are wildcards that overlap everything
+                                                // - Two specific different IPs do NOT conflict
+                                                let is_wildcard = |s: &str| {
+                                                    s.is_empty() || s == "0.0.0.0" || s == "::"
+                                                };
+                                                let conflict = is_wildcard(ip)
+                                                    || is_wildcard(&eip)
                                                     || ip == &eip;
                                                 if conflict {
                                                     info!(
-                                                        "Pod {}/{} rejected: hostPort {} conflicts with pod {}",
-                                                        namespace, pod_name, port, existing.metadata.name
+                                                        "Pod {}/{} rejected: hostPort {}/{} conflicts with pod {}",
+                                                        namespace, pod_name, port, proto, existing.metadata.name
                                                     );
                                                     let key = build_key("pods", Some(namespace), pod_name);
                                                     if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
@@ -1198,7 +1212,7 @@ impl Kubelet {
                             if should_retry {
                                 // Init container failed — update status and return.
                                 // The next sync cycle will retry (with implicit backoff from sync interval).
-                                info!(
+                                debug!(
                                     "Init container {} failed for pod {}/{}, will retry next sync",
                                     ic.name, namespace, pod_name
                                 );
@@ -1666,7 +1680,7 @@ impl Kubelet {
 
                 let should_update_running = if has_create_error {
                     // Retry starting — spec/annotations may have changed
-                    info!(
+                    debug!(
                         "Pod {}/{} has container creation error, retrying start",
                         namespace, pod_name
                     );
@@ -1685,7 +1699,7 @@ impl Kubelet {
                 };
 
                 if should_update_running {
-                    info!(
+                    debug!(
                         "Pod {}/{} containers are running, updating status to Running",
                         namespace, pod_name
                     );
@@ -2637,7 +2651,7 @@ impl Kubelet {
 
                 match restart_policy {
                     "Always" => {
-                        info!(
+                        debug!(
                             "Restarting pod {}/{} (restartPolicy=Always)",
                             namespace, pod_name
                         );
@@ -2729,7 +2743,7 @@ impl Kubelet {
                     }
                     "OnFailure" => {
                         if any_failed {
-                            info!(
+                            debug!(
                                 "Restarting pod {}/{} (restartPolicy=OnFailure, container failed)",
                                 namespace, pod_name
                             );

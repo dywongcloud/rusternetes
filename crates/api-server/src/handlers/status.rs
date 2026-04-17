@@ -20,7 +20,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, Storage};
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Extract the resource type from the request URI.
 ///
@@ -589,7 +589,7 @@ pub async fn get_cluster_status(
     Path(name): Path<String>,
 ) -> Result<Json<Value>> {
     let resource_type = extract_resource_type_from_uri(&uri);
-    info!("Getting status for {}/{}", resource_type, name);
+    debug!("Getting status for {}/{}", resource_type, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", &resource_type)

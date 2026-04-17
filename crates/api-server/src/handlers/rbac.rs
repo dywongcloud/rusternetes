@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 // Role handlers
 pub async fn create_role(
@@ -68,7 +68,7 @@ pub async fn get_role(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Role>> {
-    info!("Getting role: {}/{}", namespace, name);
+    debug!("Getting role: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "roles")
@@ -193,7 +193,7 @@ pub async fn list_roles(
         .await;
     }
 
-    info!("Listing roles in namespace: {}", namespace);
+    debug!("Listing roles in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "roles")
@@ -235,7 +235,7 @@ pub async fn list_all_roles(
         .await;
     }
 
-    info!("Listing all roles");
+    debug!("Listing all roles");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "roles")
@@ -314,7 +314,7 @@ pub async fn get_rolebinding(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<RoleBinding>> {
-    info!("Getting rolebinding: {}/{}", namespace, name);
+    debug!("Getting rolebinding: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "rolebindings")
@@ -442,7 +442,7 @@ pub async fn list_rolebindings(
         .await;
     }
 
-    info!("Listing rolebindings in namespace: {}", namespace);
+    debug!("Listing rolebindings in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "rolebindings")
@@ -476,7 +476,7 @@ pub async fn list_all_rolebindings(
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<List<RoleBinding>>> {
-    info!("Listing all rolebindings");
+    debug!("Listing all rolebindings");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "rolebindings")
@@ -560,7 +560,7 @@ pub async fn get_clusterrole(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ClusterRole>> {
-    info!("Getting clusterrole: {}", name);
+    debug!("Getting clusterrole: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "clusterroles")
@@ -670,7 +670,7 @@ pub async fn list_clusterroles(
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<List<ClusterRole>>> {
-    info!("Listing clusterroles");
+    debug!("Listing clusterroles");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "clusterroles")
@@ -761,7 +761,7 @@ pub async fn get_clusterrolebinding(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<ClusterRoleBinding>> {
-    info!("Getting clusterrolebinding: {}", name);
+    debug!("Getting clusterrolebinding: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "clusterrolebindings")
@@ -871,7 +871,7 @@ pub async fn list_clusterrolebindings(
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<List<ClusterRoleBinding>>> {
-    info!("Listing clusterrolebindings");
+    debug!("Listing clusterrolebindings");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "clusterrolebindings")

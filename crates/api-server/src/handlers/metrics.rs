@@ -14,7 +14,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::debug;
 
 /// Get metrics for a specific node
 pub async fn get_node_metrics(
@@ -22,7 +22,7 @@ pub async fn get_node_metrics(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<NodeMetrics>> {
-    info!("Getting node metrics: {}", name);
+    debug!("Getting node metrics: {}", name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "nodes")
@@ -64,7 +64,7 @@ pub async fn list_node_metrics(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
 ) -> Result<Json<List<NodeMetrics>>> {
-    info!("Listing node metrics");
+    debug!("Listing node metrics");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "nodes")
@@ -111,7 +111,7 @@ pub async fn get_pod_metrics(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<PodMetrics>> {
-    info!("Getting pod metrics: {}/{}", namespace, name);
+    debug!("Getting pod metrics: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "pods")
@@ -193,7 +193,7 @@ pub async fn list_pod_metrics(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(namespace): Path<String>,
 ) -> Result<Json<List<PodMetrics>>> {
-    info!("Listing pod metrics in namespace: {}", namespace);
+    debug!("Listing pod metrics in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods")
@@ -278,7 +278,7 @@ pub async fn list_all_pod_metrics(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
 ) -> Result<Json<List<PodMetrics>>> {
-    info!("Listing pod metrics across all namespaces");
+    debug!("Listing pod metrics across all namespaces");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods")

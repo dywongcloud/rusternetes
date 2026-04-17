@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -71,7 +71,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<HorizontalPodAutoscaler>> {
-    info!("Getting horizontalpodautoscaler: {}/{}", namespace, name);
+    debug!("Getting horizontalpodautoscaler: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "horizontalpodautoscalers")
@@ -259,7 +259,7 @@ pub async fn list_all(
         .await;
     }
 
-    info!("Listing all horizontalpodautoscalers");
+    debug!("Listing all horizontalpodautoscalers");
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "horizontalpodautoscalers")

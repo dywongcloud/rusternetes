@@ -150,7 +150,7 @@ impl<S: Storage> EndpointsController<S> {
             Err(e) => return Err(e.into()),
         }
 
-        info!(
+        debug!(
             "Updated endpoints for service {}/{} with {} subsets",
             namespace,
             service_name,

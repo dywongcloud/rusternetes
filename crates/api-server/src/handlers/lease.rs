@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -63,7 +63,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Lease>> {
-    info!("Getting lease: {}/{}", namespace, name);
+    debug!("Getting lease: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "leases")
         .with_namespace(&namespace)
@@ -221,7 +221,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing leases in namespace: {}", namespace);
+    debug!("Listing leases in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "leases")
         .with_namespace(&namespace)
@@ -283,7 +283,7 @@ pub async fn list_all_leases(
         .await;
     }
 
-    info!("Listing all leases");
+    debug!("Listing all leases");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "leases")

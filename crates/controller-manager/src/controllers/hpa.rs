@@ -55,7 +55,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
 
     async fn reconcile_hpa(&self, hpa: &HorizontalPodAutoscaler) -> Result<()> {
         let namespace = hpa.metadata.namespace.as_deref().unwrap_or("default");
-        info!("Reconciling HPA: {}/{}", namespace, hpa.metadata.name);
+        debug!("Reconciling HPA: {}/{}", namespace, hpa.metadata.name);
 
         let target_ref = &hpa.spec.scale_target_ref;
         debug!(

@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_resourceclaim(
     State(state): State<Arc<ApiServerState>>,
@@ -82,7 +82,7 @@ pub async fn get_resourceclaim(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<ResourceClaim>> {
-    info!("Getting ResourceClaim: {}/{}", namespace, name);
+    debug!("Getting ResourceClaim: {}/{}", namespace, name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "resourceclaims")
         .with_api_group("resource.k8s.io")
@@ -150,7 +150,7 @@ pub async fn list_resourceclaims(
         .await;
     }
 
-    info!("Listing ResourceClaims in namespace: {}", namespace);
+    debug!("Listing ResourceClaims in namespace: {}", namespace);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaims")
         .with_api_group("resource.k8s.io")
@@ -212,7 +212,7 @@ pub async fn list_all_resourceclaims(
         .await;
     }
 
-    info!("Listing all ResourceClaims");
+    debug!("Listing all ResourceClaims");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "resourceclaims")
         .with_api_group("resource.k8s.io");

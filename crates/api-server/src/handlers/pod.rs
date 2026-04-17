@@ -18,7 +18,7 @@ use rusternetes_common::{
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub async fn create(
     State(state): State<Arc<ApiServerState>>,
@@ -598,7 +598,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Pod>> {
-    info!("Getting pod: {}/{}", namespace, name);
+    debug!("Getting pod: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "pods")
@@ -945,7 +945,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing pods in namespace: {}", namespace);
+    debug!("Listing pods in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods")
@@ -1061,7 +1061,7 @@ pub async fn list_all_pods(
         .await;
     }
 
-    info!("Listing all pods");
+    debug!("Listing all pods");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "pods").with_api_group("");

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct DynamicProvisionerController<S: Storage> {
     storage: Arc<S>,
@@ -68,7 +68,7 @@ impl<S: Storage> DynamicProvisionerController<S> {
             .as_ref()
             .context("PVC has no storage class name")?;
 
-        info!(
+        debug!(
             "Attempting to dynamically provision volume for PVC {}/{} using StorageClass {}",
             namespace, pvc_name, storage_class_name
         );
@@ -81,7 +81,7 @@ impl<S: Storage> DynamicProvisionerController<S> {
             .await
             .with_context(|| format!("StorageClass {} not found", storage_class_name))?;
 
-        info!(
+        debug!(
             "Found StorageClass {} with provisioner {}",
             storage_class_name, storage_class.provisioner
         );
@@ -100,7 +100,7 @@ impl<S: Storage> DynamicProvisionerController<S> {
         let pv_key = build_key("persistentvolumes", None, &pv_name);
 
         if let Ok(_existing_pv) = self.storage.get::<PersistentVolume>(&pv_key).await {
-            info!(
+            debug!(
                 "PV {} already exists for PVC {}/{}",
                 pv_name, namespace, pvc_name
             );

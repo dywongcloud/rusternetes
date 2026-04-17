@@ -225,11 +225,11 @@ where
     let current_rev_str = current_rev.to_string();
 
     // Create channel for sending events to client.
-    // Small buffer (16) forces hyper to yield data frames more frequently,
-    // preventing HTTP/2 buffering from delaying event delivery to client-go.
-    // K8s uses explicit flusher.Flush() after each event (watch.go:275).
-    // Large buffers cause hyper to batch items and delay flushing.
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(16);
+    // Buffer must be large enough to hold initial events + bookmarks without
+    // blocking the pre-buffer loop (which uses try_send). 256 is enough for
+    // most namespaces while keeping memory usage reasonable. Real events in
+    // the background task use send().await to guarantee delivery.
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(256);
 
     // Determine whether to send initial ADDED events:
     // - If sendInitialEvents=true: always send
@@ -389,7 +389,14 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        // Use send().await to guarantee delivery. With
+                                        // rhino/SQLite the poll loop has up to 1s latency,
+                                        // so events can arrive in bursts. try_send() would
+                                        // drop events when the channel is temporarily full
+                                        // (e.g. HTTP/2 back-pressure), permanently losing
+                                        // watch notifications. send() waits for channel
+                                        // space or returns Err if the receiver is dropped.
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -432,7 +439,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -460,7 +467,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -673,11 +680,10 @@ where
     let current_rev_str = current_rev.to_string();
 
     // Create channel for sending events to client.
-    // Small buffer (16) forces hyper to yield data frames more frequently,
-    // preventing HTTP/2 buffering from delaying event delivery to client-go.
-    // K8s uses explicit flusher.Flush() after each event (watch.go:275).
-    // Large buffers cause hyper to batch items and delay flushing.
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(16);
+    // Buffer must be large enough to hold initial events without blocking
+    // the spawned task. The task uses send().await for real events to
+    // guarantee delivery under HTTP/2 back-pressure.
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(256);
 
     // Determine whether to send initial ADDED events
     let should_send_initial =
@@ -717,7 +723,11 @@ where
                     object,
                 };
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                    // Use send().await to guarantee delivery. try_send() caused
+                    // initial events to be silently dropped when the channel was
+                    // full (before Hyper starts draining), which then caused the
+                    // task to exit and all subsequent events to be lost.
+                    if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                         return; // Client disconnected
                     }
                 }
@@ -805,7 +815,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -848,7 +858,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -876,7 +886,7 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
                                         }
@@ -2168,7 +2178,7 @@ pub async fn watch_cluster_scoped_json(
                     "object": object
                 });
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                    if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                         return;
                     }
                 }
@@ -2226,7 +2236,7 @@ pub async fn watch_cluster_scoped_json(
                                         "object": object
                                     });
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             return;
                                         }
                                     }
@@ -2354,7 +2364,7 @@ pub async fn watch_namespaced_json(
                     "object": object
                 });
                 if let Ok(json) = serde_json::to_string(&k8s_event) {
-                    if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                    if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                         return;
                     }
                 }
@@ -2412,7 +2422,7 @@ pub async fn watch_namespaced_json(
                                         "object": object
                                     });
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
-                                        if tx.try_send(Ok(format!("{}\n", json))).is_err() {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             return;
                                         }
                                     }

@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_certificate_signing_request(
     State(state): State<Arc<ApiServerState>>,
@@ -53,7 +53,7 @@ pub async fn get_certificate_signing_request(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<CertificateSigningRequest>> {
-    info!("Getting CertificateSigningRequest: {}", name);
+    debug!("Getting CertificateSigningRequest: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "certificatesigningrequests")
         .with_api_group("certificates.k8s.io")
@@ -186,7 +186,7 @@ pub async fn list_certificate_signing_requests(
         .await;
     }
 
-    info!("Listing CertificateSigningRequests");
+    debug!("Listing CertificateSigningRequests");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "certificatesigningrequests")
         .with_api_group("certificates.k8s.io");
@@ -219,7 +219,7 @@ pub async fn get_certificate_signing_request_status(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<CertificateSigningRequest>> {
-    info!("Getting CertificateSigningRequest status: {}", name);
+    debug!("Getting CertificateSigningRequest status: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "certificatesigningrequests/status")
         .with_api_group("certificates.k8s.io")

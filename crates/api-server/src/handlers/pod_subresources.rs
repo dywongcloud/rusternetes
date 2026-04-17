@@ -21,7 +21,7 @@ use rusternetes_common::{
 use rusternetes_storage::Storage;
 use serde::Deserialize;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Simple percent-decoding for URL query parameters
 fn percent_decode_str(s: &str) -> String {
@@ -131,7 +131,7 @@ pub async fn get_logs(
     Query(query): Query<LogsQuery>,
     ws: Option<WebSocketUpgrade>,
 ) -> Result<Response> {
-    info!("Getting logs for pod {}/{}", namespace, name);
+    debug!("Getting logs for pod {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "pods")
@@ -494,7 +494,7 @@ pub async fn exec(
         let gvr = GroupVersionResource {
             group: "".to_string(),
             version: "v1".to_string(),
-            resource: "pods".to_string(),
+            resource: "pods/exec".to_string(),
         };
         let user_info = rusternetes_common::admission::UserInfo {
             username: "admin".to_string(),
@@ -767,6 +767,8 @@ pub async fn attach(
 
     // Run admission webhooks for Connect operation (attach)
     // K8s validates attach requests through admission webhooks the same as exec.
+    // The GVR resource must include the subresource (pods/attach) so that webhook
+    // rules matching "pods/attach" or "pods/*" are correctly triggered.
     {
         use rusternetes_common::admission::{GroupVersionKind, GroupVersionResource, Operation};
         let gvk = GroupVersionKind {
@@ -777,7 +779,7 @@ pub async fn attach(
         let gvr = GroupVersionResource {
             group: "".to_string(),
             version: "v1".to_string(),
-            resource: "pods".to_string(),
+            resource: "pods/attach".to_string(),
         };
         match state
             .webhook_manager

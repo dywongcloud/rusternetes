@@ -12,7 +12,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 pub async fn create_volumeattributesclass(
     State(state): State<Arc<ApiServerState>>,
@@ -53,7 +53,7 @@ pub async fn get_volumeattributesclass(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<Json<VolumeAttributesClass>> {
-    info!("Getting VolumeAttributesClass: {}", name);
+    debug!("Getting VolumeAttributesClass: {}", name);
 
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "volumeattributesclasses")
         .with_api_group("storage.k8s.io")
@@ -77,7 +77,7 @@ pub async fn list_volumeattributesclasses(
     Extension(auth_ctx): Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<List<VolumeAttributesClass>>> {
-    info!("Listing all VolumeAttributesClasses");
+    debug!("Listing all VolumeAttributesClasses");
 
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "volumeattributesclasses")
         .with_api_group("storage.k8s.io");

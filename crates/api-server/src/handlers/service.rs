@@ -13,7 +13,7 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Allocate a random NodePort in the range 30000-32767
 fn allocate_node_port() -> u16 {
@@ -331,7 +331,7 @@ pub async fn get(
     Extension(auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
 ) -> Result<Json<Service>> {
-    info!("Getting service: {}/{}", namespace, name);
+    debug!("Getting service: {}/{}", namespace, name);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "services")
@@ -529,7 +529,7 @@ pub async fn list(
         .await;
     }
 
-    info!("Listing services in namespace: {}", namespace);
+    debug!("Listing services in namespace: {}", namespace);
 
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "services")
@@ -593,7 +593,7 @@ pub async fn list_all_services(
         .await;
     }
 
-    info!("Listing all services");
+    debug!("Listing all services");
 
     // Check authorization (cluster-wide list)
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "services").with_api_group("");
