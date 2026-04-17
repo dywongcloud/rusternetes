@@ -60,3 +60,4 @@ _Tracking as tests run..._
 | 35 | CRD groups in non-aggregated /apis discovery |
 | 36 | Immediate pod status update after restart |
 | 37 | App containers share pause network namespace |
+| 38 | LIST resourceVersion uses current etcd revision |
