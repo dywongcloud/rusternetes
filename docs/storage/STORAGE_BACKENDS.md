@@ -1,46 +1,105 @@
 # Storage Backends
 
-Rusternetes supports pluggable storage backends. Every component — API server,
-scheduler, controller manager, kubelet, kube-proxy — accepts a `--storage-backend`
-flag to select the backend at startup.
+Rusternetes supports three deployment modes with different storage backends.
+The same component binaries work in all modes — the only difference is
+configuration flags and which compose file you use.
 
-| Backend | Flag value | Persistence | External deps | Use case |
-|---------|-----------|-------------|---------------|----------|
-| etcd | `etcd` (default) | Yes | etcd cluster | Production, HA, multi-node |
-| SQLite | `sqlite` | Yes | None | All-in-one, dev, edge, CI |
+| Mode | Storage | Compose file | External deps | Use case |
+|------|---------|-------------|---------------|----------|
+| Normal | etcd | `docker-compose.yml` | etcd cluster | Production, HA, multi-node |
+| SQLite (normal) | rhino (gRPC) | `docker-compose.sqlite.yml` | rhino container | Multi-container without etcd |
+| SQLite (embedded) | rhino (in-process) | — | None | All-in-one single binary |
+
+---
+
+## Deployment Modes
+
+### 1. Normal mode with etcd (default)
+
+The standard deployment. Each component runs in its own container. etcd
+provides distributed consensus-based storage.
+
+```bash
+docker compose build
+docker compose up -d
+bash scripts/bootstrap-cluster.sh
+```
+
+### 2. Normal mode with SQLite via rhino
+
+Same multi-container architecture, but rhino replaces etcd. Rhino is an
+etcd-compatible gRPC server backed by SQLite — it speaks the exact same
+etcd v3 API, so components use their existing `--etcd-servers` flag pointed
+at `http://rhino:2379`. **No recompilation or feature flags needed.**
+
+```bash
+docker compose -f docker-compose.sqlite.yml build
+docker compose -f docker-compose.sqlite.yml up -d
+bash scripts/bootstrap-cluster.sh
+```
+
+This mode uses `Dockerfile.rhino` to build the rhino-server container and
+requires the [rhino](https://github.com/calfonso/rhino) repo adjacent to
+this one:
+
+```
+dev/
+  rusternetes/   (this repo)
+  rhino/         (https://github.com/calfonso/rhino)
+```
+
+### 3. Embedded SQLite (all-in-one)
+
+All components run as tokio tasks in a single process with rhino's
+`SqliteBackend` embedded directly — no gRPC, no network, pure in-process
+Rust calls. Requires building with `--features sqlite`.
+
+```bash
+cargo build --features sqlite
+./target/debug/rusternetes --storage-backend sqlite --data-dir ./cluster.db
+```
+
+This mode is not yet implemented as a unified binary but the storage
+plumbing is in place. Each individual binary can be run with
+`--storage-backend sqlite` today.
 
 ---
 
 ## Architecture
 
 All storage access flows through the `Storage` trait defined in `crates/storage/src/lib.rs`.
-The `StorageBackend` enum dispatches to the concrete implementation chosen at startup:
+
+**Normal mode (etcd or rhino gRPC):**
 
 ```
-                          --storage-backend=etcd
-                         /
-    StorageBackend::new()
-                         \
-                          --storage-backend=sqlite
+    Component  --etcd-servers-->  EtcdStorage  --gRPC-->  etcd (or rhino)
+```
 
+Components use the `etcd-client` crate to talk to either real etcd or rhino
+over gRPC. From the component's perspective, there is no difference.
+
+**Embedded mode (in-process SQLite):**
+
+```
+    Component  --storage-backend=sqlite-->  RhinoStorage  --direct-->  SQLite file
+```
+
+The `StorageBackend` enum dispatches to the concrete implementation:
+
+```
     +-----------------+          +------------------+
     | StorageBackend  |          | StorageBackend   |
     |   ::Etcd        |          |   ::Sqlite       |
     |                 |          |                  |
     | EtcdStorage     |          | RhinoStorage     |
     |   etcd-client   |          |   SqliteBackend  |
-    |   gRPC to etcd  |          |   in-process     |
+    |   gRPC          |          |   in-process     |
     +-----------------+          +------------------+
            |                             |
            v                             v
-     external etcd              SQLite file on disk
-     cluster (2379)             (e.g. ./data/cluster.db)
+     etcd or rhino              SQLite file on disk
+     (network, :2379)           (e.g. ./data/cluster.db)
 ```
-
-The SQLite backend uses [rhino](https://github.com/calfonso/rhino) — a Rust
-reimplementation of the kine project — embedded as a library dependency. There
-is **no gRPC hop** for the SQLite path: rusternetes calls rhino's `Backend`
-trait directly in-process.
 
 ---
 
@@ -80,6 +139,10 @@ No changes from the existing deployment model. etcd is the default backend
 when `--storage-backend` is omitted.
 
 ```bash
+# Docker Compose
+docker compose up -d
+
+# Or run binaries directly
 api-server --etcd-servers http://etcd:2379
 scheduler --etcd-servers http://etcd:2379
 controller-manager --etcd-servers http://etcd:2379
@@ -87,12 +150,38 @@ kubelet --node-name node-1 --etcd-servers http://etcd:2379
 kube-proxy --node-name node-1 --etcd-servers http://etcd:2379
 ```
 
-### SQLite (all-in-one)
+### SQLite via rhino (normal multi-container)
 
-Point all components at the same SQLite database file. No external etcd
-needed.
+Use `docker-compose.sqlite.yml` to swap etcd for rhino. Components point
+their `--etcd-servers` flag at rhino instead of etcd. Same binaries, no
+recompilation.
 
 ```bash
+docker compose -f docker-compose.sqlite.yml build
+docker compose -f docker-compose.sqlite.yml up -d
+bash scripts/bootstrap-cluster.sh
+```
+
+Or run rhino and the binaries directly:
+
+```bash
+# Start rhino (from the rhino repo)
+rhino-server --listen-address 0.0.0.0:2379 --endpoint ./cluster.db
+
+# Point components at rhino
+api-server --etcd-servers http://localhost:2379
+scheduler --etcd-servers http://localhost:2379
+# ... etc
+```
+
+### SQLite embedded (all-in-one, single process)
+
+Build with the `sqlite` feature and use `--storage-backend sqlite`. Each
+component embeds rhino's SQLite backend directly — no network, no gRPC.
+
+```bash
+cargo build --features sqlite
+
 api-server --storage-backend sqlite --data-dir ./data/cluster.db
 scheduler --storage-backend sqlite --data-dir ./data/cluster.db
 controller-manager --storage-backend sqlite --data-dir ./data/cluster.db
@@ -211,10 +300,32 @@ is SQLite.
 
 ---
 
-## Rhino Dependency
+## Rhino gRPC Mode (docker-compose.sqlite.yml)
 
-Rhino is included as a path dependency at `../../../rhino` (relative to the
-storage crate). This assumes the following directory layout:
+The simplest way to use SQLite in a normal multi-container deployment.
+Rhino replaces etcd as a drop-in: same gRPC API, backed by SQLite.
+
+**Files:**
+- `Dockerfile.rhino` — builds the rhino-server binary from the adjacent repo
+- `docker-compose.sqlite.yml` — full cluster with rhino instead of etcd
+
+**How it works:** Components use their existing `--etcd-servers` flag pointed
+at `http://rhino:2379`. The `etcd-client` crate in `EtcdStorage` connects to
+rhino's tonic gRPC server, which translates operations to SQLite queries.
+Watch streams work via rhino's poll loop (1-second intervals).
+
+**Advantages over the embedded approach:**
+- No feature flags or recompilation needed — same binaries as etcd mode
+- Watches work correctly across process boundaries via gRPC streaming
+- Can inspect cluster state with `sqlite3 /data/db/state.db`
+
+**Trade-off:** One extra container (rhino) vs. zero containers for embedded.
+
+---
+
+## Rhino Library Dependency (embedded mode)
+
+Rhino is included as a git dependency in the storage crate. This assumes the following directory layout for local development:
 
 ```
 dev/
@@ -243,11 +354,17 @@ and corresponding `StorageBackend` arms — the plumbing is identical.
 - **No cross-backend migration**: Data cannot be moved between etcd and SQLite
   without a manual export/import process. Resource versions are not portable.
 - **Single-writer for SQLite**: SQLite supports concurrent reads but serializes
-  writes. This is fine for single-node deployments but would bottleneck under
-  heavy multi-node write load.
-- **Leader election requires etcd**: Even with SQLite storage, leader election
-  still needs an etcd cluster. This is a non-issue for the primary use case
-  (single-node, no HA).
+  writes. This is fine for single-node and small multi-container deployments
+  but would bottleneck under heavy multi-node write load.
+- **Leader election requires etcd**: Even with embedded SQLite storage, leader
+  election still needs an etcd cluster. This is a non-issue for the primary
+  use case (single-node, no HA). In rhino gRPC mode, leader election could
+  use rhino's etcd-compatible lease API.
+- **Embedded watch latency**: When multiple processes share a SQLite file
+  directly (embedded mode across containers), watch notifications rely on
+  rhino's 1-second poll interval rather than instant gRPC streaming. Use
+  the rhino gRPC mode (`docker-compose.sqlite.yml`) for multi-container
+  deployments to get proper streaming watches.
 
 ---
 
