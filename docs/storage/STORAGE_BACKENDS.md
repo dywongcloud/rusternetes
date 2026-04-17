@@ -48,20 +48,26 @@ dev/
   rhino/         (https://github.com/calfonso/rhino)
 ```
 
-### 3. Embedded SQLite (all-in-one)
+### 3. All-in-one binary (embedded SQLite)
 
-All components run as tokio tasks in a single process with rhino's
-`SqliteBackend` embedded directly — no gRPC, no network, pure in-process
-Rust calls. Requires building with `--features sqlite`.
+All components run as concurrent tokio tasks in a single process with
+rhino's `SqliteBackend` embedded directly — no gRPC, no network, no
+containers, pure in-process Rust calls. The `rusternetes` binary in
+`crates/rusternetes/` orchestrates everything.
 
 ```bash
-cargo build --features sqlite
-./target/debug/rusternetes --storage-backend sqlite --data-dir ./cluster.db
+cargo build -p rusternetes
+./target/debug/rusternetes
 ```
 
-This mode is not yet implemented as a unified binary but the storage
-plumbing is in place. Each individual binary can be run with
-`--storage-backend sqlite` today.
+By default it uses SQLite at `./data/rusternetes.db`. No etcd, no Docker
+Compose, no containers — just run the binary.
+
+You can also point the all-in-one at etcd if you prefer:
+
+```bash
+./target/debug/rusternetes --storage-backend etcd --etcd-servers http://etcd:2379
+```
 
 ---
 
@@ -122,12 +128,15 @@ The feature propagates through the crate graph:
 ```
 rusternetes-api-server/sqlite
   -> rusternetes-storage/sqlite
-    -> dep:rhino (path = "../../../rhino")
+    -> dep:rhino (git)
 ```
 
 Every binary crate (api-server, scheduler, controller-manager, kubelet,
 kube-proxy) defines a `sqlite` feature that forwards to
 `rusternetes-storage/sqlite`.
+
+The `rusternetes` all-in-one crate enables the `sqlite` feature **by
+default** — no extra flags needed when building it.
 
 ---
 
@@ -174,35 +183,75 @@ scheduler --etcd-servers http://localhost:2379
 # ... etc
 ```
 
-### SQLite embedded (all-in-one, single process)
+### All-in-one binary
 
-Build with the `sqlite` feature and use `--storage-backend sqlite`. Each
-component embeds rhino's SQLite backend directly — no network, no gRPC.
+The `rusternetes` binary spawns all components as tokio tasks in one process.
+The `sqlite` feature is enabled by default for this crate.
 
 ```bash
-cargo build --features sqlite
+# Build and run with defaults (SQLite, localhost:6443, node-1)
+cargo build -p rusternetes
+./target/debug/rusternetes
 
-api-server --storage-backend sqlite --data-dir ./data/cluster.db
-scheduler --storage-backend sqlite --data-dir ./data/cluster.db
-controller-manager --storage-backend sqlite --data-dir ./data/cluster.db
-kubelet --node-name node-1 --storage-backend sqlite --data-dir ./data/cluster.db
-kube-proxy --node-name node-1 --storage-backend sqlite --data-dir ./data/cluster.db
+# Custom configuration
+./target/debug/rusternetes \
+    --data-dir /var/lib/rusternetes.db \
+    --node-name my-node \
+    --bind-address 0.0.0.0:6443 \
+    --tls \
+    --tls-san localhost,127.0.0.1,my-node
+
+# Disable kube-proxy (e.g. when iptables is not available)
+./target/debug/rusternetes --disable-proxy
 ```
 
-The database file is created automatically if it does not exist. The parent
-directory is also created.
+The database file is created automatically if it does not exist.
+
+Individual components can also be run standalone with embedded SQLite
+(requires building them with the `sqlite` feature):
+
+```bash
+cargo build --features sqlite -p rusternetes-api-server
+./target/debug/api-server --storage-backend sqlite --data-dir ./data/cluster.db
+```
 
 ---
 
 ## CLI Flags
 
-Every binary accepts these additional flags:
+### Individual binaries
+
+Every component binary accepts these storage flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--storage-backend` | `etcd` | `etcd` or `sqlite` |
 | `--data-dir` | `./data/rusternetes.db` | SQLite database file path (ignored when backend is etcd) |
 | `--etcd-servers` | `http://localhost:2379` | etcd endpoints, comma-separated (ignored when backend is sqlite) |
+
+### All-in-one binary (`rusternetes`)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--storage-backend` | `sqlite` | `sqlite` or `etcd` |
+| `--data-dir` | `./data/rusternetes.db` | SQLite database file path |
+| `--etcd-servers` | `http://localhost:2379` | etcd endpoints (when `--storage-backend=etcd`) |
+| `--bind-address` | `0.0.0.0:6443` | API server listen address |
+| `--node-name` | `node-1` | Node name for the embedded kubelet |
+| `--volume-dir` | `./data/volumes` | Pod volume directory |
+| `--cluster-dns` | `10.96.0.10` | Cluster DNS IP |
+| `--network` | `rusternetes-network` | Container network name |
+| `--tls` | `false` | Enable TLS with self-signed certs |
+| `--tls-cert-file` | — | TLS certificate file (PEM) |
+| `--tls-key-file` | — | TLS private key file (PEM) |
+| `--tls-san` | `localhost,127.0.0.1` | TLS Subject Alternative Names |
+| `--sync-interval` | `5` | Controller sync interval (seconds) |
+| `--scheduler-interval` | `2` | Scheduler interval (seconds) |
+| `--kubelet-sync-interval` | `3` | Kubelet sync interval (seconds) |
+| `--proxy-sync-interval` | `1` | Kube-proxy sync interval (seconds) |
+| `--skip-auth` | `true` | Skip authentication (insecure) |
+| `--disable-proxy` | `false` | Disable kube-proxy |
+| `--log-level` | `info` | Log level (trace/debug/info/warn/error) |
 
 ---
 
@@ -248,14 +297,56 @@ differs:
 ## Crate Structure
 
 ```
-crates/storage/
-  src/
-    lib.rs          # Storage trait, StorageConfig, StorageBackend enum
-    etcd.rs         # EtcdStorage — etcd-client gRPC implementation
-    rhino.rs        # RhinoStorage — direct rhino::Backend implementation (behind sqlite feature)
-    memory.rs       # MemoryStorage — in-memory for unit tests
-    concurrency.rs  # resourceVersion <-> mod_revision conversion
-  Cargo.toml        # rhino = { optional = true }, [features] sqlite = ["dep:rhino"]
+crates/
+  storage/
+    src/
+      lib.rs          # Storage trait, StorageConfig, StorageBackend enum
+      etcd.rs         # EtcdStorage — etcd-client gRPC implementation
+      rhino.rs        # RhinoStorage — direct rhino::Backend (behind sqlite feature)
+      memory.rs       # MemoryStorage — in-memory for unit tests
+      concurrency.rs  # resourceVersion <-> mod_revision conversion
+    Cargo.toml        # rhino = { optional = true }, [features] sqlite = ["dep:rhino"]
+
+  rusternetes/        # All-in-one meta-crate
+    src/main.rs       # Spawns all components as tokio tasks
+    Cargo.toml        # Depends on all component crates, sqlite enabled by default
+
+  api-server/
+    src/lib.rs        # pub async fn run(storage, config) + all modules
+    src/main.rs       # CLI wrapper — parses args, calls run()
+
+  scheduler/
+    src/lib.rs        # pub async fn run(storage, config)
+    src/main.rs       # CLI wrapper
+
+  controller-manager/
+    src/lib.rs        # pub async fn run(storage, config) — spawns 28 controllers
+    src/main.rs       # CLI wrapper
+
+  kubelet/
+    src/lib.rs        # pub async fn run(storage, config)
+    src/main.rs       # CLI wrapper
+
+  kube-proxy/
+    src/lib.rs        # pub async fn run(storage, config)
+    src/main.rs       # CLI wrapper
+```
+
+### Library `run()` pattern
+
+Each component exposes a `pub async fn run()` in its `lib.rs` that takes
+`Arc<StorageBackend>` and a component-specific config struct. The standalone
+binary's `main()` parses CLI args and calls `run()`. The all-in-one binary
+spawns each `run()` as a tokio task.
+
+```rust
+// Example: crates/scheduler/src/lib.rs
+pub struct SchedulerConfig { pub interval: u64 }
+
+pub async fn run(storage: Arc<StorageBackend>, config: SchedulerConfig) -> Result<()> {
+    let scheduler = scheduler::Scheduler::new(storage, config.interval);
+    scheduler.run().await
+}
 ```
 
 ### StorageConfig
@@ -281,9 +372,8 @@ impl Storage for StorageBackend { /* dispatches to inner */ }
 impl AuthzStorage for StorageBackend { /* dispatches to inner */ }
 ```
 
-Components that previously used `Arc<EtcdStorage>` now use
-`Arc<StorageBackend>`. The `StorageBackend` implements both `Storage` and
-`AuthzStorage`, so no other code changes were needed.
+Components use `Arc<StorageBackend>` which implements both `Storage` and
+`AuthzStorage`.
 
 ---
 
