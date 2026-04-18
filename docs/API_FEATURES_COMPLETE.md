@@ -400,12 +400,7 @@ From STATUS.md Section 5 (API Features):
 
 ### Future Enhancements
 
-1. **CRD Subresources** (2-3 days)
-   - Status subresource endpoints
-   - Scale subresource for HPA integration
-   - Watch API for custom resources
-
-2. **Enhanced Strategic Merge** (1-2 days)
+1. **Enhanced Strategic Merge** (1-2 days)
    - Directive markers ($patch, $retainKeys, etc.)
    - Per-field merge strategies
    - Type-specific merge keys from OpenAPI

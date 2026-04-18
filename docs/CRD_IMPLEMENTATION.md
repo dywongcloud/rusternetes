@@ -94,7 +94,7 @@ Rusternetes now supports Custom Resource Definitions (CRDs), allowing users to e
 ### 4. Custom Resource Handlers ✅
 
 **File Created:**
-- `crates/api-server/src/handlers/custom_resource.rs` (410+ lines)
+- `crates/api-server/src/handlers/custom_resource.rs` (1900+ lines)
 
 **Dynamic Endpoints (created per CRD):**
 - Namespaced resources:
@@ -117,12 +117,14 @@ Rusternetes now supports Custom Resource Definitions (CRDs), allowing users to e
 - RBAC authorization per custom resource
 - Automatic API version and kind assignment
 - Generic storage with type-safe retrieval
-
-**Test Coverage:**
-- 3 unit tests for custom resource validation
-- Success case test
-- Invalid version test
-- Not served version test
+- Watch support via router fallback (`?watch=true`)
+- Status subresource (get/update/patch)
+- Scale subresource (get/update)
+- Schema defaulting on read
+- Structural pruning of unknown fields
+- Strict field validation (`fieldValidation=Strict`)
+- Admission webhook integration (mutating + validating)
+- Server-side apply support
 
 ### 5. Router Integration ✅
 
@@ -313,50 +315,18 @@ See `examples/crd-example.yaml` for complete examples including:
 
 ### Current Limitations
 
-1. **No Dynamic Route Registration**: Routes for custom resources must be manually added. Future work: implement dynamic router that updates when CRDs are created/deleted.
+1. **No Conversion Webhooks**: Version conversion is not implemented. Only one storage version is supported.
 
-2. **No Conversion Webhooks**: Version conversion is not implemented. Only one storage version is supported.
-
-3. **No /status Subresource**: Status subresource endpoints not yet implemented.
-
-4. **No /scale Subresource**: Scale subresource endpoints not yet implemented.
-
-5. **No Watch Support**: Watch API for custom resources not yet implemented.
-
-6. **No Field Selectors**: Field selector filtering for custom resources not yet implemented.
+2. **No Strategic Merge Patch Directives**: CRD-specific merge key directives are not yet implemented.
 
 ### Future Enhancements
 
-1. **Dynamic Router** (High Priority)
-   - Automatically register/unregister routes when CRDs are created/deleted
-   - Hot-reload without server restart
-   - Estimated: 200-300 lines of code
-
-2. **Status Subresource**
-   - Separate `/status` endpoint for status updates
-   - Optimistic concurrency control
-   - Estimated: 100-150 lines of code
-
-3. **Scale Subresource**
-   - `/scale` endpoint for HPA integration
-   - Extract replicas from custom path (jsonPath)
-   - Estimated: 100-150 lines of code
-
-4. **Version Conversion**
+1. **Version Conversion**
    - Webhook-based version conversion
    - Automatic conversion between versions
-   - Estimated: 300-400 lines of code
 
-5. **Watch API**
-   - Real-time updates for custom resources
-   - Extend existing watch infrastructure
-   - Estimated: 100 lines of code
-
-6. **CRD Controller**
-   - Manage CRD lifecycle
-   - Update routes on CRD changes
-   - Validate custom resources against schema
-   - Estimated: 200-250 lines of code
+2. **Strategic Merge Patch**
+   - CRD-specific merge key directives
 
 ## Testing
 
@@ -436,16 +406,17 @@ EOF
 crates/
 ├── common/src/
 │   ├── resources/
-│   │   └── crd.rs                    # CRD types (700 lines)
-│   └── schema_validation.rs          # OpenAPI v3 validation (540 lines)
+│   │   └── crd.rs                    # CRD types (700+ lines)
+│   └── schema_validation.rs          # OpenAPI v3 validation (540+ lines)
 ├── api-server/src/
-│   └── handlers/
-│       ├── crd.rs                    # CRD CRUD handlers (370 lines)
-│       └── custom_resource.rs         # CR CRUD handlers (410 lines)
+│   ├── handlers/
+│   │   ├── crd.rs                    # CRD CRUD handlers (800+ lines)
+│   │   └── custom_resource.rs        # CR CRUD + status/scale/watch (1900+ lines)
+│   └── dynamic_routes.rs             # Dynamic route registration (350+ lines)
+├── controller-manager/src/controllers/
+│   └── crd.rs                        # CRD controller (590+ lines)
 └── examples/
     └── crd-example.yaml              # Example CRD and CR
-
-Total: ~2,020 lines of new code
 ```
 
 ## Kubernetes Compatibility
@@ -467,18 +438,19 @@ Total: ~2,020 lines of new code
 - ✅ Additional printer columns
 - ✅ CRD naming convention
 
+### Implemented Since Initial Release
+
+- ✅ Watch API for CRs (router.rs fallback handles `?watch=true` for custom resources)
+- ✅ Status subresource (get/update/patch at `/{plural}/{name}/status`)
+- ✅ Scale subresource (get/update at `/{plural}/{name}/scale`)
+- ✅ Defaulting (schema defaults applied on read)
+- ✅ Pruning unknown fields (structural pruning based on schema)
+- ✅ Dynamic route registration (`dynamic_routes.rs`, 350+ lines)
+
 ### Not Yet Implemented
 
-- ⏹️ Dynamic route registration
-- ⏹️ Status subresource
-- ⏹️ Scale subresource
 - ⏹️ Conversion webhooks
-- ⏹️ Webhook client config
-- ⏹️ Watch API for CRs
-- ⏹️ Field selectors for CRs
 - ⏹️ Strategic merge patch directives
-- ⏹️ Defaulting
-- ⏹️ Pruning unknown fields
 
 ## Performance Considerations
 
@@ -508,26 +480,25 @@ Total: ~2,020 lines of new code
 | CRD Definition | ✅ | ✅ |
 | Multiple Versions | ✅ | ✅ |
 | OpenAPI v3 Schema | ✅ | ✅ |
-| Status Subresource | ✅ | ⏹️ |
-| Scale Subresource | ✅ | ⏹️ |
-| Conversion Webhooks | ✅ | ⏹️ Framework |
-| Dynamic Routes | ✅ | ⏹️ Manual |
-| Watch API | ✅ | ⏹️ |
-| Field Selectors | ✅ | ⏹️ |
-| Defaulting | ✅ | ⏹️ |
-| Pruning | ✅ | ⏹️ |
+| Status Subresource | ✅ | ✅ |
+| Scale Subresource | ✅ | ✅ |
+| Conversion Webhooks | ✅ | ⏹️ |
+| Dynamic Routes | ✅ | ✅ |
+| Watch API | ✅ | ✅ |
+| Defaulting | ✅ | ✅ |
+| Pruning | ✅ | ✅ |
 | Categories | ✅ | ✅ |
 | Short Names | ✅ | ✅ |
-| Printer Columns | ✅ | ✅ Framework |
+| Printer Columns | ✅ | ✅ |
+| Strategic Merge Patch | ✅ | ⏹️ |
 
 ## Migration Notes
 
 If migrating from Kubernetes:
 1. CRDs can be copied directly (YAML compatible)
-2. Custom resources may need apiVersion adjustment
-3. Dynamic routes require manual addition currently
-4. Status subresource not available yet
-5. Conversion webhooks not implemented
+2. Custom resources work with standard tooling (kubectl, kube-rs, client-go)
+3. Watch, status subresource, scale subresource all work
+4. Conversion webhooks not implemented (single storage version only)
 
 ## Troubleshooting
 
@@ -558,32 +529,12 @@ If migrating from Kubernetes:
 **Error:** "Forbidden: user cannot create crontabs"
 - **Fix:** Grant permissions for the custom resource's API group
 
-## Metrics
-
-### Implementation Stats
-
-- **Development Time:** ~6 hours
-- **Lines of Code:** 2,020+ lines
-- **Test Coverage:** 16 unit tests
-- **Files Created:** 5
-- **Files Modified:** 4
-
-### Code Distribution
-
-- CRD Types: 700 lines (35%)
-- Schema Validation: 540 lines (27%)
-- CRD Handlers: 370 lines (18%)
-- Custom Resource Handlers: 410 lines (20%)
-
 ## Conclusion
 
-Custom Resource Definitions are now fully functional in Rusternetes, allowing users to extend the API with custom resource types. The implementation provides production-ready schema validation, RBAC integration, and Kubernetes-compatible API conventions.
+Custom Resource Definitions are fully functional in Rusternetes, including watch, status/scale subresources, schema validation with defaulting and pruning, RBAC integration, and Kubernetes-compatible API conventions.
 
 **Next Steps:**
-1. Implement dynamic route registration for hot-reload
-2. Add status and scale subresources
-3. Implement CRD controller for lifecycle management
-4. Add watch API support for custom resources
-5. Comprehensive integration tests
+1. Conversion webhooks for multi-version CRDs
+2. Strategic merge patch directives
 
-**Status:** ✅ Core CRD functionality complete and ready for use
+**Status:** ✅ Full CRD functionality — CRUD, watch, status/scale subresources, schema validation, defaulting, pruning

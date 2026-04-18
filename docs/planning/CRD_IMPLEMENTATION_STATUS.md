@@ -288,7 +288,6 @@ All the hard parts are already done:
 ### Optional Future Enhancements:
 - Dynamic discovery API integration (for `kubectl api-resources` support)
 - Performance optimization via router rebuild pattern (if needed)
-- Watch support for custom resources (for `kubectl get -w`)
 
 ### Move to Next Priority:
 CRD implementation is functionally complete. Ready to move to next item in IMPLEMENTATION_PLAN.md:
@@ -326,7 +325,6 @@ The CRD implementation is **100% COMPLETE**.
 
 **What's Optional**:
 - ⚠️ Discovery API integration (custom resources work without it)
-- ⚠️ Watch support for custom resources
 - ⚠️ Performance optimization via router rebuild
 
 **Production Ready**: Yes, the fallback handler approach is production-ready and matches Kubernetes behavior. Custom resources are fully functional and accessible.
