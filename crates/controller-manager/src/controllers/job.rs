@@ -3,7 +3,7 @@ use futures::StreamExt;
 use rusternetes_common::resources::workloads::{Job, JobCondition, JobStatus};
 use rusternetes_common::resources::{Pod, PodStatus};
 use rusternetes_common::types::{OwnerReference, Phase};
-use rusternetes_storage::{build_key, Storage, WorkQueue, extract_key};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,13 +36,23 @@ impl<S: Storage + 'static> JobController<S> {
             // Initial full reconciliation
             self.enqueue_all(&queue).await;
 
-            // Watch for changes
+            // Watch for changes to Jobs AND Pods
             let prefix = "/registry/jobs/";
             let watch_result = self.storage.watch(prefix).await;
             let mut watch = match watch_result {
                 Ok(w) => w,
                 Err(e) => {
                     error!("Failed to establish watch: {}, retrying in {:?}", e, retry_interval);
+                    time::sleep(retry_interval).await;
+                    continue;
+                }
+            };
+
+            let pod_prefix = build_prefix("pods", None);
+            let mut pod_watch = match self.storage.watch(&pod_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish pod watch: {}, retrying in {:?}", e, retry_interval);
                     time::sleep(retry_interval).await;
                     continue;
                 }
@@ -67,6 +77,21 @@ impl<S: Storage + 'static> JobController<S> {
                             }
                             None => {
                                 warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    event = pod_watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                self.enqueue_owner_job(&queue, &ev).await;
+                            }
+                            Some(Err(e)) => {
+                                warn!("Pod watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Pod watch stream ended, reconnecting");
                                 watch_broken = true;
                             }
                         }
@@ -120,6 +145,38 @@ impl<S: Storage + 'static> JobController<S> {
             }
             Err(e) => {
                 error!("Failed to list jobs for enqueue: {}", e);
+            }
+        }
+    }
+
+    /// When a pod changes, check its ownerReferences for a Job owner
+    /// and enqueue that Job for reconciliation.
+    async fn enqueue_owner_job(&self, queue: &WorkQueue, event: &rusternetes_storage::WatchEvent) {
+        let pod_key = extract_key(event);
+        let parts: Vec<&str> = pod_key.splitn(3, '/').collect();
+        let ns = match parts.get(1) {
+            Some(ns) => *ns,
+            None => return,
+        };
+
+        let storage_key = format!("/registry/{}", pod_key);
+        match self.storage.get::<Pod>(&storage_key).await {
+            Ok(pod) => {
+                if let Some(refs) = &pod.metadata.owner_references {
+                    for owner_ref in refs {
+                        if owner_ref.kind == "Job" {
+                            queue.add(format!("jobs/{}/{}", ns, owner_ref.name)).await;
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Pod deleted — enqueue all Jobs in this namespace
+                if let Ok(items) = self.storage.list::<Job>(&build_prefix("jobs", Some(ns))).await {
+                    for job in &items {
+                        queue.add(format!("jobs/{}/{}", ns, job.metadata.name)).await;
+                    }
+                }
             }
         }
     }

@@ -64,13 +64,23 @@ impl<S: Storage + 'static> DeploymentController<S> {
             // Initial full reconciliation
             self.enqueue_all(&queue).await;
 
-            // Watch for changes
+            // Watch for changes to Deployments AND ReplicaSets
             let prefix = build_prefix("deployments", None);
             let watch_result = self.storage.watch(&prefix).await;
             let mut watch = match watch_result {
                 Ok(w) => w,
                 Err(e) => {
                     error!("Failed to establish watch: {}, retrying in {:?}", e, self.interval);
+                    tokio::time::sleep(self.interval).await;
+                    continue;
+                }
+            };
+
+            let rs_prefix = build_prefix("replicasets", None);
+            let mut rs_watch = match self.storage.watch(&rs_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish replicaset watch: {}, retrying in {:?}", e, self.interval);
                     tokio::time::sleep(self.interval).await;
                     continue;
                 }
@@ -95,6 +105,21 @@ impl<S: Storage + 'static> DeploymentController<S> {
                             }
                             None => {
                                 warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    event = rs_watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                self.enqueue_owner_deployment(&queue, &ev).await;
+                            }
+                            Some(Err(e)) => {
+                                warn!("ReplicaSet watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("ReplicaSet watch stream ended, reconnecting");
                                 watch_broken = true;
                             }
                         }
@@ -147,6 +172,38 @@ impl<S: Storage + 'static> DeploymentController<S> {
             }
             Err(e) => {
                 error!("Failed to list deployments for enqueue: {}", e);
+            }
+        }
+    }
+
+    /// When a ReplicaSet changes, check its ownerReferences for a Deployment owner
+    /// and enqueue that Deployment for reconciliation.
+    async fn enqueue_owner_deployment(&self, queue: &WorkQueue, event: &rusternetes_storage::WatchEvent) {
+        let rs_key = extract_key(event);
+        let parts: Vec<&str> = rs_key.splitn(3, '/').collect();
+        let ns = match parts.get(1) {
+            Some(ns) => *ns,
+            None => return,
+        };
+
+        let storage_key = format!("/registry/{}", rs_key);
+        match self.storage.get::<ReplicaSet>(&storage_key).await {
+            Ok(rs) => {
+                if let Some(refs) = &rs.metadata.owner_references {
+                    for owner_ref in refs {
+                        if owner_ref.kind == "Deployment" {
+                            queue.add(format!("deployments/{}/{}", ns, owner_ref.name)).await;
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // ReplicaSet deleted — enqueue all Deployments in this namespace
+                if let Ok(items) = self.storage.list::<Deployment>(&build_prefix("deployments", Some(ns))).await {
+                    for d in &items {
+                        queue.add(format!("deployments/{}/{}", ns, d.metadata.name)).await;
+                    }
+                }
             }
         }
     }

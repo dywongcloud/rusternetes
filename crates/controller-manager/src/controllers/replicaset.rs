@@ -38,13 +38,23 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
             // Initial full reconciliation
             self.enqueue_all(&queue).await;
 
-            // Watch for changes
+            // Watch for changes to ReplicaSets AND Pods
             let prefix = build_prefix("replicasets", None);
             let watch_result = self.storage.watch(&prefix).await;
             let mut watch = match watch_result {
                 Ok(w) => w,
                 Err(e) => {
                     error!("Failed to establish watch: {}, retrying in {:?}", e, self.interval);
+                    tokio::time::sleep(self.interval).await;
+                    continue;
+                }
+            };
+
+            let pod_prefix = build_prefix("pods", None);
+            let mut pod_watch = match self.storage.watch(&pod_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish pod watch: {}, retrying in {:?}", e, self.interval);
                     tokio::time::sleep(self.interval).await;
                     continue;
                 }
@@ -69,6 +79,21 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
                             }
                             None => {
                                 warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    event = pod_watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                self.enqueue_owner_replicaset(&queue, &ev).await;
+                            }
+                            Some(Err(e)) => {
+                                warn!("Pod watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Pod watch stream ended, reconnecting");
                                 watch_broken = true;
                             }
                         }
@@ -121,6 +146,38 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
             }
             Err(e) => {
                 error!("Failed to list replicasets for enqueue: {}", e);
+            }
+        }
+    }
+
+    /// When a pod changes, check its ownerReferences for a ReplicaSet owner
+    /// and enqueue that ReplicaSet for reconciliation.
+    async fn enqueue_owner_replicaset(&self, queue: &WorkQueue, event: &rusternetes_storage::WatchEvent) {
+        let pod_key = extract_key(event);
+        let parts: Vec<&str> = pod_key.splitn(3, '/').collect();
+        let ns = match parts.get(1) {
+            Some(ns) => *ns,
+            None => return,
+        };
+
+        let storage_key = format!("/registry/{}", pod_key);
+        match self.storage.get::<Pod>(&storage_key).await {
+            Ok(pod) => {
+                if let Some(refs) = &pod.metadata.owner_references {
+                    for owner_ref in refs {
+                        if owner_ref.kind == "ReplicaSet" {
+                            queue.add(format!("replicasets/{}/{}", ns, owner_ref.name)).await;
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Pod deleted — enqueue all ReplicaSets in this namespace
+                if let Ok(items) = self.storage.list::<ReplicaSet>(&build_prefix("replicasets", Some(ns))).await {
+                    for rs in &items {
+                        queue.add(format!("replicasets/{}/{}", ns, rs.metadata.name)).await;
+                    }
+                }
             }
         }
     }
