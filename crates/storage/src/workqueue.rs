@@ -214,13 +214,17 @@ impl WorkQueue {
 
     /// Mark a key as done processing. Must be called after `get()`.
     /// If the key was re-added via `add()` while being processed,
-    /// it will be immediately re-queued.
+    /// it will be re-queued after a short coalescing delay (500ms).
+    /// This prevents tight reconciliation loops where reconcile writes
+    /// trigger watch events that immediately re-trigger reconciliation.
     pub async fn done(&self, key: &str) {
         let mut inner = self.inner.lock().await;
         inner.processing.remove(key);
-        // If add() was called while we were processing, re-queue now
-        if inner.dirty.contains(key) {
-            inner.queue.push_back(key.to_string());
+        // If add() was called while we were processing, re-queue with
+        // a coalescing delay so multiple rapid events are batched.
+        if inner.dirty.remove(key) {
+            let deadline = Instant::now() + Duration::from_millis(500);
+            inner.delayed.insert(key.to_string(), deadline);
             drop(inner);
             self.notify.notify_one();
         }
@@ -306,11 +310,13 @@ mod tests {
         // Not in queue yet (still processing)
         assert_eq!(q.len().await, 0);
 
-        // done() should re-queue because dirty flag is set
+        // done() should schedule re-queue with coalescing delay
         q.done(&key).await;
-        assert_eq!(q.len().await, 1);
+        // Not immediately in queue — it's in the delayed map
+        assert_eq!(q.len().await, 0);
 
-        // Should be able to get it again
+        // After the coalescing delay, get() should return it
+        tokio::time::sleep(Duration::from_millis(600)).await;
         let key2 = q.get().await.unwrap();
         assert_eq!(key2, "key1");
         q.done(&key2).await;
