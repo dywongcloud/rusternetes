@@ -110,13 +110,19 @@ impl WorkQueue {
         if inner.shutdown {
             return;
         }
-        // Skip if already queued or being processed
-        if inner.dirty.contains(&key) || inner.processing.contains(&key) {
+        // If already queued, nothing to do
+        if inner.dirty.contains(&key) {
+            return;
+        }
+        // Mark as dirty. If the key is currently being processed,
+        // done() will see the dirty flag and re-queue it.
+        inner.dirty.insert(key.clone());
+        if inner.processing.contains(&key) {
+            // Will be re-queued when done() is called
             return;
         }
         // Remove from delayed if present (immediate add takes priority)
         inner.delayed.remove(&key);
-        inner.dirty.insert(key.clone());
         inner.queue.push_back(key);
         drop(inner);
         self.notify.notify_one();
@@ -129,9 +135,14 @@ impl WorkQueue {
         if inner.shutdown {
             return;
         }
-        // Don't delay if already queued or processing
-        if inner.dirty.contains(&key) || inner.processing.contains(&key) {
+        // Don't delay if already queued
+        if inner.dirty.contains(&key) {
             return;
+        }
+        // If processing, mark dirty so done() re-queues with delay
+        // (but for rate-limited requeue we use delayed map directly)
+        if inner.processing.contains(&key) {
+            // Don't mark dirty — requeue_rate_limited should use delayed map
         }
         let deadline = Instant::now() + delay;
         inner.delayed.insert(key, deadline);
@@ -207,6 +218,12 @@ impl WorkQueue {
     pub async fn done(&self, key: &str) {
         let mut inner = self.inner.lock().await;
         inner.processing.remove(key);
+        // If add() was called while we were processing, re-queue now
+        if inner.dirty.contains(key) {
+            inner.queue.push_back(key.to_string());
+            drop(inner);
+            self.notify.notify_one();
+        }
     }
 
     /// Re-queue a key with exponential backoff. Called when reconciliation
@@ -278,17 +295,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_deduplication_while_processing() {
+    async fn test_requeue_on_done_when_dirty() {
         let q = WorkQueue::new();
         q.add("key1".into()).await;
         let key = q.get().await.unwrap();
         assert_eq!(key, "key1");
 
-        // Adding same key while it's being processed should be no-op
+        // Adding same key while processing marks it dirty
         q.add("key1".into()).await;
+        // Not in queue yet (still processing)
         assert_eq!(q.len().await, 0);
 
+        // done() should re-queue because dirty flag is set
         q.done(&key).await;
+        assert_eq!(q.len().await, 1);
+
+        // Should be able to get it again
+        let key2 = q.get().await.unwrap();
+        assert_eq!(key2, "key1");
+        q.done(&key2).await;
     }
 
     #[tokio::test]
