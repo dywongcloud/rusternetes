@@ -65,6 +65,8 @@ services:
       - "--tls-key-file"
       - "/etc/kubernetes/pki/api-server.key"
       - "--skip-auth"
+      - "--console-dir"
+      - "/app/console"
       - "--log-level"
       - "info"
 

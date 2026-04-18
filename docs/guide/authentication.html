@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authentication - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+          <li><a href="console.html">Web Console</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="authentication.html" class="active">Authentication</a></li>
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Authentication &amp; Authorization</h1>
+      <p class="lead">
+        How to secure your rusternetes cluster. By default, rusternetes runs with <code>--skip-auth</code>
+        which bypasses all authentication and authorization. This guide shows you how to enable
+        proper security with JWT tokens, RBAC, and client certificate (mTLS) authentication.
+      </p>
+
+      <div class="admonition warning">
+        <div class="admonition-title">WARNING: --skip-auth</div>
+        <p>
+          By default, the all-in-one binary runs with <code>--skip-auth=true</code>.
+          Every request is treated as coming from <code>admin</code> in the <code>system:masters</code> group.
+          No tokens are required. All RBAC checks are bypassed. <strong>Do not expose the API server
+          to any network with <code>--skip-auth</code> enabled.</strong>
+        </p>
+      </div>
+
+      <h2>Authentication Flow</h2>
+
+      <p>When <code>--skip-auth</code> is disabled, the API server authenticates requests through these steps:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Authentication Chain</span>
+        </div>
+        <code>Request with Authorization: Bearer &lt;token&gt;
+    |
+    +-- Try ServiceAccount JWT (TokenManager)
+    |     Valid? -> UserInfo from JWT claims
+    |
+    +-- Try Bootstrap Token (BootstrapTokenManager)
+    |     Valid? -> UserInfo from bootstrap token
+    |
+    +-- No token or invalid?
+          -> Anonymous (system:anonymous)
+    |
+    v
+RBAC Authorization (Roles + Bindings)</code>
+      </pre>
+
+      <h2>Quick Start: Securing a Cluster</h2>
+
+      <h3>1. Generate signing keys</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># RSA key pair for JWT token signing</span>
+mkdir -p .rusternetes/certs
+openssl genrsa -out .rusternetes/certs/sa.key 2048
+openssl rsa -in .rusternetes/certs/sa.key \
+  -pubout -out .rusternetes/certs/sa.pub</code>
+      </pre>
+
+      <h3>2. Create an admin ServiceAccount</h3>
+
+      <p>While still running with <code>--skip-auth</code>, create an admin user:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># Create admin ServiceAccount</span>
+kubectl create serviceaccount cluster-admin -n kube-system
+
+<span class="c"># Bind to cluster-admin ClusterRole</span>
+kubectl create clusterrolebinding cluster-admin-binding \
+  --clusterrole=cluster-admin \
+  --serviceaccount=kube-system:cluster-admin
+
+<span class="c"># Create a long-lived token Secret</span>
+cat &lt;&lt;EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-admin-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: cluster-admin
+type: kubernetes.io/service-account-token
+EOF
+
+<span class="c"># Retrieve the token</span>
+TOKEN=$(kubectl get secret cluster-admin-token -n kube-system \
+  -o jsonpath='{.data.token}' | base64 -d)
+echo "$TOKEN"</code>
+      </pre>
+
+      <h3>3. Configure kubectl with the token</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code>kubectl config set-credentials rusternetes-admin --token="$TOKEN"
+kubectl config set-context rusternetes --user=rusternetes-admin</code>
+      </pre>
+
+      <h3>4. Restart without --skip-auth</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code>rusternetes --skip-auth=false --data-dir ./cluster.db
+
+<span class="c"># Verify authentication works</span>
+kubectl get pods                      <span class="c"># should work with token</span>
+curl -k https://localhost:6443/api/v1 <span class="c"># should get 401/403</span></code>
+      </pre>
+
+      <h2>Client Certificate Authentication (mTLS)</h2>
+
+      <p>For Kubernetes-style client certificate auth, use <code>--client-ca-file</code>.
+         The TLS layer will require clients to present a certificate signed by the specified CA.</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># Generate CA</span>
+openssl genrsa -out ca.key 2048
+openssl req -new -x509 -key ca.key -out ca.crt \
+  -days 3650 -subj "/CN=rusternetes-ca"
+
+<span class="c"># Generate admin client cert (CN=username, O=group)</span>
+openssl genrsa -out admin.key 2048
+openssl req -new -key admin.key -out admin.csr \
+  -subj "/CN=admin/O=system:masters"
+openssl x509 -req -in admin.csr -CA ca.crt -CAkey ca.key \
+  -CAcreateserial -out admin.crt -days 365
+
+<span class="c"># Start with mTLS</span>
+rusternetes \
+  --tls --tls-cert-file server.crt --tls-key-file server.key \
+  --client-ca-file ca.crt --skip-auth=false
+
+<span class="c"># Configure kubectl with client cert</span>
+kubectl config set-credentials admin \
+  --client-certificate=admin.crt \
+  --client-key=admin.key</code>
+      </pre>
+
+      <h2>Token Types</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Format</th>
+            <th>Use Case</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ServiceAccount JWT</td>
+            <td>RS256 or HS256 signed JWT</td>
+            <td>Primary auth for kubectl, pods, controllers</td>
+          </tr>
+          <tr>
+            <td>Bootstrap Token</td>
+            <td><code>&lt;id&gt;.&lt;secret&gt;</code> (6+16 chars)</td>
+            <td>Node join / cluster bootstrapping</td>
+          </tr>
+          <tr>
+            <td>Anonymous</td>
+            <td>No token</td>
+            <td>No permissions by default; can be granted via RBAC</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Security Checklist</h2>
+
+      <p>Before exposing a rusternetes cluster to any network:</p>
+
+      <ul>
+        <li>Remove <code>--skip-auth</code> from the API server command</li>
+        <li>Generate RSA signing keys for ServiceAccount tokens</li>
+        <li>Enable TLS (<code>--tls</code> with cert/key or <code>--tls-self-signed</code>)</li>
+        <li>Create an admin ServiceAccount and ClusterRoleBinding</li>
+        <li>Verify: <code>kubectl get pods --token=&lt;token&gt;</code> works</li>
+        <li>Verify: <code>curl -k https://localhost:6443/api/v1/pods</code> returns 401/403</li>
+        <li>Create limited-scope ServiceAccounts for non-admin users</li>
+        <li>Consider <code>--client-ca-file</code> for mTLS network access control</li>
+      </ul>
+
+      <h2>CLI Flags</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--skip-auth</code></td>
+            <td><code>true</code> (all-in-one) / <code>false</code> (standalone)</td>
+            <td>Skip authentication and authorization</td>
+          </tr>
+          <tr>
+            <td><code>--jwt-secret</code></td>
+            <td><em>default string</em></td>
+            <td>HMAC secret for JWT (fallback when no RSA keys)</td>
+          </tr>
+          <tr>
+            <td><code>--client-ca-file</code></td>
+            <td><em>disabled</em></td>
+            <td>Client CA cert for mTLS authentication</td>
+          </tr>
+          <tr>
+            <td><code>--tls</code></td>
+            <td><code>false</code></td>
+            <td>Enable TLS/HTTPS</td>
+          </tr>
+          <tr>
+            <td><code>--tls-cert-file</code></td>
+            <td>&mdash;</td>
+            <td>Server certificate (PEM)</td>
+          </tr>
+          <tr>
+            <td><code>--tls-key-file</code></td>
+            <td>&mdash;</td>
+            <td>Server private key (PEM)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="console.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Web Console
+        </a>
+        <a href="monitoring.html" class="next">
+          <span class="pager-label">Next</span>
+          Monitoring &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

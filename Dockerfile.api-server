@@ -1,4 +1,14 @@
 # Dockerfile for API Server component
+
+# Stage 1: Build the console SPA
+FROM node:24-slim AS console-builder
+WORKDIR /console
+COPY console/package.json console/package-lock.json* ./
+RUN npm ci --ignore-scripts
+COPY console/ ./
+RUN npm run build
+
+# Stage 2: Build the Rust binary
 FROM rust:latest AS builder
 
 RUN apt-get update && apt-get install -y \
@@ -27,8 +37,9 @@ COPY crates ./crates
 
 # Build the api-server
 ARG CARGO_FEATURES=""
-RUN cargo build --release $CARGO_FEATURES --bin api-server
+RUN cargo build $CARGO_FEATURES --bin api-server
 
+# Stage 3: Runtime image
 FROM debian:sid-slim
 
 RUN apt-get update && apt-get install -y \
@@ -38,7 +49,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/api-server /app/api-server
+COPY --from=builder /app/target/debug/api-server /app/api-server
+COPY --from=console-builder /console/dist /app/console
 
 EXPOSE 6443
 

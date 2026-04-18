@@ -41,7 +41,8 @@ For new users, we recommend this path:
 - **[VOLUME_EXPANSION.md](VOLUME_EXPANSION.md)** - Volume expansion feature
 
 ### Security
-- **[SECURITY.md](SECURITY.md)** - Security features overview
+- **[AUTHENTICATION.md](AUTHENTICATION.md)** - Authentication, authorization, and cluster security guide
+- **[SECURITY.md](SECURITY.md)** - Security features overview (admission, encryption, audit)
 - **[WEBHOOK_INTEGRATION.md](WEBHOOK_INTEGRATION.md)** - Admission webhooks integration
 - **[TLS_GUIDE.md](TLS_GUIDE.md)** - TLS configuration
 - **[Service Account Tokens](security/service-account-tokens.md)** - SA token implementation

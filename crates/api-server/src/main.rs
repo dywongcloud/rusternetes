@@ -89,6 +89,14 @@ struct Args {
     /// Prometheus server URL for custom metrics (optional)
     #[arg(long)]
     prometheus_url: Option<String>,
+
+    /// Path to the console SPA build directory (enables web console at /console/)
+    #[arg(long)]
+    console_dir: Option<String>,
+
+    /// Client CA certificate file for mTLS client certificate authentication
+    #[arg(long)]
+    client_ca_file: Option<String>,
 }
 
 #[tokio::main]
@@ -275,7 +283,8 @@ async fn main() -> Result<()> {
     }
 
     // Build router
-    let app = router::build_router(state);
+    let console_path = args.console_dir.as_ref().map(std::path::PathBuf::from);
+    let app = router::build_router(state, console_path.as_deref());
 
     // Start server (with or without TLS)
     if args.tls {

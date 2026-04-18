@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Console - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+          <li><a href="console.html" class="active">Web Console</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="authentication.html">Authentication</a></li>
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Web Console</h1>
+      <p class="lead">
+        A built-in web dashboard served directly from the API server &mdash; no proxy, no separate deployment,
+        no external dependencies. Browse workloads, nodes, networking, storage, RBAC, and events in real time.
+        Supports multi-cluster management for fleets of rusternetes instances.
+      </p>
+
+      <div class="admonition tip">
+        <div class="admonition-title">EMBEDDED BY DESIGN</div>
+        <p>
+          The console is served by the same Axum HTTP server that handles the Kubernetes API.
+          When you pass <code>--console-dir</code>, the API server mounts a <code>ServeDir</code>
+          handler at <code>/console/</code> with an <code>index.html</code> fallback for client-side routing.
+          No nginx, no OAuth proxy, no CORS &mdash; just one process, one port.
+        </p>
+      </div>
+
+      <h2>Quick Start</h2>
+
+      <p>Build the console SPA and start the API server with it enabled:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># Build the console</span>
+cd console
+npm install
+npm run build
+
+<span class="c"># Start rusternetes with the console enabled</span>
+cd ..
+./target/release/rusternetes --console-dir ./console/dist
+
+<span class="c"># Open in browser</span>
+open https://localhost:6443/console/</code>
+      </pre>
+
+      <h2>Development Mode</h2>
+
+      <p>For hot-reloading during console development, run the Vite dev server alongside the API server:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># Terminal 1: start the API server (no --console-dir needed)</span>
+./target/release/rusternetes
+
+<span class="c"># Terminal 2: start the console dev server</span>
+cd console
+npm run dev
+<span class="c"># Vite on http://localhost:3000/console/</span>
+<span class="c"># Proxies /api and /apis to localhost:6443</span></code>
+      </pre>
+
+      <h2>Architecture</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Architecture</span>
+        </div>
+        <code>Browser ── https://localhost:6443/console/
+               │
+               ├── /console/              Static SPA files (Axum ServeDir)
+               ├── /api/v1/pods           K8s REST API (same server)
+               ├── /api/v1/pods?watch=1   Watch stream (chunked HTTP)
+               └── /apis/apps/v1/...      API group resources</code>
+      </pre>
+
+      <p>Because the SPA and API share the same origin, there is no CORS configuration needed.
+         The console calls the standard Kubernetes REST API endpoints directly using <code>fetch()</code>.</p>
+
+      <h3>Tech Stack</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Technology</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Frontend</td>
+            <td>React 19 + TypeScript</td>
+            <td>Component-based UI with type safety</td>
+          </tr>
+          <tr>
+            <td>Bundler</td>
+            <td>Vite</td>
+            <td>Fast builds, hot module replacement</td>
+          </tr>
+          <tr>
+            <td>State</td>
+            <td>Zustand + TanStack Query</td>
+            <td>Client-side UI state + server data caching</td>
+          </tr>
+          <tr>
+            <td>Styling</td>
+            <td>Tailwind CSS + Radix UI</td>
+            <td>Utility-first CSS, accessible headless components</td>
+          </tr>
+          <tr>
+            <td>Serving</td>
+            <td>Axum <code>ServeDir</code></td>
+            <td>Static file serving with SPA fallback</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Views</h2>
+
+      <p>The console provides 8 views accessible from the sidebar navigation:</p>
+
+      <h3>Overview</h3>
+      <p>Cluster dashboard with stat cards showing pod counts (running/total), node status (ready/total),
+         namespace count, and discovered resource types. Below the stats is a deployment summary
+         showing ready replica counts and availability status.</p>
+
+      <h3>Workloads</h3>
+      <p>Tabbed table view for the core workload types:</p>
+      <ul>
+        <li><strong>Pods</strong> &mdash; name, namespace, status, ready containers, restart count, node, age</li>
+        <li><strong>Deployments</strong> &mdash; name, namespace, ready/desired replicas, up-to-date, available, age</li>
+        <li><strong>StatefulSets</strong>, <strong>DaemonSets</strong>, <strong>Jobs</strong> &mdash; name, namespace, age</li>
+      </ul>
+
+      <h3>Networking</h3>
+      <p>Tabbed view for:</p>
+      <ul>
+        <li><strong>Services</strong> &mdash; name, namespace, type, ClusterIP, ports</li>
+        <li><strong>Endpoints</strong>, <strong>Ingresses</strong>, <strong>Network Policies</strong></li>
+      </ul>
+
+      <h3>Nodes</h3>
+      <p>Table showing node name, Ready status, roles (from <code>node-role.kubernetes.io/</code> labels),
+         kubelet version, OS/architecture, CPU and memory capacity, and age.</p>
+
+      <h3>Storage</h3>
+      <p>Tabbed view for PersistentVolumeClaims (status, capacity, access modes, storage class),
+         PersistentVolumes (status, capacity, reclaim policy), and StorageClasses.</p>
+
+      <h3>Config</h3>
+      <p>Tabbed view for ConfigMaps (data key count), Secrets (type, key count), and ServiceAccounts.</p>
+
+      <h3>RBAC</h3>
+      <p>Tabbed view for ClusterRoles (rule count), ClusterRoleBindings (role ref, subjects),
+         Roles, and RoleBindings. Cluster-scoped resources ignore the namespace filter;
+         namespaced resources respect it.</p>
+
+      <h3>Events</h3>
+      <p>Live event stream with 10-second auto-refresh. Events are sorted newest-first,
+         color-coded by type (Normal=blue, Warning=amber, Error=red), and display the involved object,
+         reason, message, timestamp, and occurrence count.</p>
+
+      <h2>K8s API Client</h2>
+
+      <p>The console communicates with the API server using the standard Kubernetes REST protocol.
+         No custom API endpoints are required.</p>
+
+      <h3>Resource Discovery</h3>
+      <p>On load, the console fetches <code>/api/v1</code> and <code>/apis</code> to discover all
+         available resource types, including CRDs. Results are cached for 5 minutes. The resource registry
+         drives the namespace selector, view routing, and table column configuration.</p>
+
+      <h3>Watch Streams</h3>
+      <p>The <code>WatchManager</code> class implements the standard K8s watch protocol:</p>
+      <ul>
+        <li>Chunked HTTP responses with newline-delimited JSON</li>
+        <li><code>resourceVersion</code> tracking and <code>BOOKMARK</code> support</li>
+        <li>Automatic reconnection with exponential backoff (1s &rarr; 30s max)</li>
+        <li>410 Gone recovery (resets <code>resourceVersion</code> and re-lists)</li>
+      </ul>
+
+      <h3>Authentication</h3>
+      <p>The console reads a JWT token from <code>sessionStorage</code> and passes it as an
+         <code>Authorization: Bearer</code> header. In <code>--skip-auth</code> mode (development),
+         no token is required.</p>
+
+      <h2>Multi-Cluster</h2>
+
+      <p>The console includes a <strong>fleet mode</strong> for managing multiple rusternetes clusters
+         from a single browser tab.</p>
+
+      <h3>How It Works</h3>
+
+      <ol>
+        <li>Click the <strong>Fleet</strong> button in the header to enable multi-cluster mode</li>
+        <li>Click <strong>+</strong> to register a remote cluster (name + API server URL)</li>
+        <li>Click a cluster name to switch the active context</li>
+        <li>All views and API calls automatically route to the selected cluster</li>
+      </ol>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Multi-Cluster Architecture</span>
+        </div>
+        <code>Browser &rarr; rusternetes-hub (Axum)
+              ├── /api/v1/...               Local cluster API
+              ├── /console/                 SPA static files
+              └── /clusters/{id}/api/...    Proxy to remote cluster</code>
+      </pre>
+
+      <p>For the local cluster, API calls are same-origin (no prefix). For remote clusters, the console
+         prefixes paths with <code>/clusters/{cluster-id}</code>, and the hub proxies requests to the
+         remote cluster's API endpoint. Cluster registrations persist in the browser's
+         <code>localStorage</code>.</p>
+
+      <h2>CLI Reference</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--console-dir</code></td>
+            <td><em>disabled</em></td>
+            <td>Path to the console SPA build directory. Enables the web console at <code>/console/</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>When <code>--console-dir</code> is not set, the API server does not serve any console routes.</p>
+
+      <h2>Building from Source</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code>cd console
+
+<span class="c"># Install dependencies</span>
+npm install
+
+<span class="c"># Type-check</span>
+npm run type-check
+
+<span class="c"># Development server (hot reload)</span>
+npm run dev
+
+<span class="c"># Production build (~313KB JS + ~13KB CSS, gzipped ~96KB)</span>
+npm run build</code>
+      </pre>
+
+      <h2>Project Structure</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Files</span>
+        </div>
+        <code>console/
+├── package.json             Dependencies and scripts
+├── vite.config.ts           Vite bundler config + API proxy
+├── tsconfig.json            TypeScript config
+├── tailwind.config.js       Tailwind theme (dark palette)
+├── index.html               SPA entry HTML
+└── src/
+    ├── main.tsx              React mount + QueryClient + Router
+    ├── App.tsx               Route definitions
+    ├── engine/               K8s API client layer
+    │   ├── types.ts          K8s resource interfaces
+    │   ├── query.ts          fetch()-based CRUD
+    │   ├── watch.ts          Watch stream + reconnection
+    │   ├── discovery.ts      /api + /apis discovery
+    │   └── fleet.ts          Multi-cluster connections
+    ├── store/                Zustand state
+    ├── hooks/                React hooks
+    ├── components/           Reusable UI (Shell, Sidebar, tables)
+    └── views/                8 page views</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="kubectl.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; kubectl
+        </a>
+        <a href="monitoring.html" class="next">
+          <span class="pager-label">Next</span>
+          Monitoring &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

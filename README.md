@@ -234,7 +234,7 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guide and [CONTRIBUTING.m
 
 ## Documentation
 
-**[Full Documentation Site](docs/guide/index.html)** — 28 pages covering every feature, configuration option, and use case.
+**[Full Documentation Site](docs/guide/index.html)** — 30 pages covering every feature, configuration option, and use case.
 
 | Topic | Link |
 |-------|------|
@@ -243,6 +243,8 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guide and [CONTRIBUTING.m
 | All-in-One Binary | [All-in-One](docs/guide/all-in-one.html) |
 | Configuration | [API Server](docs/guide/api-server-config.html) / [Kubelet](docs/guide/kubelet-config.html) / [Storage](docs/guide/storage-config.html) |
 | Features | [Workloads](docs/guide/workloads.html) / [Networking](docs/guide/networking.html) / [Security](docs/guide/security.html) / [CRDs](docs/guide/crds.html) |
+| Web Console | [Console](docs/guide/console.html) / [CONSOLE.md](docs/CONSOLE.md) |
+| Authentication | [Authentication](docs/guide/authentication.html) / [AUTHENTICATION.md](docs/AUTHENTICATION.md) |
 | kubectl | [kubectl Reference](docs/guide/kubectl.html) |
 | API Reference | [API Reference](docs/guide/api-reference.html) |
 | Conformance | [Conformance Status](docs/guide/conformance.html) |

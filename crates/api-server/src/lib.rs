@@ -26,6 +26,7 @@ use rusternetes_common::observability::MetricsRegistry;
 use rusternetes_common::tls::TlsConfig;
 use rusternetes_storage::{StorageBackend, Storage};
 use state::ApiServerState;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -40,6 +41,14 @@ pub struct ApiServerConfig {
     pub tls_san: String,
     pub skip_auth: bool,
     pub prometheus_url: Option<String>,
+    /// Path to the console SPA build directory. When set, the API server
+    /// serves the console UI at `/console/` and falls back to `index.html`
+    /// for client-side routing.
+    pub console_dir: Option<PathBuf>,
+    /// Path to client CA certificate for mTLS client certificate authentication.
+    /// When set, the API server requires clients to present a certificate signed
+    /// by this CA. The CN field becomes the username and O fields become groups.
+    pub client_ca_file: Option<String>,
 }
 
 impl Default for ApiServerConfig {
@@ -54,6 +63,8 @@ impl Default for ApiServerConfig {
             tls_san: "localhost,127.0.0.1".to_string(),
             skip_auth: true,
             prometheus_url: None,
+            console_dir: None,
+            client_ca_file: None,
         }
     }
 }
@@ -159,7 +170,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: ApiServerConfig) -> anyho
         info!("Pre-allocated {} ClusterIPs from existing services", existing_services.len());
     }
 
-    let app = router::build_router(state);
+    let app = router::build_router(state, config.console_dir.as_deref());
 
     if config.tls {
         let tls_config = if let (Some(cert_file), Some(key_file)) = (config.tls_cert_file, config.tls_key_file) {
@@ -169,7 +180,13 @@ pub async fn run(storage: Arc<StorageBackend>, config: ApiServerConfig) -> anyho
             TlsConfig::generate_self_signed("rusternetes-api", sans)?
         };
 
-        let rustls_config = RustlsConfig::from_config(tls_config.into_server_config()?);
+        let server_config = if let Some(ref client_ca) = config.client_ca_file {
+            info!("Client certificate authentication enabled (CA: {})", client_ca);
+            tls_config.into_mtls_server_config(client_ca)?
+        } else {
+            tls_config.into_server_config()?
+        };
+        let rustls_config = RustlsConfig::from_config(server_config);
         info!("HTTPS server listening on {}", config.bind_address);
         let mut server = axum_server::bind_rustls(config.bind_address.parse()?, rustls_config);
         server.http_builder().http2()

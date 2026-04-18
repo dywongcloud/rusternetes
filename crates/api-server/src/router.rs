@@ -10,7 +10,9 @@ use axum::{
 };
 use rusternetes_common::resources::CustomResourceDefinition;
 use rusternetes_storage::{build_key, Storage};
+use std::path::Path;
 use std::sync::Arc;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, warn};
 
@@ -764,7 +766,7 @@ async fn custom_resource_fallback(
     Ok(response)
 }
 
-pub fn build_router(state: Arc<ApiServerState>) -> Router {
+pub fn build_router(state: Arc<ApiServerState>, console_dir: Option<&Path>) -> Router {
     let skip_auth = state.skip_auth;
 
     // Routes that don't require authentication
@@ -2479,14 +2481,24 @@ pub fn build_router(state: Arc<ApiServerState>) -> Router {
     // Combine routes and add shared state.
     // K8s (Go) treats /path and /path/ identically. Axum doesn't, so we
     // normalize URIs by stripping trailing slashes before routing.
-    Router::new()
+    let mut app = Router::new()
         .merge(public_routes)
-        .merge(protected_routes)
-        .layer(axum_middleware::map_request(
+        .merge(protected_routes);
+
+    // Serve the console SPA at /console/ when a console directory is configured.
+    if let Some(dir) = console_dir {
+        info!("Console UI enabled, serving from {:?} at /console/", dir);
+        let index_file = dir.join("index.html");
+        let serve_dir = ServeDir::new(dir).fallback(ServeFile::new(&index_file));
+        app = app.nest_service("/console", serve_dir);
+    }
+
+    app.layer(axum_middleware::map_request(
             |mut req: axum::extract::Request| async move {
                 let path = req.uri().path();
-                // Strip trailing slash for non-root paths
-                if path.len() > 1 && path.ends_with('/') {
+                // Strip trailing slash for non-root paths (but not /console/ paths,
+                // which are handled by ServeDir and need trailing slashes intact)
+                if path.len() > 1 && path.ends_with('/') && !path.starts_with("/console") {
                     let new_path = path.trim_end_matches('/');
                     if let Ok(new_uri) = axum::http::Uri::builder()
                         .path_and_query(if let Some(q) = req.uri().query() {

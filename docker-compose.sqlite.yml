@@ -73,6 +73,8 @@ services:
       - "--tls-key-file"
       - "/etc/kubernetes/pki/api-server.key"
       - "--skip-auth"
+      - "--console-dir"
+      - "/app/console"
       - "--log-level"
       - "info"
 
@@ -126,6 +128,7 @@ services:
       - ./.rusternetes/certs:/root/.rusternetes/certs:ro
     environment:
       - RUST_LOG=info
+      - RUST_MIN_STACK=8388608
       - DOCKER_HOST=unix:///var/run/docker.sock
       - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
       - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}
@@ -149,6 +152,7 @@ services:
       - ./.rusternetes/certs:/root/.rusternetes/certs:ro
     environment:
       - RUST_LOG=info
+      - RUST_MIN_STACK=8388608
       - DOCKER_HOST=unix:///var/run/docker.sock
       - KUBERNETES_SERVICE_HOST_OVERRIDE=api-server
       - KUBELET_VOLUMES_PATH=${KUBELET_VOLUMES_PATH}

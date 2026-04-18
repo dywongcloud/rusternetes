@@ -94,6 +94,14 @@ struct Args {
     /// Disable kube-proxy (useful when iptables is not available)
     #[arg(long)]
     disable_proxy: bool,
+
+    /// Path to the console SPA build directory (enables web console at /console/)
+    #[arg(long)]
+    console_dir: Option<String>,
+
+    /// Client CA certificate file for mTLS client certificate authentication
+    #[arg(long)]
+    client_ca_file: Option<String>,
 }
 
 #[tokio::main]
@@ -143,6 +151,8 @@ async fn main() -> Result<()> {
         tls_self_signed: args.tls,
         tls_san: args.tls_san.clone(),
         skip_auth: args.skip_auth,
+        console_dir: args.console_dir.map(std::path::PathBuf::from),
+        client_ca_file: args.client_ca_file,
         ..Default::default()
     };
     let api_handle = tokio::spawn(async move {
