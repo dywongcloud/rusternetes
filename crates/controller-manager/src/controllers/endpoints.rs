@@ -23,8 +23,9 @@ impl<S: Storage + 'static> EndpointsController<S> {
         Self { storage }
     }
 
-    /// Watch-based run loop. Watches services as primary resource.
-    /// The 30s resync catches pod changes that don't trigger a service watch event.
+    /// Watch-based run loop. Watches services AND pods as primary resources.
+    /// When a pod changes, we find services whose selector matches the pod
+    /// and enqueue them for reconciliation.
     pub async fn run(self: Arc<Self>) -> Result<()> {
 
         let queue = WorkQueue::new();
@@ -38,35 +39,61 @@ impl<S: Storage + 'static> EndpointsController<S> {
         loop {
             self.enqueue_all(&queue).await;
 
-            let prefix = build_prefix("services", None);
-            let watch_result = self.storage.watch(&prefix).await;
-            let mut watch = match watch_result {
+            let svc_prefix = build_prefix("services", None);
+            let pod_prefix = build_prefix("pods", None);
+
+            let svc_watch = match self.storage.watch(&svc_prefix).await {
                 Ok(w) => w,
                 Err(e) => {
-                    tracing::error!("Failed to establish watch: {}, retrying", e);
+                    tracing::error!("Failed to establish service watch: {}, retrying", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+            let pod_watch = match self.storage.watch(&pod_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!("Failed to establish pod watch: {}, retrying", e);
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     continue;
                 }
             };
 
+            let mut svc_watch = svc_watch;
+            let mut pod_watch = pod_watch;
             let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
             resync.tick().await;
 
             let mut watch_broken = false;
             while !watch_broken {
                 tokio::select! {
-                    event = watch.next() => {
+                    event = svc_watch.next() => {
                         match event {
                             Some(Ok(ev)) => {
                                 let key = extract_key(&ev);
                                 queue.add(key).await;
                             }
                             Some(Err(e)) => {
-                                tracing::warn!("Watch error: {}, reconnecting", e);
+                                tracing::warn!("Service watch error: {}, reconnecting", e);
                                 watch_broken = true;
                             }
                             None => {
-                                tracing::warn!("Watch stream ended, reconnecting");
+                                tracing::warn!("Service watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    event = pod_watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                self.enqueue_services_for_pod(&queue, &ev).await;
+                            }
+                            Some(Err(e)) => {
+                                tracing::warn!("Pod watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                tracing::warn!("Pod watch stream ended, reconnecting");
                                 watch_broken = true;
                             }
                         }
@@ -77,6 +104,53 @@ impl<S: Storage + 'static> EndpointsController<S> {
                 }
             }
         }
+    }
+
+    /// When a pod changes, find services in the same namespace whose selector
+    /// matches the pod and enqueue them for reconciliation.
+    async fn enqueue_services_for_pod(&self, queue: &WorkQueue, event: &rusternetes_storage::WatchEvent) {
+        let pod_key = extract_key(event);
+        // Parse pod key: "pods/{namespace}/{name}"
+        let parts: Vec<&str> = pod_key.splitn(3, '/').collect();
+        let ns = match parts.get(1) {
+            Some(ns) => *ns,
+            None => return,
+        };
+
+        // Get the pod to check its labels
+        let storage_key = format!("/registry/{}", pod_key);
+        let pod: Option<Pod> = self.storage.get(&storage_key).await.ok();
+
+        // List services in this namespace and find matches
+        if let Ok(services) = self.storage.list::<Service>(&build_prefix("services", Some(ns))).await {
+            match pod {
+                Some(ref pod) => {
+                    for svc in &services {
+                        if let Some(ref selector) = svc.spec.selector {
+                            if Self::labels_match(selector, &pod.metadata.labels) {
+                                queue.add(format!("services/{}/{}", ns, svc.metadata.name)).await;
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // Pod was deleted -- enqueue all services in this namespace
+                    // since we don't know which ones matched
+                    for svc in &services {
+                        queue.add(format!("services/{}/{}", ns, svc.metadata.name)).await;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if all selector key-value pairs exist in the pod's labels.
+    fn labels_match(selector: &HashMap<String, String>, labels: &Option<HashMap<String, String>>) -> bool {
+        let labels = match labels {
+            Some(l) => l,
+            None => return selector.is_empty(),
+        };
+        selector.iter().all(|(k, v)| labels.get(k) == Some(v))
     }
 
     /// Main reconciliation loop - syncs all services with their endpoints

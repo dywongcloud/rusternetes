@@ -70,17 +70,29 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             // Initial full reconciliation
             self.enqueue_all(&queue).await;
 
-            // Watch for changes
-            let prefix = "/registry/daemonsets/";
-            let watch_result = self.storage.watch(prefix).await;
-            let mut watch = match watch_result {
+            // Watch BOTH daemonsets and nodes
+            let ds_prefix = "/registry/daemonsets/";
+            let node_prefix = "/registry/nodes/";
+
+            let ds_watch = match self.storage.watch(ds_prefix).await {
                 Ok(w) => w,
                 Err(e) => {
-                    error!("Failed to establish watch: {}, retrying in {:?}", e, retry_interval);
+                    error!("Failed to establish daemonset watch: {}, retrying in {:?}", e, retry_interval);
                     time::sleep(retry_interval).await;
                     continue;
                 }
             };
+            let node_watch = match self.storage.watch(node_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish node watch: {}, retrying in {:?}", e, retry_interval);
+                    time::sleep(retry_interval).await;
+                    continue;
+                }
+            };
+
+            let mut ds_watch = ds_watch;
+            let mut node_watch = node_watch;
 
             // Periodic full resync as safety net (every 30s)
             let mut resync = tokio::time::interval(Duration::from_secs(30));
@@ -89,18 +101,34 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             let mut watch_broken = false;
             while !watch_broken {
                 tokio::select! {
-                    event = watch.next() => {
+                    event = ds_watch.next() => {
                         match event {
                             Some(Ok(ev)) => {
                                 let key = extract_key(&ev);
                                 queue.add(key).await;
                             }
                             Some(Err(e)) => {
-                                warn!("Watch error: {}, reconnecting", e);
+                                warn!("DaemonSet watch error: {}, reconnecting", e);
                                 watch_broken = true;
                             }
                             None => {
-                                warn!("Watch stream ended, reconnecting");
+                                warn!("DaemonSet watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    event = node_watch.next() => {
+                        match event {
+                            Some(Ok(_ev)) => {
+                                // Any node change could affect any DaemonSet
+                                self.enqueue_all_for_node_change(&queue).await;
+                            }
+                            Some(Err(e)) => {
+                                warn!("Node watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Node watch stream ended, reconnecting");
                                 watch_broken = true;
                             }
                         }
@@ -111,6 +139,17 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                 }
             }
             // Watch broke — loop back to re-establish
+        }
+    }
+
+    /// When a node changes, enqueue ALL daemonsets since any DS might need
+    /// to create/delete a pod on the changed node.
+    async fn enqueue_all_for_node_change(&self, queue: &WorkQueue) {
+        if let Ok(daemonsets) = self.storage.list::<DaemonSet>("/registry/daemonsets/").await {
+            for ds in &daemonsets {
+                let ns = ds.metadata.namespace.as_deref().unwrap_or("");
+                queue.add(format!("daemonsets/{}/{}", ns, ds.metadata.name)).await;
+            }
         }
     }
     async fn worker(&self, queue: WorkQueue) {

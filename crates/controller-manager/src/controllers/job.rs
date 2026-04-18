@@ -933,15 +933,48 @@ impl<S: Storage + 'static> JobController<S> {
                 observed_generation: job.metadata.generation,
             });
         } else {
-            // Calculate how many new pods to create
-            let pods_needed = std::cmp::min(parallelism - active, completions - succeeded - active);
+            // Re-list pods right before creating to minimize race window where
+            // two parallel reconciliations both see "need 1 more pod" and both create one.
+            let fresh_all_pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+            let fresh_job_pods: Vec<&Pod> = fresh_all_pods
+                .iter()
+                .filter(|pod| {
+                    pod.metadata
+                        .owner_references
+                        .as_ref()
+                        .map(|refs| refs.iter().any(|r| &r.uid == job_uid))
+                        .unwrap_or(false)
+                        || pod
+                            .metadata
+                            .labels
+                            .as_ref()
+                            .and_then(|labels| labels.get("job-name"))
+                            .map(|j| j == name)
+                            .unwrap_or(false)
+                })
+                .collect();
+
+            let mut fresh_active = 0i32;
+            let mut fresh_succeeded = 0i32;
+            for pod in fresh_job_pods.iter() {
+                if let Some(status) = &pod.status {
+                    match &status.phase {
+                        Some(Phase::Running) | Some(Phase::Pending) => fresh_active += 1,
+                        Some(Phase::Succeeded) => fresh_succeeded += 1,
+                        _ => {}
+                    }
+                }
+            }
+
+            // Calculate how many new pods to create using fresh counts
+            let pods_needed = std::cmp::min(parallelism - fresh_active, completions - fresh_succeeded - fresh_active);
 
             if pods_needed > 0 {
                 // For Indexed mode, find which indexes still need pods
                 let indexes_to_create: Vec<i32> = if is_indexed {
                     // Track indexes that already have active or succeeded pods
                     let mut active_or_succeeded_indexes: HashSet<i32> = HashSet::new();
-                    for pod in job_pods.iter() {
+                    for pod in fresh_job_pods.iter() {
                         let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
                         if matches!(
                             phase,
@@ -971,14 +1004,25 @@ impl<S: Storage + 'static> JobController<S> {
                 };
 
                 for (i, idx) in indexes_to_create.iter().enumerate() {
-                    self.create_pod(job, namespace, *idx, is_indexed).await?;
-                    info!(
-                        "Created pod for Job {}/{} ({}/{})",
-                        namespace,
-                        name,
-                        job_pods.len() + i as usize + 1,
-                        completions
-                    );
+                    match self.create_pod(job, namespace, *idx, is_indexed).await {
+                        Ok(_) => {
+                            info!(
+                                "Created pod for Job {}/{} ({}/{})",
+                                namespace,
+                                name,
+                                fresh_job_pods.len() + i as usize + 1,
+                                completions
+                            );
+                        }
+                        Err(e) => {
+                            let err_str = format!("{}", e);
+                            if err_str.contains("already exists") || err_str.contains("AlreadyExists") {
+                                debug!("Pod already exists for Job {}/{}, skipping", namespace, name);
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
                 }
 
                 // Re-count pods after creation to get accurate status
