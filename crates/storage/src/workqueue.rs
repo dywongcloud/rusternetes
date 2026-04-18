@@ -78,9 +78,20 @@ struct WorkQueueInner {
     failures: HashMap<String, u32>,
     /// Keys delayed until a deadline (waiting for backoff).
     delayed: HashMap<String, Instant>,
+    /// When each key was last dequeued for processing.
+    /// Used to prevent self-write feedback loops: if a key is re-dirtied
+    /// within `min_reprocess_interval` of being dequeued, the re-queue
+    /// is delayed to break the cycle.
+    last_dequeued: HashMap<String, Instant>,
     /// Whether the queue has been shut down.
     shutdown: bool,
 }
+
+/// Minimum interval between processing the same key. Prevents tight loops
+/// when a controller writes back to its own watched resource (e.g. status
+/// updates). Set to 1 second — long enough to coalesce self-triggered
+/// events, short enough for responsive reconciliation.
+const MIN_REPROCESS_INTERVAL: Duration = Duration::from_secs(1);
 
 impl WorkQueue {
     /// Create a new work queue with default rate limiting.
@@ -97,6 +108,7 @@ impl WorkQueue {
                 processing: HashSet::new(),
                 failures: HashMap::new(),
                 delayed: HashMap::new(),
+                last_dequeued: HashMap::new(),
                 shutdown: false,
             })),
             notify: Arc::new(Notify::new()),
@@ -182,6 +194,7 @@ impl WorkQueue {
                 if let Some(key) = inner.queue.pop_front() {
                     inner.dirty.remove(&key);
                     inner.processing.insert(key.clone());
+                    inner.last_dequeued.insert(key.clone(), Instant::now());
                     return Some(key);
                 }
             }
@@ -215,15 +228,31 @@ impl WorkQueue {
 
     /// Mark a key as done processing. Must be called after `get()`.
     /// If the key was re-added via `add()` while being processed,
-    /// it will be immediately re-queued (matching K8s client-go behavior).
-    /// With per-resource keys, this is safe — the same resource just gets
-    /// reconciled again with the latest state. Different resources are
-    /// different keys and process independently.
+    /// it will be re-queued — either immediately (if enough time has passed)
+    /// or after a cooldown delay (to prevent self-write feedback loops
+    /// where status updates trigger immediate re-reconciliation).
     pub async fn done(&self, key: &str) {
         let mut inner = self.inner.lock().await;
         inner.processing.remove(key);
-        // If add() was called while we were processing, re-queue immediately
+        // If add() was called while we were processing, re-queue
         if inner.dirty.contains(key) {
+            // Check if this key was dequeued recently — if so, delay to
+            // prevent self-write feedback loops (controller writes status,
+            // which triggers watch event, which re-enqueues same key).
+            let now = Instant::now();
+            if let Some(&dequeued_at) = inner.last_dequeued.get(key) {
+                let elapsed = now - dequeued_at;
+                if elapsed < MIN_REPROCESS_INTERVAL {
+                    // Too soon — delay the re-queue
+                    let remaining = MIN_REPROCESS_INTERVAL - elapsed;
+                    inner.dirty.remove(key);
+                    inner.delayed.insert(key.to_string(), now + remaining);
+                    drop(inner);
+                    self.notify.notify_one();
+                    return;
+                }
+            }
+            // Enough time has passed — immediate re-queue
             inner.queue.push_back(key.to_string());
             drop(inner);
             self.notify.notify_one();
