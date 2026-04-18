@@ -6,7 +6,7 @@ use rusternetes_common::{
         Node, Service, ServiceType,
     },
 };
-use rusternetes_storage::{Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
+use rusternetes_storage::{Storage, WorkQueue, extract_key};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,7 +57,7 @@ impl<S: Storage + 'static> LoadBalancerController<S> {
         });
 
         loop {
-            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+            self.enqueue_all(&queue).await;
 
             let prefix = rusternetes_storage::build_prefix("services", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -78,8 +78,9 @@ impl<S: Storage + 'static> LoadBalancerController<S> {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
                                 warn!("Watch error: {}, reconnecting", e);
@@ -92,7 +93,7 @@ impl<S: Storage + 'static> LoadBalancerController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
@@ -100,17 +101,64 @@ impl<S: Storage + 'static> LoadBalancerController<S> {
     }
 
     /// Reconcile all LoadBalancer services
-
     async fn worker(&self, queue: WorkQueue) {
         while let Some(key) = queue.get().await {
-            match self.reconcile_all().await {
-                Ok(()) => queue.forget(&key).await,
-                Err(e) => {
-                    error!("reconcile_all error: {}", e);
-                    queue.requeue_rate_limited(key.clone()).await;
+            let parts: Vec<&str> = key.splitn(3, '/').collect();
+            let (ns, name) = match parts.len() {
+                3 => (parts[1], parts[2]),
+                _ => { queue.done(&key).await; continue; }
+            };
+            let storage_key = rusternetes_storage::build_key("services", Some(ns), name);
+            match self.storage.get::<Service>(&storage_key).await {
+                Ok(service) => {
+                    // Only process LoadBalancer-type services
+                    let is_lb = matches!(
+                        service.spec.service_type.as_ref().unwrap_or(&ServiceType::ClusterIP),
+                        ServiceType::LoadBalancer
+                    );
+                    if is_lb {
+                        if let Some(ref cloud_provider) = self.cloud_provider {
+                            let nodes: Vec<Node> = self.storage.list("/registry/nodes/").await.unwrap_or_default();
+                            let node_addresses: Vec<String> = nodes.iter().filter_map(|node| {
+                                node.status.as_ref()
+                                    .and_then(|s| s.addresses.as_ref())
+                                    .and_then(|addrs| addrs.iter().find(|a| a.address_type == "InternalIP"))
+                                    .map(|addr| addr.address.clone())
+                            }).collect();
+                            match self.reconcile_service(&service, cloud_provider.as_ref(), &node_addresses).await {
+                                Ok(()) => queue.forget(&key).await,
+                                Err(e) => {
+                                    error!("Failed to reconcile {}: {}", key, e);
+                                    queue.requeue_rate_limited(key.clone()).await;
+                                }
+                            }
+                        } else {
+                            queue.forget(&key).await;
+                        }
+                    } else {
+                        queue.forget(&key).await;
+                    }
+                }
+                Err(_) => {
+                    queue.forget(&key).await;
                 }
             }
             queue.done(&key).await;
+        }
+    }
+
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self.storage.list::<Service>("/registry/services/").await {
+            Ok(items) => {
+                for item in &items {
+                    let ns = item.metadata.namespace.as_deref().unwrap_or("");
+                    let key = format!("services/{}/{}", ns, item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                error!("Failed to list services for enqueue: {}", e);
+            }
         }
     }
 

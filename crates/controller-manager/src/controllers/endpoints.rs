@@ -4,7 +4,7 @@ use rusternetes_common::resources::{
     EndpointAddress, EndpointPort, EndpointReference, EndpointSubset, Endpoints, Pod, Service,
 };
 use rusternetes_common::types::OwnerReference;
-use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -36,7 +36,7 @@ impl<S: Storage + 'static> EndpointsController<S> {
         });
 
         loop {
-            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+            self.enqueue_all(&queue).await;
 
             let prefix = build_prefix("services", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -57,8 +57,9 @@ impl<S: Storage + 'static> EndpointsController<S> {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -71,7 +72,7 @@ impl<S: Storage + 'static> EndpointsController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
@@ -79,17 +80,44 @@ impl<S: Storage + 'static> EndpointsController<S> {
     }
 
     /// Main reconciliation loop - syncs all services with their endpoints
-
     async fn worker(&self, queue: WorkQueue) {
         while let Some(key) = queue.get().await {
-            match self.reconcile_all().await {
-                Ok(()) => queue.forget(&key).await,
-                Err(e) => {
-                    tracing::error!("reconcile_all error: {}", e);
-                    queue.requeue_rate_limited(key.clone()).await;
+            let parts: Vec<&str> = key.splitn(3, '/').collect();
+            let (ns, name) = match parts.len() {
+                3 => (parts[1], parts[2]),
+                _ => { queue.done(&key).await; continue; }
+            };
+            let storage_key = build_key("services", Some(ns), name);
+            match self.storage.get::<Service>(&storage_key).await {
+                Ok(service) => {
+                    match self.reconcile_service(&service).await {
+                        Ok(()) => queue.forget(&key).await,
+                        Err(e) => {
+                            error!("Failed to reconcile {}: {}", key, e);
+                            queue.requeue_rate_limited(key.clone()).await;
+                        }
+                    }
+                }
+                Err(_) => {
+                    queue.forget(&key).await;
                 }
             }
             queue.done(&key).await;
+        }
+    }
+
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self.storage.list::<Service>("/registry/services/").await {
+            Ok(items) => {
+                for item in &items {
+                    let ns = item.metadata.namespace.as_deref().unwrap_or("");
+                    let key = format!("services/{}/{}", ns, item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to list services for enqueue: {}", e);
+            }
         }
     }
 

@@ -7,7 +7,7 @@ use rusternetes_common::resources::{
     VolumeSnapshotStatus,
 };
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
-use rusternetes_storage::{build_key, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
+use rusternetes_storage::{build_key, Storage, WorkQueue, extract_key};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
@@ -38,7 +38,7 @@ impl<S: Storage + 'static> VolumeSnapshotController<S> {
 
 
         loop {
-            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+            self.enqueue_all(&queue).await;
 
             let prefix = rusternetes_storage::build_prefix("volumesnapshots", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -59,8 +59,9 @@ impl<S: Storage + 'static> VolumeSnapshotController<S> {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
                                 warn!("Watch error: {}, reconnecting", e);
@@ -73,23 +74,56 @@ impl<S: Storage + 'static> VolumeSnapshotController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
         }
     }
-
     async fn worker(&self, queue: WorkQueue) {
         while let Some(key) = queue.get().await {
-            match self.reconcile_all().await {
-                Ok(()) => queue.forget(&key).await,
-                Err(e) => {
-                    error!("reconcile_all error: {}", e);
-                    queue.requeue_rate_limited(key.clone()).await;
+            let parts: Vec<&str> = key.splitn(3, '/').collect();
+            let (ns, name) = match parts.len() {
+                3 => (parts[1], parts[2]),
+                _ => { queue.done(&key).await; continue; }
+            };
+            let storage_key = build_key("volumesnapshots", Some(ns), name);
+            match self.storage.get::<VolumeSnapshot>(&storage_key).await {
+                Ok(snapshot) => {
+                    // Only process snapshots that don't have a bound content yet
+                    if snapshot.status.as_ref().and_then(|s| s.bound_volume_snapshot_content_name.as_ref()).is_none() {
+                        if let Err(e) = self.create_snapshot(&snapshot).await {
+                            error!("Failed to create snapshot for {}: {}", key, e);
+                            queue.requeue_rate_limited(key.clone()).await;
+                        } else {
+                            queue.forget(&key).await;
+                        }
+                    } else {
+                        queue.forget(&key).await;
+                    }
+                    // Also reconcile snapshot deletions
+                    let _ = self.reconcile_deletions().await;
+                }
+                Err(_) => {
+                    queue.forget(&key).await;
                 }
             }
             queue.done(&key).await;
+        }
+    }
+
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self.storage.list::<VolumeSnapshot>("/registry/volumesnapshots/").await {
+            Ok(items) => {
+                for item in &items {
+                    let ns = item.metadata.namespace.as_deref().unwrap_or("");
+                    let key = format!("volumesnapshots/{}/{}", ns, item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                error!("Failed to list volumesnapshots for enqueue: {}", e);
+            }
         }
     }
 

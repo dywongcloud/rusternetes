@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use futures::StreamExt;
 use rusternetes_common::resources::{Node, NodeCondition, NodeStatus, Pod, PodStatus};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -40,7 +40,7 @@ impl<S: Storage + 'static> NodeController<S> {
         });
 
         loop {
-            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+            self.enqueue_all(&queue).await;
 
             let prefix = build_prefix("nodes", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -61,8 +61,9 @@ impl<S: Storage + 'static> NodeController<S> {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -75,7 +76,7 @@ impl<S: Storage + 'static> NodeController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
@@ -83,17 +84,40 @@ impl<S: Storage + 'static> NodeController<S> {
     }
 
     /// Main reconciliation loop - monitors all nodes
-
     async fn worker(&self, queue: WorkQueue) {
         while let Some(key) = queue.get().await {
-            match self.reconcile_all().await {
-                Ok(()) => queue.forget(&key).await,
-                Err(e) => {
-                    tracing::error!("reconcile_all error: {}", e);
-                    queue.requeue_rate_limited(key.clone()).await;
+            let name = key.strip_prefix("nodes/").unwrap_or(&key);
+            let storage_key = build_key("nodes", None, name);
+            match self.storage.get::<Node>(&storage_key).await {
+                Ok(resource) => {
+                    match self.reconcile_node(&resource).await {
+                        Ok(()) => queue.forget(&key).await,
+                        Err(e) => {
+                            error!("Failed to reconcile {}: {}", key, e);
+                            queue.requeue_rate_limited(key.clone()).await;
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Resource was deleted — nothing to reconcile
+                    queue.forget(&key).await;
                 }
             }
             queue.done(&key).await;
+        }
+    }
+
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self.storage.list::<Node>("/registry/nodes/").await {
+            Ok(items) => {
+                for item in &items {
+                    let key = format!("nodes/{}", item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                error!("Failed to list nodes for enqueue: {}", e);
+            }
         }
     }
 

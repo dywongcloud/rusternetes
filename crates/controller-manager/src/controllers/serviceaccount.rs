@@ -3,7 +3,7 @@ use futures::StreamExt;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use rusternetes_common::resources::{Namespace, Secret, ServiceAccount};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
-use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -128,7 +128,7 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
         });
 
         loop {
-            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+            self.enqueue_all(&queue).await;
 
             let prefix = build_prefix("serviceaccounts", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -149,8 +149,9 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -163,7 +164,7 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
@@ -171,17 +172,56 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
     }
 
     /// Main reconciliation loop - ensures all namespaces have default ServiceAccounts
-
     async fn worker(&self, queue: WorkQueue) {
         while let Some(key) = queue.get().await {
-            match self.reconcile_all().await {
+            let parts: Vec<&str> = key.splitn(3, '/').collect();
+            let (ns, name) = match parts.len() {
+                3 => (parts[1], parts[2]),
+                _ => { queue.done(&key).await; continue; }
+            };
+            // Ensure the default service account exists in this namespace
+            if let Err(e) = self.ensure_default_serviceaccount(ns).await {
+                tracing::error!("Failed to ensure default SA in {}: {}", ns, e);
+            }
+            // Reconcile the specific service account
+            match self.reconcile_serviceaccount(ns, name).await {
                 Ok(()) => queue.forget(&key).await,
                 Err(e) => {
-                    tracing::error!("reconcile_all error: {}", e);
+                    tracing::error!("Failed to reconcile {}: {}", key, e);
                     queue.requeue_rate_limited(key.clone()).await;
                 }
             }
             queue.done(&key).await;
+        }
+    }
+
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        // Enqueue all existing service accounts
+        match self.storage.list::<ServiceAccount>("/registry/serviceaccounts/").await {
+            Ok(items) => {
+                for item in &items {
+                    let ns = item.metadata.namespace.as_deref().unwrap_or("");
+                    let key = format!("serviceaccounts/{}/{}", ns, item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to list serviceaccounts for enqueue: {}", e);
+            }
+        }
+        // Also ensure default SA in all namespaces
+        match self.storage.list::<Namespace>("/registry/namespaces/").await {
+            Ok(namespaces) => {
+                for ns in &namespaces {
+                    if ns.metadata.deletion_timestamp.is_none() {
+                        let key = format!("serviceaccounts/{}/default", ns.metadata.name);
+                        queue.add(key).await;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to list namespaces for SA enqueue: {}", e);
+            }
         }
     }
 

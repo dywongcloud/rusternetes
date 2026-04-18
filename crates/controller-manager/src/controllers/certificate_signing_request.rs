@@ -4,7 +4,7 @@ use rusternetes_common::resources::{
     CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestStatus,
     KeyUsage,
 };
-use rusternetes_storage::{Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
+use rusternetes_storage::{Storage, WorkQueue, extract_key, build_key};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -46,7 +46,7 @@ impl<S: Storage + 'static> CertificateSigningRequestController<S> {
         });
 
         loop {
-            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+            self.enqueue_all(&queue).await;
 
             let prefix = rusternetes_storage::build_prefix("certificatesigningrequests", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -67,8 +67,9 @@ impl<S: Storage + 'static> CertificateSigningRequestController<S> {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
                                 warn!("Watch error: {}, reconnecting", e);
@@ -81,23 +82,46 @@ impl<S: Storage + 'static> CertificateSigningRequestController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
         }
     }
-
     async fn worker(&self, queue: WorkQueue) {
         while let Some(key) = queue.get().await {
-            match self.reconcile_all().await {
-                Ok(()) => queue.forget(&key).await,
-                Err(e) => {
-                    error!("reconcile_all error: {}", e);
-                    queue.requeue_rate_limited(key.clone()).await;
+            let name = key.strip_prefix("certificatesigningrequests/").unwrap_or(&key);
+            let storage_key = build_key("certificatesigningrequests", None, name);
+            match self.storage.get::<CertificateSigningRequest>(&storage_key).await {
+                Ok(resource) => {
+                    match self.reconcile_csr(&resource).await {
+                        Ok(()) => queue.forget(&key).await,
+                        Err(e) => {
+                            error!("Failed to reconcile {}: {}", key, e);
+                            queue.requeue_rate_limited(key.clone()).await;
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Resource was deleted — nothing to reconcile
+                    queue.forget(&key).await;
                 }
             }
             queue.done(&key).await;
+        }
+    }
+
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self.storage.list::<CertificateSigningRequest>("/registry/certificatesigningrequests/").await {
+            Ok(items) => {
+                for item in &items {
+                    let key = format!("certificatesigningrequests/{}", item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                error!("Failed to list certificatesigningrequests for enqueue: {}", e);
+            }
         }
     }
 

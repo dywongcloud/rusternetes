@@ -52,8 +52,9 @@ pub struct WorkQueueConfig {
 impl Default for WorkQueueConfig {
     fn default() -> Self {
         Self {
-            base_delay: Duration::from_secs(1),
-            max_delay: Duration::from_secs(300),
+            // Match K8s client-go defaults: 5ms base, 1000s max
+            base_delay: Duration::from_millis(5),
+            max_delay: Duration::from_secs(1000),
         }
     }
 }
@@ -214,17 +215,16 @@ impl WorkQueue {
 
     /// Mark a key as done processing. Must be called after `get()`.
     /// If the key was re-added via `add()` while being processed,
-    /// it will be re-queued after a short coalescing delay (500ms).
-    /// This prevents tight reconciliation loops where reconcile writes
-    /// trigger watch events that immediately re-trigger reconciliation.
+    /// it will be immediately re-queued (matching K8s client-go behavior).
+    /// With per-resource keys, this is safe — the same resource just gets
+    /// reconciled again with the latest state. Different resources are
+    /// different keys and process independently.
     pub async fn done(&self, key: &str) {
         let mut inner = self.inner.lock().await;
         inner.processing.remove(key);
-        // If add() was called while we were processing, re-queue with
-        // a coalescing delay so multiple rapid events are batched.
-        if inner.dirty.remove(key) {
-            let deadline = Instant::now() + Duration::from_millis(500);
-            inner.delayed.insert(key.to_string(), deadline);
+        // If add() was called while we were processing, re-queue immediately
+        if inner.dirty.contains(key) {
+            inner.queue.push_back(key.to_string());
             drop(inner);
             self.notify.notify_one();
         }
@@ -310,13 +310,11 @@ mod tests {
         // Not in queue yet (still processing)
         assert_eq!(q.len().await, 0);
 
-        // done() should schedule re-queue with coalescing delay
+        // done() should immediately re-queue because dirty flag is set
         q.done(&key).await;
-        // Not immediately in queue — it's in the delayed map
-        assert_eq!(q.len().await, 0);
+        assert_eq!(q.len().await, 1);
 
-        // After the coalescing delay, get() should return it
-        tokio::time::sleep(Duration::from_millis(600)).await;
+        // Should be able to get it again immediately
         let key2 = q.get().await.unwrap();
         assert_eq!(key2, "key1");
         q.done(&key2).await;
@@ -373,16 +371,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_backoff_duration() {
-        let base = Duration::from_secs(1);
-        let max = Duration::from_secs(300);
+        let base = Duration::from_millis(5);
+        let max = Duration::from_secs(1000);
         assert_eq!(backoff_duration(0, base, max), Duration::ZERO);
-        assert_eq!(backoff_duration(1, base, max), Duration::from_secs(1));
-        assert_eq!(backoff_duration(2, base, max), Duration::from_secs(2));
-        assert_eq!(backoff_duration(3, base, max), Duration::from_secs(4));
-        assert_eq!(backoff_duration(4, base, max), Duration::from_secs(8));
-        assert_eq!(backoff_duration(9, base, max), Duration::from_secs(256));
-        assert_eq!(backoff_duration(10, base, max), Duration::from_secs(300)); // capped
-        assert_eq!(backoff_duration(100, base, max), Duration::from_secs(300)); // capped
+        assert_eq!(backoff_duration(1, base, max), Duration::from_millis(5));
+        assert_eq!(backoff_duration(2, base, max), Duration::from_millis(10));
+        assert_eq!(backoff_duration(3, base, max), Duration::from_millis(20));
+        assert_eq!(backoff_duration(4, base, max), Duration::from_millis(40));
+        assert_eq!(backoff_duration(10, base, max), Duration::from_millis(2560));
+        assert_eq!(backoff_duration(20, base, max), Duration::from_secs(1000)); // capped
     }
 
     #[tokio::test]
