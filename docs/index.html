@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rusternetes - Kubernetes Reimplemented in Rust</title>
-  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 161,000+ lines of Rust, 31 controllers, 90.2% conformance pass rate. 43 failures remaining.">
+  <meta name="description" content="A full Kubernetes reimplementation in Rust, focusing on memory safety, performance, and conformance. 216,000+ lines of Rust, 31 controllers, 3,100+ tests, 90% conformance pass rate.">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -44,8 +44,8 @@
           <span class="stat-label">Controllers</span>
         </div>
         <div class="stat">
-          <span class="stat-num">1,534+</span>
-          <span class="stat-label">Commits</span>
+          <span class="stat-num">3,100+</span>
+          <span class="stat-label">Tests</span>
         </div>
         <div class="stat">
           <span class="stat-num">90.2%</span>
@@ -57,13 +57,13 @@
         <div class="highscore-display">
           <div class="highscore-pct">90.2<span class="highscore-pct-sign">%</span></div>
           <div class="highscore-details">
-            <span class="highscore-line">RND 147 &middot; 398/441 PASS</span>
-            <span class="highscore-line dim">43 FAILURES &middot; 31 FIXES DEPLOYED</span>
+            <span class="highscore-line">RND 149 &middot; 398/441 PASS</span>
+            <span class="highscore-line dim">43 FAILURES &middot; 43 FIXES CODED</span>
             <span class="highscore-line blink">NEXT TARGET: 95%</span>
           </div>
         </div>
         <div class="highscore-bar-track">
-          <div class="highscore-bar-fill" style="width: 90.2%"><!-- Round 147 --></div>
+          <div class="highscore-bar-fill" style="width: 90.2%"><!-- Round 149 --></div>
         </div>
       </div>
 
@@ -213,7 +213,7 @@
             <li>Server-Side Apply</li>
             <li>PATCH (JSON, Merge, Strategic)</li>
             <li>Field selectors &amp; label selectors</li>
-            <li>Conversion webhooks</li>
+            <li>Admission webhooks</li>
           </ul>
         </div>
         <div class="feature-card">
@@ -328,7 +328,7 @@ kubectl get pods -A</code></pre>
         </div>
         <div class="why-card">
           <h3>Correctness</h3>
-          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 1,534+ commits and 147 rounds of conformance testing validate behavior against real Kubernetes.</p>
+          <p>The type system catches mismatches at compile time. Serde ensures wire-compatible JSON serialization. 149 rounds of conformance testing validate behavior against real Kubernetes.</p>
         </div>
       </div>
     </div>
@@ -353,7 +353,7 @@ kubectl get pods -A</code></pre>
           <h4>Project</h4>
           <a href="https://github.com/calfonso/rusternetes">GitHub</a>
           <a href="https://github.com/calfonso/rusternetes/blob/main/docs/CONTRIBUTING.md">Contributing</a>
-          <a href="https://github.com/calfonso/rusternetes/blob/main/docs/STATUS.md">Status</a>
+          <a href="https://github.com/calfonso/rusternetes/blob/main/docs/CONFORMANCE_FAILURES.md">Conformance</a>
         </div>
       </div>
     </div>
