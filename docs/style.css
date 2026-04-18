@@ -885,6 +885,22 @@ body::after {
   display: flex;
   min-height: 100vh;
   padding-top: 52px; /* nav height */
+  background: var(--bg-deep);
+}
+
+/* Override default blue link color in doc layout */
+.doc-sidebar a,
+.doc-sidebar a:link,
+.doc-sidebar a:visited {
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.doc-content a,
+.doc-content a:link,
+.doc-content a:visited {
+  color: var(--rust);
+  text-decoration: none;
 }
 
 /* --- Sidebar --- */
@@ -952,6 +968,17 @@ body::after {
   list-style: none;
 }
 
+.sidebar-links li {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sidebar-links li::before {
+  content: none;
+  display: none;
+}
+
 .sidebar-links a {
   font-family: 'VT323', monospace;
   font-size: 17px;
@@ -960,12 +987,14 @@ body::after {
   display: block;
   padding: 4px 20px 4px 28px;
   border-left: 3px solid transparent;
+  border-bottom: none;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .sidebar-links a:hover {
   color: var(--walle-yellow);
   background: rgba(255, 255, 255, 0.03);
+  border-bottom: none;
 }
 
 .sidebar-links a.active {
@@ -990,6 +1019,8 @@ body::after {
   padding: 8px 12px;
   outline: none;
   transition: border-color 0.2s;
+  -webkit-appearance: none;
+  border-radius: 0;
 }
 
 .doc-search-input::placeholder {
@@ -1130,16 +1161,21 @@ body::after {
 }
 
 /* --- Doc lists --- */
-.doc-content ul, .doc-content ol {
+.doc-content > ul,
+.doc-content > ol,
+.doc-content > * ul,
+.doc-content > * ol {
   margin: 0 0 16px 0;
   padding: 0;
 }
 
-.doc-content ul {
+.doc-content > ul,
+.doc-content > * > ul {
   list-style: none;
 }
 
-.doc-content ul li {
+.doc-content > ul > li,
+.doc-content > * > ul > li {
   font-family: 'Space Mono', monospace;
   font-size: 14px;
   color: var(--text);
@@ -1148,7 +1184,8 @@ body::after {
   line-height: 1.7;
 }
 
-.doc-content ul li::before {
+.doc-content > ul > li::before,
+.doc-content > * > ul > li::before {
   content: '>';
   position: absolute;
   left: 0;
@@ -1156,7 +1193,8 @@ body::after {
   font-weight: bold;
 }
 
-.doc-content ol li {
+.doc-content > ol > li,
+.doc-content > * > ol > li {
   font-family: 'Space Mono', monospace;
   font-size: 14px;
   color: var(--text);
@@ -1166,6 +1204,11 @@ body::after {
 }
 
 /* --- Doc links --- */
+.doc-layout a {
+  color: var(--rust);
+  text-decoration: none;
+}
+
 .doc-content a {
   color: var(--rust);
   text-decoration: none;
@@ -1175,6 +1218,10 @@ body::after {
 
 .doc-content a:hover {
   border-bottom-color: var(--rust);
+}
+
+.doc-content a:visited {
+  color: var(--rust);
 }
 
 /* --- Inline code --- */
