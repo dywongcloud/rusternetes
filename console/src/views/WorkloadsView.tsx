@@ -6,7 +6,7 @@ import { useUIStore } from "../store/uiStore";
 import { k8sDelete, k8sPatch, buildApiPath } from "../engine/query";
 import { StatusBadge } from "../components/StatusBadge";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Pod, Deployment, K8sResource } from "../engine/types";
+import type { Pod, Deployment } from "../engine/types";
 import {
   PieChart,
   Pie,

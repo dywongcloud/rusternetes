@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useK8sList } from "../hooks/useK8sList";
 import { useUIStore } from "../store/uiStore";
 import type { K8sResource } from "../engine/types";
-import { Shield, Eye, Users, Lock, ArrowRight } from "lucide-react";
+import { Shield, Users, Lock, ArrowRight } from "lucide-react";
 
 interface ClusterRole extends K8sResource {
   rules?: { apiGroups?: string[]; resources?: string[]; verbs?: string[] }[];

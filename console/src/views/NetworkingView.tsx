@@ -3,11 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useK8sList } from "../hooks/useK8sList";
 import { useK8sWatch } from "../hooks/useK8sWatch";
 import { useUIStore } from "../store/uiStore";
-import { StatusBadge } from "../components/StatusBadge";
 import type { Service, Pod, K8sResource } from "../engine/types";
 import { k8sDelete, buildApiPath } from "../engine/query";
 import { useQueryClient } from "@tanstack/react-query";
-import { Network, Globe, Eye, Trash2, ArrowRight, Plus } from "lucide-react";
+import { Network, Globe, Eye, Trash2, ArrowRight, Plus, Shield } from "lucide-react";
 
 const TYPE_COLORS: Record<string, string> = {
   ClusterIP: "#4a90b8",

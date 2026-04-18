@@ -25,18 +25,6 @@ function parseQuantity(q?: string): number {
   return parseInt(q) || 0;
 }
 
-function formatMemory(q?: string): string {
-  if (!q) return "-";
-  const ki = parseInt(q);
-  if (isNaN(ki)) return q;
-  if (q.endsWith("Ki")) {
-    const gi = ki / (1024 * 1024);
-    if (gi >= 1) return `${gi.toFixed(1)}Gi`;
-    return `${(ki / 1024).toFixed(0)}Mi`;
-  }
-  return q;
-}
-
 /** Capacity gauge bar. */
 function Gauge({
   label,

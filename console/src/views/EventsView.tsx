@@ -11,7 +11,7 @@ import {
   Tooltip,
   XAxis,
 } from "recharts";
-import { AlertTriangle, Info, AlertCircle, Filter, Eye } from "lucide-react";
+import { AlertTriangle, Info, AlertCircle, Filter } from "lucide-react";
 
 function timeAgo(timestamp?: string): string {
   if (!timestamp) return "-";
