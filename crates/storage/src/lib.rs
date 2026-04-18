@@ -8,9 +8,13 @@ pub mod etcd;
 pub mod memory;
 #[cfg(feature = "sqlite")]
 pub mod rhino;
+pub mod workqueue;
 
 // Re-export MemoryStorage for convenient testing
 pub use memory::MemoryStorage;
+
+// Re-export work queue types
+pub use workqueue::{WorkQueue, WorkQueueConfig, extract_key, RECONCILE_ALL_SENTINEL};
 
 // Re-export RhinoStorage when sqlite feature is enabled
 #[cfg(feature = "sqlite")]

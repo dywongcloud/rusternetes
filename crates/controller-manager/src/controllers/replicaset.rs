@@ -3,7 +3,7 @@ use rusternetes_common::{
     types::{ObjectMeta, Phase},
 };
 use futures::StreamExt;
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info, warn};
 
@@ -14,7 +14,7 @@ pub struct ReplicaSetController<S: Storage> {
     interval: Duration,
 }
 
-impl<S: Storage> ReplicaSetController<S> {
+impl<S: Storage + 'static> ReplicaSetController<S> {
     pub fn new(storage: Arc<S>, interval_secs: u64) -> Self {
         Self {
             storage,
@@ -22,14 +22,21 @@ impl<S: Storage> ReplicaSetController<S> {
         }
     }
 
-    pub async fn run(&self) -> rusternetes_common::Result<()> {
+    pub async fn run(self: Arc<Self>) -> rusternetes_common::Result<()> {
         info!("ReplicaSet controller started (watch-based)");
+
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
 
         loop {
             // Initial full reconciliation
-            if let Err(e) = self.reconcile_all().await {
-                error!("Full reconciliation error: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             // Watch for changes
             let prefix = build_prefix("replicasets", None);
@@ -53,9 +60,7 @@ impl<S: Storage> ReplicaSetController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    error!("Reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 warn!("Watch error: {}, reconnecting", e);
@@ -68,13 +73,25 @@ impl<S: Storage> ReplicaSetController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            error!("Periodic reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
             // Watch broke — loop back to re-establish
+        }
+    }
+
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.reconcile_all().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    error!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
         }
     }
 

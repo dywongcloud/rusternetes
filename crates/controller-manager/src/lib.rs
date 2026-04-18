@@ -40,85 +40,85 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
     // Spawn all controllers
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = LoadBalancerController::new(s, cloud_provider, "rusternetes".to_string(), interval);
+        let c = Arc::new(LoadBalancerController::new(s, cloud_provider, "rusternetes".to_string(), interval));
         if let Err(e) = c.run().await { error!("LoadBalancer controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = DeploymentController::new(s, interval);
+        let c = Arc::new(DeploymentController::new(s, interval));
         if let Err(e) = c.run().await { error!("Deployment controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = ReplicationControllerController::new(s, interval);
+        let c = Arc::new(ReplicationControllerController::new(s, interval));
         if let Err(e) = c.run().await { error!("ReplicationController controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = ReplicaSetController::new(s, interval);
+        let c = Arc::new(ReplicaSetController::new(s, interval));
         if let Err(e) = c.run().await { error!("ReplicaSet controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = StatefulSetController::new(s);
+        let c = Arc::new(StatefulSetController::new(s));
         if let Err(e) = c.run().await { error!("StatefulSet controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = DaemonSetController::new(s);
+        let c = Arc::new(DaemonSetController::new(s));
         if let Err(e) = c.run().await { error!("DaemonSet controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = JobController::new(s);
+        let c = Arc::new(JobController::new(s));
         if let Err(e) = c.run().await { error!("Job controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = CronJobController::new(s);
+        let c = Arc::new(CronJobController::new(s));
         if let Err(e) = c.run().await { error!("CronJob controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = PVBinderController::new(s);
+        let c = Arc::new(PVBinderController::new(s));
         if let Err(e) = c.run().await { error!("PV/PVC Binder controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = DynamicProvisionerController::new(s);
+        let c = Arc::new(DynamicProvisionerController::new(s));
         if let Err(e) = c.run().await { error!("Dynamic Provisioner controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = VolumeSnapshotController::new(s);
+        let c = Arc::new(VolumeSnapshotController::new(s));
         if let Err(e) = c.run().await { error!("Volume Snapshot controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = VolumeExpansionController::new(s);
+        let c = Arc::new(VolumeExpansionController::new(s));
         if let Err(e) = c.run().await { error!("Volume Expansion controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = EndpointsController::new(s);
+        let c = Arc::new(EndpointsController::new(s));
         if let Err(e) = c.run().await { error!("Endpoints controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = EndpointSliceController::new(s);
+        let c = Arc::new(EndpointSliceController::new(s));
         if let Err(e) = c.run().await { error!("EndpointSlice controller error: {}", e); }
     });
 
@@ -130,7 +130,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = ResourceQuotaController::new(s);
+        let c = Arc::new(ResourceQuotaController::new(s));
         if let Err(e) = c.run().await { error!("ResourceQuota controller error: {}", e); }
     });
 
@@ -142,79 +142,79 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = HorizontalPodAutoscalerController::new(s);
+        let c = Arc::new(HorizontalPodAutoscalerController::new(s));
         if let Err(e) = c.run().await { error!("HPA controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = VerticalPodAutoscalerController::new(s);
+        let c = Arc::new(VerticalPodAutoscalerController::new(s));
         c.run().await;
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = TTLController::new(s);
+        let c = Arc::new(TTLController::new(s));
         c.run().await;
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = PodDisruptionBudgetController::new(s);
+        let c = Arc::new(PodDisruptionBudgetController::new(s));
         if let Err(e) = c.run().await { error!("PodDisruptionBudget controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = NetworkPolicyController::new(s);
+        let c = Arc::new(NetworkPolicyController::new(s));
         if let Err(e) = c.run().await { error!("NetworkPolicy controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = IngressController::new(s);
+        let c = Arc::new(IngressController::new(s));
         if let Err(e) = c.run().await { error!("Ingress controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = CertificateSigningRequestController::new(s);
+        let c = Arc::new(CertificateSigningRequestController::new(s));
         if let Err(e) = c.run().await { error!("CertificateSigningRequest controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = CRDController::new(s);
+        let c = Arc::new(CRDController::new(s));
         if let Err(e) = c.run().await { error!("CRD controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = NamespaceController::new(s);
+        let c = Arc::new(NamespaceController::new(s));
         if let Err(e) = c.run().await { error!("Namespace controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = controllers::taint_eviction::TaintEvictionController::new(s);
+        let c = Arc::new(controllers::taint_eviction::TaintEvictionController::new(s));
         if let Err(e) = c.run().await { error!("TaintEviction controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = ServiceAccountController::new(s);
+        let c = Arc::new(ServiceAccountController::new(s));
         if let Err(e) = c.run().await { error!("ServiceAccount controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = ServiceController::new(s);
+        let c = Arc::new(ServiceController::new(s));
         if let Err(e) = c.run().await { error!("Service controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = NodeController::new(s);
+        let c = Arc::new(NodeController::new(s));
         if let Err(e) = c.run().await { error!("Node controller error: {}", e); }
     });
 

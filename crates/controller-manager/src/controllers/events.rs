@@ -1,7 +1,7 @@
 use chrono::Utc;
 use futures::StreamExt;
 use rusternetes_common::resources::{Event, EventSource, EventType, ObjectReference, Pod};
-use rusternetes_storage::{build_prefix, Storage};
+use rusternetes_storage::{build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -11,7 +11,7 @@ pub struct EventsController<S: Storage> {
     sync_interval: Duration,
 }
 
-impl<S: Storage> EventsController<S> {
+impl<S: Storage + 'static> EventsController<S> {
     pub fn new(storage: Arc<S>, sync_interval_secs: u64) -> Self {
         Self {
             storage,
@@ -26,10 +26,17 @@ impl<S: Storage> EventsController<S> {
             "Starting Events controller (sync interval: {:?})",
             self.sync_interval
         );
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                eprintln!("Error in events controller reconciliation: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = build_prefix("events", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -51,9 +58,7 @@ impl<S: Storage> EventsController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    eprintln!("Events reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 eprintln!("Watch error: {}, reconnecting", e);
@@ -66,12 +71,24 @@ impl<S: Storage> EventsController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            eprintln!("Periodic events reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
+        }
+    }
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            let result = self.reconcile_all().await.map_err(|e| e.to_string());
+            match result {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    eprintln!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
         }
     }
 

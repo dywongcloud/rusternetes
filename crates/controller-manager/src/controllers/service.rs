@@ -15,7 +15,7 @@ use futures::StreamExt;
 use rusternetes_common::resources::IntOrString;
 use rusternetes_common::resources::Service;
 use rusternetes_common::resources::ServiceType;
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -41,7 +41,7 @@ pub struct ServiceController<S: Storage> {
     service_cidr: String,
 }
 
-impl<S: Storage> ServiceController<S> {
+impl<S: Storage + 'static> ServiceController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
@@ -53,13 +53,20 @@ impl<S: Storage> ServiceController<S> {
 
     /// Watch-based run loop. Initializes, then watches for service changes.
     /// Falls back to periodic resync every 30s.
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: Arc<Self>) -> Result<()> {
         self.initialize().await?;
 
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                tracing::error!("Full reconciliation error: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = build_prefix("services", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -81,9 +88,7 @@ impl<S: Storage> ServiceController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    tracing::error!("Reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -96,9 +101,7 @@ impl<S: Storage> ServiceController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            tracing::error!("Periodic reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
@@ -150,6 +153,20 @@ impl<S: Storage> ServiceController<S> {
     }
 
     /// Main reconciliation loop - syncs all services
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.reconcile_all().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    tracing::error!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
+        }
+    }
+
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting service reconciliation");
 

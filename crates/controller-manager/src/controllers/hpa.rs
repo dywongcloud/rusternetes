@@ -6,7 +6,7 @@ use rusternetes_common::resources::{
     HorizontalPodAutoscalerStatus, MetricSpec, MetricStatus, MetricValueStatus, ReplicaSet,
     StatefulSet,
 };
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -14,20 +14,28 @@ pub struct HorizontalPodAutoscalerController<S: Storage> {
     storage: Arc<S>,
 }
 
-impl<S: Storage> HorizontalPodAutoscalerController<S> {
+impl<S: Storage + 'static> HorizontalPodAutoscalerController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: Arc<Self>) -> Result<()> {
         use futures::StreamExt;
 
         info!("Starting HorizontalPodAutoscaler controller");
 
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
+
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                error!("Full reconciliation error: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = build_prefix("horizontalpodautoscalers", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -49,9 +57,7 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    error!("Reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -64,12 +70,23 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            error!("Periodic reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
+        }
+    }
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.reconcile_all().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    error!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
         }
     }
 

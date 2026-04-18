@@ -4,7 +4,7 @@ use rusternetes_common::resources::{
     CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestStatus,
     KeyUsage,
 };
-use rusternetes_storage::Storage;
+use rusternetes_storage::{Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -24,7 +24,7 @@ pub struct CertificateSigningRequestController<S: Storage> {
     auto_approve_kubelet_certs: bool,
 }
 
-impl<S: Storage> CertificateSigningRequestController<S> {
+impl<S: Storage + 'static> CertificateSigningRequestController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
@@ -32,15 +32,21 @@ impl<S: Storage> CertificateSigningRequestController<S> {
         }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: Arc<Self>) -> Result<()> {
         use futures::StreamExt;
 
         info!("Starting CertificateSigningRequest controller");
 
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                error!("Full reconciliation error: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = rusternetes_storage::build_prefix("certificatesigningrequests", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -62,9 +68,7 @@ impl<S: Storage> CertificateSigningRequestController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    error!("Reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 warn!("Watch error: {}, reconnecting", e);
@@ -77,12 +81,23 @@ impl<S: Storage> CertificateSigningRequestController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            error!("Periodic reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
+        }
+    }
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.reconcile_all().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    error!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
         }
     }
 

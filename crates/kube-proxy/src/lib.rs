@@ -3,7 +3,7 @@ pub mod proxy;
 
 use futures::StreamExt;
 use proxy::KubeProxy;
-use rusternetes_storage::{Storage, StorageBackend};
+use rusternetes_storage::{Storage, StorageBackend, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -25,18 +25,32 @@ pub async fn run(storage: Arc<StorageBackend>, config: KubeProxyConfig) -> anyho
         warn!("Kube-proxy requires iptables to be installed and accessible.");
     }
 
-    let mut kube_proxy = KubeProxy::new(Arc::clone(&storage))?;
+    let kube_proxy = Arc::new(tokio::sync::Mutex::new(KubeProxy::new(Arc::clone(&storage))?));
 
     info!("Kube-proxy initialized successfully");
     info!("Syncing services every {} seconds", config.sync_interval);
 
     let sync_interval = tokio::time::Duration::from_secs(config.sync_interval);
 
-    loop {
-        // Initial sync on each watch (re)connection
-        if let Err(e) = kube_proxy.sync().await {
-            tracing::error!("Initial sync error: {}", e);
+    let queue = WorkQueue::new();
+
+    let worker_queue = queue.clone();
+    let worker_proxy = Arc::clone(&kube_proxy);
+    tokio::spawn(async move {
+        while let Some(key) = worker_queue.get().await {
+            match worker_proxy.lock().await.sync().await {
+                Ok(()) => worker_queue.forget(&key).await,
+                Err(e) => {
+                    tracing::error!("sync error: {}", e);
+                    worker_queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            worker_queue.done(&key).await;
         }
+    });
+
+    loop {
+        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
         // Watch services (primary trigger for iptables changes)
         let watch_result = storage.watch("/registry/services/").await;
@@ -60,9 +74,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: KubeProxyConfig) -> anyho
                 event = watch.next() => {
                     match event {
                         Some(Ok(_)) => {
-                            if let Err(e) = kube_proxy.sync().await {
-                                tracing::error!("Sync error: {}", e);
-                            }
+                            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                         }
                         Some(Err(e)) => {
                             tracing::warn!("Watch error: {}, reconnecting", e);
@@ -75,9 +87,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: KubeProxyConfig) -> anyho
                     }
                 }
                 _ = resync.tick() => {
-                    if let Err(e) = kube_proxy.sync().await {
-                        tracing::error!("Periodic sync error: {}", e);
-                    }
+                    queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                 }
                 _ = tokio::signal::ctrl_c() => {
                     info!("Received shutdown signal");

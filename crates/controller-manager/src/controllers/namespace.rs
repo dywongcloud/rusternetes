@@ -3,7 +3,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use rusternetes_common::resources::{Namespace, NamespaceCondition, NamespaceStatus, Pod};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, extract_key, Storage, WorkQueue};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -18,62 +18,110 @@ pub struct NamespaceController<S: Storage> {
     storage: Arc<S>,
 }
 
-impl<S: Storage> NamespaceController<S> {
+impl<S: Storage + 'static> NamespaceController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
-    /// Watch-based run loop. Performs an initial full reconciliation, then watches
-    /// for namespace changes. Falls back to periodic resync every 30s.
-    pub async fn run(&self) -> Result<()> {
-        loop {
-            // Initial full reconciliation
-            if let Err(e) = self.reconcile_all().await {
-                tracing::error!("Full reconciliation error: {}", e);
-            }
+    /// Work-queue-based run loop. Watch events enqueue resource keys;
+    /// a worker task reconciles one namespace at a time with deduplication
+    /// and exponential backoff on failures.
+    pub async fn run(self: Arc<Self>) -> Result<()> {
+        let queue = WorkQueue::new();
 
-            // Watch for changes on namespaces
+        // Spawn worker
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
+        // Watch loop: enqueue keys from watch events
+        loop {
+            // Enqueue all existing namespaces for initial reconciliation
+            self.enqueue_all(&queue).await;
+
             let prefix = build_prefix("namespaces", None);
             let watch_result = self.storage.watch(&prefix).await;
             let mut watch = match watch_result {
                 Ok(w) => w,
                 Err(e) => {
-                    tracing::error!("Failed to establish watch: {}, retrying", e);
+                    error!("Failed to establish watch: {}, retrying", e);
                     tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
             };
 
             let mut resync = tokio::time::interval(Duration::from_secs(30));
-            resync.tick().await; // consume immediate tick
+            resync.tick().await;
 
             let mut watch_broken = false;
             while !watch_broken {
                 tokio::select! {
                     event = watch.next() => {
                         match event {
-                            Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    tracing::error!("Reconciliation error: {}", e);
-                                }
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
                             }
                             Some(Err(e)) => {
-                                tracing::warn!("Watch error: {}, reconnecting", e);
+                                warn!("Watch error: {}, reconnecting", e);
                                 watch_broken = true;
                             }
                             None => {
-                                tracing::warn!("Watch stream ended, reconnecting");
+                                warn!("Watch stream ended, reconnecting");
                                 watch_broken = true;
                             }
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            tracing::error!("Periodic reconciliation error: {}", e);
-                        }
+                        self.enqueue_all(&queue).await;
                     }
                 }
             }
+        }
+    }
+
+    /// Enqueue all existing namespace keys for reconciliation.
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self.storage.list::<Namespace>("/registry/namespaces/").await {
+            Ok(namespaces) => {
+                for ns in &namespaces {
+                    let key = format!("namespaces/{}", ns.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                error!("Failed to list namespaces for enqueue: {}", e);
+            }
+        }
+    }
+
+    /// Worker loop: pulls keys from the queue and reconciles one at a time.
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            // Parse key: "namespaces/{name}"
+            let name = key.strip_prefix("namespaces/").unwrap_or(&key);
+            let storage_key = build_key("namespaces", None, name);
+
+            match self.storage.get::<Namespace>(&storage_key).await {
+                Ok(ns) => {
+                    match self.reconcile_namespace(&ns).await {
+                        Ok(()) => {
+                            queue.forget(&key).await;
+                        }
+                        Err(e) => {
+                            error!("Failed to reconcile namespace {}: {}", name, e);
+                            queue.requeue_rate_limited(key.clone()).await;
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Namespace was deleted or not found — nothing to reconcile
+                    queue.forget(&key).await;
+                }
+            }
+            queue.done(&key).await;
         }
     }
 

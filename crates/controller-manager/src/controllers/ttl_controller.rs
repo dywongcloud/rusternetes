@@ -8,7 +8,7 @@
 use chrono::{DateTime, Duration, Utc};
 use futures::StreamExt;
 use rusternetes_common::resources::workloads::Job;
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration as TokioDuration};
 use tracing::{debug, error, info, warn};
@@ -21,7 +21,7 @@ pub struct TTLController<S: Storage> {
     check_interval: TokioDuration,
 }
 
-impl<S: Storage> TTLController<S> {
+impl<S: Storage + 'static> TTLController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
@@ -31,12 +31,19 @@ impl<S: Storage> TTLController<S> {
 
     /// Watch-based run loop. Watches jobs as primary resource.
     /// Falls back to periodic resync every 30s.
-    pub async fn run(&self) {
+    pub async fn run(self: Arc<Self>) {
         info!("Starting TTL Controller");
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
         loop {
-            if let Err(e) = self.check_and_cleanup().await {
-                error!("TTL controller check failed: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = build_prefix("jobs", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -58,9 +65,7 @@ impl<S: Storage> TTLController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.check_and_cleanup().await {
-                                    error!("TTL reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 warn!("Watch error: {}, reconnecting", e);
@@ -73,9 +78,7 @@ impl<S: Storage> TTLController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.check_and_cleanup().await {
-                            error!("Periodic TTL check error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
@@ -83,6 +86,19 @@ impl<S: Storage> TTLController<S> {
     }
 
     /// Check all Jobs and cleanup expired ones
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.check_and_cleanup().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    error!("check_and_cleanup error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
+        }
+    }
+
     pub async fn check_and_cleanup(&self) -> rusternetes_common::Result<()> {
         debug!("Checking for expired Jobs");
 

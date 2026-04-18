@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use futures::StreamExt;
 use rusternetes_common::resources::{Node, NodeCondition, NodeStatus, Pod, PodStatus};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -22,18 +22,25 @@ pub struct NodeController<S: Storage> {
     storage: Arc<S>,
 }
 
-impl<S: Storage> NodeController<S> {
+impl<S: Storage + 'static> NodeController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
     /// Watch-based run loop. Performs an initial full reconciliation, then watches
     /// for node changes. Falls back to periodic resync every 30s.
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: Arc<Self>) -> Result<()> {
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                tracing::error!("Full reconciliation error: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = build_prefix("nodes", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -55,9 +62,7 @@ impl<S: Storage> NodeController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    tracing::error!("Reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -70,9 +75,7 @@ impl<S: Storage> NodeController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            tracing::error!("Periodic reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
@@ -80,6 +83,20 @@ impl<S: Storage> NodeController<S> {
     }
 
     /// Main reconciliation loop - monitors all nodes
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.reconcile_all().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    tracing::error!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
+        }
+    }
+
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting node reconciliation");
 

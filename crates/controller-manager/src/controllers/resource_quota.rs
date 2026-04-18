@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusternetes_common::resources::{Pod, ResourceQuota, ResourceQuotaStatus, Service};
 use rusternetes_common::types::Phase;
-use rusternetes_storage::{build_key, build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, RECONCILE_ALL_SENTINEL};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -15,20 +15,27 @@ pub struct ResourceQuotaController<S: Storage> {
     storage: Arc<S>,
 }
 
-impl<S: Storage> ResourceQuotaController<S> {
+impl<S: Storage + 'static> ResourceQuotaController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self: Arc<Self>) -> Result<()> {
         use futures::StreamExt;
 
         info!("Starting ResourceQuota controller");
 
+
+        let queue = WorkQueue::new();
+
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                error!("Full reconciliation error: {}", e);
-            }
+            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
             let prefix = build_prefix("resourcequotas", None);
             let watch_result = self.storage.watch(&prefix).await;
@@ -50,9 +57,7 @@ impl<S: Storage> ResourceQuotaController<S> {
                     event = watch.next() => {
                         match event {
                             Some(Ok(_)) => {
-                                if let Err(e) = self.reconcile_all().await {
-                                    error!("Reconciliation error: {}", e);
-                                }
+                                queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                             }
                             Some(Err(e)) => {
                                 tracing::warn!("Watch error: {}, reconnecting", e);
@@ -65,9 +70,7 @@ impl<S: Storage> ResourceQuotaController<S> {
                         }
                     }
                     _ = resync.tick() => {
-                        if let Err(e) = self.reconcile_all().await {
-                            error!("Periodic reconciliation error: {}", e);
-                        }
+                        queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                     }
                 }
             }
@@ -75,6 +78,20 @@ impl<S: Storage> ResourceQuotaController<S> {
     }
 
     /// Main reconciliation loop - syncs all resource quotas
+
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            match self.reconcile_all().await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    error!("reconcile_all error: {}", e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
+        }
+    }
+
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting resource quota reconciliation");
 
