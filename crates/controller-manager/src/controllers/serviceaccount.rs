@@ -179,6 +179,16 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
                 3 => (parts[1], parts[2]),
                 _ => { queue.done(&key).await; continue; }
             };
+            // Skip namespaces that are being deleted — don't create SAs
+            // in terminating namespaces (fights with namespace controller)
+            let ns_key = build_key("namespaces", None, ns);
+            if let Ok(namespace) = self.storage.get::<Namespace>(&ns_key).await {
+                if namespace.metadata.deletion_timestamp.is_some() {
+                    queue.forget(&key).await;
+                    queue.done(&key).await;
+                    continue;
+                }
+            }
             // Ensure the default service account exists in this namespace
             if let Err(e) = self.ensure_default_serviceaccount(ns).await {
                 tracing::error!("Failed to ensure default SA in {}: {}", ns, e);
@@ -299,7 +309,15 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
             automount_service_account_token: Some(true),
         };
 
-        self.storage.create(&sa_key, &service_account).await?;
+        match self.storage.create(&sa_key, &service_account).await {
+            Ok(_) => {}
+            Err(rusternetes_common::Error::AlreadyExists(_)) => {
+                // Another reconciliation created it — this is fine
+                debug!("Default ServiceAccount already exists in namespace {}", namespace);
+                return Ok(());
+            }
+            Err(e) => return Err(e.into()),
+        }
 
         // Create a token Secret for the ServiceAccount
         self.create_token_secret(namespace, sa_name).await?;
@@ -380,12 +398,18 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
             immutable: None,
         };
 
-        self.storage.create(&secret_key, &secret).await?;
-
-        info!(
-            "Created token secret {} for ServiceAccount {}/{}",
-            secret_name, namespace, sa_name
-        );
+        match self.storage.create(&secret_key, &secret).await {
+            Ok(_) => {
+                info!(
+                    "Created token secret {} for ServiceAccount {}/{}",
+                    secret_name, namespace, sa_name
+                );
+            }
+            Err(rusternetes_common::Error::AlreadyExists(_)) => {
+                debug!("Token secret already exists for {}/{}", namespace, sa_name);
+            }
+            Err(e) => return Err(e.into()),
+        }
         Ok(())
     }
 
