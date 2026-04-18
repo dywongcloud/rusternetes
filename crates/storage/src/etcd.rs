@@ -405,7 +405,7 @@ impl Storage for EtcdStorage {
             .with_prefix()
             .with_prev_key()
             .with_start_revision(revision);
-        let (_watcher, stream) = client
+        let (watcher, stream) = client
             .watch(prefix, Some(watch_options))
             .await
             .map_err(|e| {
@@ -421,7 +421,10 @@ impl Storage for EtcdStorage {
         // Use flat_map to handle multiple events per etcd watch response.
         // etcd can batch multiple events into a single response, and we must
         // emit all of them — not just the first one.
+        // IMPORTANT: Move `watcher` into the closure to keep the watch alive.
+        // Dropping it closes the gRPC stream, which terminates the watch.
         let watch_stream = stream.flat_map(move |watch_resp| {
+            let _ = &watcher;
             let events: Vec<Result<WatchEvent>> = match watch_resp {
                 Ok(resp) => {
                     resp.events().iter().map(|event| {
@@ -475,7 +478,7 @@ impl Storage for EtcdStorage {
 
         // Enable prev_kv to get the previous value on DELETE events (required for Kubernetes)
         let watch_options = WatchOptions::new().with_prefix().with_prev_key();
-        let (_watcher, stream) = client
+        let (watcher, stream) = client
             .watch(prefix, Some(watch_options))
             .await
             .map_err(|e| Error::Storage(format!("Failed to create watch: {}", e)))?;
@@ -484,7 +487,10 @@ impl Storage for EtcdStorage {
 
         // Convert etcd watch stream to our WatchStream.
         // Use flat_map to handle multiple events per etcd watch response.
+        // IMPORTANT: Move `watcher` into the closure to keep the watch alive.
+        // Dropping it closes the gRPC stream, which terminates the watch.
         let watch_stream = stream.flat_map(move |watch_resp| {
+            let _ = &watcher;
             let events: Vec<Result<WatchEvent>> = match watch_resp {
                 Ok(resp) => resp
                     .events()
