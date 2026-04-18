@@ -518,16 +518,16 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
             // - priority (weight 15%)
             // - pod anti-affinity penalty (weight 12%)
             // - topology spread penalty (weight 10%)
-            let total_score = (resource_score * 25 / 100)
-                + (node_affinity_score * 20 / 100)
-                + (pod_affinity_score * 18 / 100)
-                + (priority_score * 15 / 100)
-                - (pod_anti_affinity_penalty * 12 / 100) // Penalty reduces score
-                - (topology_penalty * 10 / 100); // Penalty reduces score
+            let total_score = (resource_score as i64 * 25 / 100)
+                + (node_affinity_score as i64 * 20 / 100)
+                + (pod_affinity_score as i64 * 18 / 100)
+                + (priority_score as i64 * 15 / 100)
+                - (pod_anti_affinity_penalty as i64 * 12 / 100)
+                - (topology_penalty as i64 * 10 / 100);
 
             node_scores.push(NodeScore {
                 node_name: node.metadata.name.clone(),
-                score: total_score,
+                score: total_score.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
             });
         }
 
