@@ -19,7 +19,7 @@ pub struct SchedulerConfig {
 pub async fn run(storage: Arc<StorageBackend>, config: SchedulerConfig) -> anyhow::Result<()> {
     info!("Starting Rusternetes Scheduler");
 
-    let scheduler = scheduler::Scheduler::new(storage, config.interval);
+    let scheduler = Arc::new(scheduler::Scheduler::new(storage, config.interval));
     scheduler.run().await?;
 
     Ok(())

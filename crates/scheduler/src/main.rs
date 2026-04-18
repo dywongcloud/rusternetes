@@ -128,13 +128,13 @@ async fn main() -> Result<()> {
             }
         });
 
-        let scheduler = Scheduler::new(storage, args.interval);
+        let scheduler = Arc::new(Scheduler::new(storage, args.interval));
         loop {
             while !elector.is_leader().await {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
             info!("Scheduler starting (leader acquired)");
-            if let Err(e) = scheduler.run().await {
+            if let Err(e) = Arc::clone(&scheduler).run().await {
                 tracing::error!("Scheduler error: {}", e);
             }
             if !elector.is_leader().await {
@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
         }
     } else {
         warn!("Leader election disabled - running in single-instance mode");
-        let scheduler = Scheduler::new(storage, args.interval);
+        let scheduler = Arc::new(Scheduler::new(storage, args.interval));
         scheduler.run().await?;
     }
 
