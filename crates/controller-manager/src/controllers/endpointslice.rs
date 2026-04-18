@@ -1,4 +1,5 @@
 use anyhow::Result;
+use futures::StreamExt;
 use rusternetes_common::resources::endpointslice::{
     Endpoint, EndpointConditions, EndpointPort, EndpointReference,
 };
@@ -30,6 +31,58 @@ pub struct EndpointSliceController<S: Storage> {
 impl<S: Storage> EndpointSliceController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
+    }
+
+    /// Watch-based run loop. Watches services as primary resource.
+    /// The 30s resync catches pod changes that don't trigger a service watch event.
+    pub async fn run(&self) -> Result<()> {
+        loop {
+            if let Err(e) = self.reconcile_all().await {
+                tracing::error!("Full reconciliation error: {}", e);
+            }
+
+            let prefix = build_prefix("services", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!("Failed to establish watch: {}, retrying", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    tracing::error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                tracing::warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                tracing::warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            tracing::error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Main reconciliation loop — syncs EndpointSlices for all Services

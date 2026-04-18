@@ -1,7 +1,8 @@
 use anyhow::Result;
 use chrono::Utc;
+use futures::StreamExt;
 use rusternetes_common::resources::{Node, Pod};
-use rusternetes_storage::{build_key, Storage};
+use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -15,6 +16,58 @@ pub struct TaintEvictionController<S: Storage> {
 impl<S: Storage> TaintEvictionController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
+    }
+
+    /// Watch-based run loop. Watches nodes as primary resource.
+    /// Falls back to periodic resync every 30s.
+    pub async fn run(&self) -> Result<()> {
+        loop {
+            if let Err(e) = self.reconcile_all().await {
+                tracing::error!("Full reconciliation error: {}", e);
+            }
+
+            let prefix = build_prefix("nodes", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!("Failed to establish watch: {}, retrying", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    tracing::error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                tracing::warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                tracing::warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            tracing::error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub async fn reconcile_all(&self) -> Result<()> {

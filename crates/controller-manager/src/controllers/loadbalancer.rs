@@ -38,6 +38,8 @@ impl<S: Storage> LoadBalancerController<S> {
 
     /// Start the controller reconciliation loop
     pub async fn run(&self) -> Result<()> {
+        use futures::StreamExt;
+
         info!("Starting LoadBalancer controller");
 
         if self.cloud_provider.is_none() {
@@ -45,13 +47,51 @@ impl<S: Storage> LoadBalancerController<S> {
             warn!("Set CLOUD_PROVIDER environment variable to enable cloud load balancers.");
         }
 
-        let mut interval = time::interval(self.sync_interval);
-
         loop {
-            interval.tick().await;
-
             if let Err(e) = self.reconcile_all().await {
-                error!("Error during LoadBalancer reconciliation: {}", e);
+                error!("Full reconciliation error: {}", e);
+            }
+
+            let prefix = rusternetes_storage::build_prefix("services", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish watch: {}, retrying", e);
+                    time::sleep(self.sync_interval).await;
+                    continue;
+                }
+            };
+
+            let mut resync = time::interval(Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
             }
         }
     }

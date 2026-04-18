@@ -38,7 +38,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self {
             storage,
-            scan_interval: Duration::from_secs(5),
+            scan_interval: Duration::from_secs(30),
             max_concurrent_deletes: 50,
             delete_batch_size: 100,
             max_retries: 3,

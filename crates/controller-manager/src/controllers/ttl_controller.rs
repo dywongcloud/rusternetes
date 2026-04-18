@@ -6,6 +6,7 @@
 // - Cleanup of associated Pods
 
 use chrono::{DateTime, Duration, Utc};
+use futures::StreamExt;
 use rusternetes_common::resources::workloads::Job;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
@@ -28,14 +29,56 @@ impl<S: Storage> TTLController<S> {
         }
     }
 
-    /// Start the TTL controller
+    /// Watch-based run loop. Watches jobs as primary resource.
+    /// Falls back to periodic resync every 30s.
     pub async fn run(&self) {
         info!("Starting TTL Controller");
         loop {
             if let Err(e) = self.check_and_cleanup().await {
                 error!("TTL controller check failed: {}", e);
             }
-            sleep(self.check_interval).await;
+
+            let prefix = build_prefix("jobs", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish watch: {}, retrying", e);
+                    sleep(self.check_interval).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.check_and_cleanup().await {
+                                    error!("TTL reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.check_and_cleanup().await {
+                            error!("Periodic TTL check error: {}", e);
+                        }
+                    }
+                }
+            }
         }
     }
 

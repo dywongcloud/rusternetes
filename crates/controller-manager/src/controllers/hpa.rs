@@ -20,14 +20,55 @@ impl<S: Storage> HorizontalPodAutoscalerController<S> {
     }
 
     pub async fn run(&self) -> Result<()> {
+        use futures::StreamExt;
+
         info!("Starting HorizontalPodAutoscaler controller");
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
         loop {
-            interval.tick().await;
-
             if let Err(e) = self.reconcile_all().await {
-                error!("Error reconciling HPAs: {}", e);
+                error!("Full reconciliation error: {}", e);
+            }
+
+            let prefix = build_prefix("horizontalpodautoscalers", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish watch: {}, retrying", e);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                tracing::warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                tracing::warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
             }
         }
     }

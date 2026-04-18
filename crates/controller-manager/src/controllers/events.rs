@@ -1,6 +1,7 @@
 use chrono::Utc;
+use futures::StreamExt;
 use rusternetes_common::resources::{Event, EventSource, EventType, ObjectReference, Pod};
-use rusternetes_storage::Storage;
+use rusternetes_storage::{build_prefix, Storage};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -18,7 +19,8 @@ impl<S: Storage> EventsController<S> {
         }
     }
 
-    /// Start the controller loop
+    /// Watch-based run loop. Watches events as primary resource.
+    /// Falls back to periodic resync every 30s.
     pub async fn run(self: Arc<Self>) {
         println!(
             "Starting Events controller (sync interval: {:?})",
@@ -28,7 +30,48 @@ impl<S: Storage> EventsController<S> {
             if let Err(e) = self.reconcile_all().await {
                 eprintln!("Error in events controller reconciliation: {}", e);
             }
-            sleep(self.sync_interval).await;
+
+            let prefix = build_prefix("events", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    eprintln!("Failed to establish watch: {}, retrying", e);
+                    sleep(self.sync_interval).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    eprintln!("Events reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                eprintln!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                eprintln!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            eprintln!("Periodic events reconciliation error: {}", e);
+                        }
+                    }
+                }
+            }
         }
     }
 

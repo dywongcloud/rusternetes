@@ -1,9 +1,11 @@
 use anyhow::Result;
 use chrono::Utc;
+use futures::StreamExt;
 use rusternetes_common::resources::{Namespace, NamespaceCondition, NamespaceStatus, Pod};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 /// NamespaceController handles namespace lifecycle and finalization.
@@ -19,6 +21,60 @@ pub struct NamespaceController<S: Storage> {
 impl<S: Storage> NamespaceController<S> {
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
+    }
+
+    /// Watch-based run loop. Performs an initial full reconciliation, then watches
+    /// for namespace changes. Falls back to periodic resync every 30s.
+    pub async fn run(&self) -> Result<()> {
+        loop {
+            // Initial full reconciliation
+            if let Err(e) = self.reconcile_all().await {
+                tracing::error!("Full reconciliation error: {}", e);
+            }
+
+            // Watch for changes on namespaces
+            let prefix = build_prefix("namespaces", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!("Failed to establish watch: {}, retrying", e);
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(Duration::from_secs(30));
+            resync.tick().await; // consume immediate tick
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    tracing::error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                tracing::warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                tracing::warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            tracing::error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Main reconciliation loop - processes all namespaces

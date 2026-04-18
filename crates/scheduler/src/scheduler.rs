@@ -36,17 +36,64 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
     }
 
     pub async fn run(&self) -> rusternetes_common::Result<()> {
+        use futures::StreamExt;
+
         info!(
-            "Scheduler '{}' started, running every {:?}",
+            "Scheduler '{}' started (watch-based, resync every {:?})",
             self.scheduler_name, self.interval
         );
 
-        let mut interval = tokio::time::interval(self.interval);
-
         loop {
-            interval.tick().await;
+            // Initial scheduling pass — pick up any pods that are already pending
             if let Err(e) = self.schedule_pending_pods().await {
-                error!("Error scheduling pods: {}", e);
+                error!("Scheduling error: {}", e);
+            }
+
+            // Watch for pod changes (new pods, status changes)
+            let prefix = build_prefix("pods", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish watch: {}, retrying", e);
+                    tokio::time::sleep(self.interval).await;
+                    continue;
+                }
+            };
+
+            // Resync interval as a safety net — shorter than other controllers
+            // because scheduling latency directly impacts pod startup time
+            let mut resync = tokio::time::interval(self.interval);
+            resync.tick().await; // consume the immediate first tick
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                // A pod changed — check for unscheduled pods
+                                if let Err(e) = self.schedule_pending_pods().await {
+                                    error!("Scheduling error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        // Safety net — catch any missed pods
+                        if let Err(e) = self.schedule_pending_pods().await {
+                            error!("Periodic scheduling error: {}", e);
+                        }
+                    }
+                }
             }
         }
     }

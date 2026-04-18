@@ -113,19 +113,13 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = EndpointsController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("Endpoints controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("Endpoints controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = EndpointSliceController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("EndpointSlice controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        }
+        if let Err(e) = c.run().await { error!("EndpointSlice controller error: {}", e); }
     });
 
     let s = storage.clone();
@@ -137,10 +131,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = ResourceQuotaController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("ResourceQuota controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("ResourceQuota controller error: {}", e); }
     });
 
     let s = storage.clone();
@@ -176,86 +167,55 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = NetworkPolicyController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("NetworkPolicy controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("NetworkPolicy controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = IngressController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("Ingress controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("Ingress controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = CertificateSigningRequestController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("CertificateSigningRequest controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("CertificateSigningRequest controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = CRDController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("CRD controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("CRD controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = NamespaceController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("Namespace controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("Namespace controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = controllers::taint_eviction::TaintEvictionController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("TaintEviction controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("TaintEviction controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = ServiceAccountController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("ServiceAccount controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("ServiceAccount controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = ServiceController::new(s);
-        if let Err(e) = c.initialize().await {
-            error!("Service controller initialization error: {}", e);
-            return;
-        }
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("Service controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("Service controller error: {}", e); }
     });
 
     let s = storage.clone();
     tokio::spawn(async move {
         let c = NodeController::new(s);
-        loop {
-            if let Err(e) = c.reconcile_all().await { error!("Node controller error: {}", e); }
-            tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-        }
+        if let Err(e) = c.run().await { error!("Node controller error: {}", e); }
     });
 
     info!("All controllers started successfully");

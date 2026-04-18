@@ -26,6 +26,60 @@ impl<S: Storage> IngressController<S> {
         Self { storage }
     }
 
+    pub async fn run(&self) -> Result<()> {
+        use futures::StreamExt;
+
+        info!("Starting Ingress controller");
+
+        loop {
+            if let Err(e) = self.reconcile_all().await {
+                error!("Full reconciliation error: {}", e);
+            }
+
+            let prefix = rusternetes_storage::build_prefix("ingresses", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish watch: {}, retrying", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Main reconciliation loop - processes all Ingress resources
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting Ingress reconciliation");

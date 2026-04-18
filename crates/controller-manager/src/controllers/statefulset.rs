@@ -1,4 +1,5 @@
 use anyhow::Result;
+use futures::StreamExt;
 use rusternetes_common::resources::{
     PersistentVolumeClaim, Pod, PodStatus, StatefulSet, StatefulSetStatus,
 };
@@ -7,7 +8,7 @@ use rusternetes_storage::{build_key, Storage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct StatefulSetController<S: Storage> {
     storage: Arc<S>,
@@ -19,13 +20,59 @@ impl<S: Storage> StatefulSetController<S> {
     }
 
     pub async fn run(&self) -> Result<()> {
-        info!("Starting StatefulSetController");
+        info!("Starting StatefulSetController (watch-based)");
+        let retry_interval = Duration::from_secs(5);
 
         loop {
+            // Initial full reconciliation
             if let Err(e) = self.reconcile_all().await {
-                error!("Error in StatefulSet reconciliation loop: {}", e);
+                error!("Full reconciliation error: {}", e);
             }
-            time::sleep(Duration::from_secs(1)).await;
+
+            // Watch for changes
+            let prefix = "/registry/statefulsets/";
+            let watch_result = self.storage.watch(prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish watch: {}, retrying in {:?}", e, retry_interval);
+                    time::sleep(retry_interval).await;
+                    continue;
+                }
+            };
+
+            // Periodic full resync as safety net (every 30s)
+            let mut resync = tokio::time::interval(Duration::from_secs(30));
+            resync.tick().await; // consume first immediate tick
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(_)) => {
+                                if let Err(e) = self.reconcile_all().await {
+                                    error!("Reconciliation error: {}", e);
+                                }
+                            }
+                            Some(Err(e)) => {
+                                warn!("Watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        if let Err(e) = self.reconcile_all().await {
+                            error!("Periodic reconciliation error: {}", e);
+                        }
+                    }
+                }
+            }
+            // Watch broke — loop back to re-establish
         }
     }
 

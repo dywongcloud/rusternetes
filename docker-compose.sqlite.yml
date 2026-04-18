@@ -106,7 +106,7 @@ services:
       - ./.rusternetes/certs:/etc/kubernetes/pki:ro
     environment:
       - RUST_LOG=info
-    command: ["--etcd-servers", "http://rhino:2379", "--sync-interval", "1"]
+    command: ["--etcd-servers", "http://rhino:2379", "--sync-interval", "5"]
 
   # Kubelet - node agent that manages containers
   kubelet:
