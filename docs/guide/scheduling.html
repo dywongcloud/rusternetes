@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scheduling &amp; Autoscaling - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html" class="active">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Scheduling &amp; Autoscaling</h1>
+      <p class="lead">
+        The Rusternetes scheduler assigns pods to nodes using a filter-then-score plugin pipeline.
+        This page covers node affinity, pod affinity/anti-affinity, taints and tolerations,
+        priority and preemption, topology spread constraints, resource requests and limits,
+        HPA, VPA, and PodDisruptionBudgets.
+      </p>
+
+      <!-- ───────────────────── Node Affinity ───────────────────── -->
+      <h2 id="node-affinity">Node Affinity</h2>
+      <p>
+        Node affinity constrains which nodes a pod can be scheduled on based on node labels.
+        It replaces the older <code>nodeSelector</code> with more expressive rules.
+      </p>
+
+      <h3>Required vs. Preferred</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>requiredDuringSchedulingIgnoredDuringExecution</code></td><td>Hard constraint. Pod will not schedule if no node matches.</td></tr>
+          <tr><td><code>preferredDuringSchedulingIgnoredDuringExecution</code></td><td>Soft constraint. Scheduler prefers matching nodes but will schedule elsewhere if needed. Uses <code>weight</code> (1&ndash;100) for priority.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Match Expressions</h3>
+      <table>
+        <thead>
+          <tr><th>Operator</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>In</code></td><td>Label value must be in the specified set.</td></tr>
+          <tr><td><code>NotIn</code></td><td>Label value must not be in the specified set.</td></tr>
+          <tr><td><code>Exists</code></td><td>Label key must exist (value ignored).</td></tr>
+          <tr><td><code>DoesNotExist</code></td><td>Label key must not exist.</td></tr>
+          <tr><td><code>Gt</code></td><td>Label value must be greater than specified (parsed as integer).</td></tr>
+          <tr><td><code>Lt</code></td><td>Label value must be less than specified (parsed as integer).</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">node-affinity.yaml</span>
+        </div>
+        <code>spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values: ["linux"]
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["us-east-1a", "us-east-1b"]
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 80
+          preference:
+            matchExpressions:
+              - key: node-type
+                operator: In
+                values: ["high-memory"]
+        - weight: 20
+          preference:
+            matchExpressions:
+              - key: disktype
+                operator: In
+                values: ["ssd"]</code>
+      </pre>
+
+      <!-- ───────────────────── Pod Affinity ───────────────────── -->
+      <h2 id="pod-affinity">Pod Affinity &amp; Anti-Affinity</h2>
+      <p>
+        Pod affinity schedules pods near (or far from) other pods based on labels. This is
+        essential for co-locating related services or spreading replicas across failure domains.
+      </p>
+
+      <h3>Key Differences from Node Affinity</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>topologyKey</code></td><td>Required. Node label key that defines the topology domain (e.g., <code>kubernetes.io/hostname</code>, <code>topology.kubernetes.io/zone</code>).</td></tr>
+          <tr><td><code>namespaceSelector</code></td><td>Optional. Scope pod selection to specific namespaces by label.</td></tr>
+          <tr><td><code>namespaces</code></td><td>Optional. Explicit list of namespaces to search.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">pod-affinity.yaml</span>
+        </div>
+        <code>spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: ["cache"]
+          topologyKey: kubernetes.io/hostname
+          <span class="comment"># Schedule on the same node as pods with app=cache</span>
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: web
+            topologyKey: topology.kubernetes.io/zone
+            <span class="comment"># Prefer spreading web pods across zones</span></code>
+      </pre>
+
+      <!-- ───────────────────── Taints & Tolerations ───────────────────── -->
+      <h2 id="taints">Taints &amp; Tolerations</h2>
+      <p>
+        Taints are applied to nodes. Tolerations are applied to pods. A pod can only schedule
+        on a tainted node if it has a matching toleration.
+      </p>
+
+      <h3>Taint Effects</h3>
+      <table>
+        <thead>
+          <tr><th>Effect</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>NoSchedule</code></td><td>Pods without matching toleration will not be scheduled. Existing pods are unaffected.</td></tr>
+          <tr><td><code>PreferNoSchedule</code></td><td>Scheduler avoids the node but will schedule there if no other option exists.</td></tr>
+          <tr><td><code>NoExecute</code></td><td>Existing pods without matching toleration are evicted. New pods are not scheduled.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Toleration Operators</h3>
+      <table>
+        <thead>
+          <tr><th>Operator</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Equal</code></td><td>Key, value, and effect must match. Default operator.</td></tr>
+          <tr><td><code>Exists</code></td><td>Key and effect must match. Value is ignored.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Taint a node</span>
+kubectl taint nodes <span class="value">node-1</span> <span class="value">dedicated=gpu:NoSchedule</span>
+
+<span class="comment"># Remove a taint</span>
+kubectl taint nodes <span class="value">node-1</span> <span class="value">dedicated=gpu:NoSchedule-</span>
+
+<span class="comment"># Overwrite a taint</span>
+kubectl taint nodes <span class="value">node-1</span> <span class="value">dedicated=gpu:NoExecute</span> <span class="flag">--overwrite</span></code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">tolerations.yaml</span>
+        </div>
+        <code>spec:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: gpu
+      effect: NoSchedule
+    - key: node.kubernetes.io/not-ready
+      operator: Exists
+      effect: NoExecute
+      tolerationSeconds: 300       <span class="comment"># Evict after 5 min if node is not ready</span>
+    - operator: Exists             <span class="comment"># Tolerate everything (DaemonSet pattern)</span></code>
+      </pre>
+
+      <!-- ───────────────────── PriorityClass ───────────────────── -->
+      <h2 id="priority">PriorityClass &amp; Preemption</h2>
+      <p>
+        PriorityClasses assign scheduling priority to pods. Higher-priority pods are scheduled
+        first and can preempt (evict) lower-priority pods when resources are scarce.
+      </p>
+
+      <h3>Key Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>value</code></td><td>Integer priority value. Higher = more important. System classes use 1,000,000,000+.</td></tr>
+          <tr><td><code>globalDefault</code></td><td>If true, this is the default priority for pods without <code>priorityClassName</code>.</td></tr>
+          <tr><td><code>preemptionPolicy</code></td><td><code>PreemptLowerPriority</code> (default) or <code>Never</code> (never preempt other pods).</td></tr>
+          <tr><td><code>description</code></td><td>Human-readable description.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">priorityclass.yaml</span>
+        </div>
+        <code>apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Critical workloads that can preempt lower-priority pods."</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">pod-with-priority.yaml</span>
+        </div>
+        <code>spec:
+  priorityClassName: high-priority
+  containers:
+    - name: app
+      image: myapp:latest</code>
+      </pre>
+
+      <h3>Preemption Behavior</h3>
+      <ul>
+        <li>The scheduler identifies the lowest-priority pods on candidate nodes.</li>
+        <li>It evicts enough pods to free resources for the high-priority pod.</li>
+        <li>PodDisruptionBudgets are respected during preemption when possible.</li>
+        <li>Pods with <code>preemptionPolicy: Never</code> wait in the queue instead of evicting others.</li>
+      </ul>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create PriorityClass</span>
+kubectl create priorityclass <span class="value">high-priority</span> <span class="flag">--value=</span><span class="value">1000000</span> <span class="flag">--description=</span><span class="value">"Critical workloads"</span>
+
+<span class="comment"># List PriorityClasses</span>
+kubectl get priorityclasses</code>
+      </pre>
+
+      <!-- ───────────────────── TopologySpread ───────────────────── -->
+      <h2 id="topology-spread">TopologySpreadConstraints</h2>
+      <p>
+        Topology spread constraints distribute pods evenly across failure domains (zones, nodes,
+        regions) to improve availability.
+      </p>
+
+      <h3>Key Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>maxSkew</code></td><td>Max allowed difference in pod counts between topology domains. Default 1.</td></tr>
+          <tr><td><code>topologyKey</code></td><td>Node label key defining domains (e.g., <code>topology.kubernetes.io/zone</code>).</td></tr>
+          <tr><td><code>whenUnsatisfiable</code></td><td><code>DoNotSchedule</code> (hard, default) or <code>ScheduleAnyway</code> (soft, prefer even spread).</td></tr>
+          <tr><td><code>labelSelector</code></td><td>Select pods to count for spread calculation.</td></tr>
+          <tr><td><code>minDomains</code></td><td>Minimum number of eligible domains. Prevents uneven spread when domains &lt; desired.</td></tr>
+          <tr><td><code>matchLabelKeys</code></td><td>Pod label keys to AND with labelSelector (for revision-aware spreading).</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">topology-spread.yaml</span>
+        </div>
+        <code>spec:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: web
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: web</code>
+      </pre>
+
+      <!-- ───────────────────── Resources ───────────────────── -->
+      <h2 id="resources">Resource Requests &amp; Limits</h2>
+      <p>
+        Containers specify resource <code>requests</code> (used by the scheduler to find a node)
+        and <code>limits</code> (enforced by the kubelet via cgroup limits on the Docker container).
+      </p>
+
+      <h3>Supported Resources</h3>
+      <table>
+        <thead>
+          <tr><th>Resource</th><th>Units</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>cpu</code></td><td>Millicores (m) or cores</td><td><code>100m</code> = 0.1 cores, <code>"2"</code> = 2 cores</td></tr>
+          <tr><td><code>memory</code></td><td>Bytes with suffixes (Ki, Mi, Gi, Ti)</td><td><code>128Mi</code>, <code>1Gi</code></td></tr>
+          <tr><td><code>ephemeral-storage</code></td><td>Bytes with suffixes</td><td><code>1Gi</code></td></tr>
+          <tr><td>Extended resources</td><td>Integer quantities</td><td><code>nvidia.com/gpu: 1</code>, <code>example.com/fakecpu: 2</code></td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">Extended resources</div>
+        <p>
+          The scheduler checks extended resources (like <code>nvidia.com/gpu</code> or custom
+          <code>fakecpu</code>) during resource fit filtering. Nodes must advertise these
+          resources in <code>status.capacity</code> and <code>status.allocatable</code>.
+        </p>
+      </div>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">resources.yaml</span>
+        </div>
+        <code>containers:
+  - name: app
+    image: myapp:latest
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+        ephemeral-storage: 1Gi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+        ephemeral-storage: 2Gi
+        nvidia.com/gpu: 1</code>
+      </pre>
+
+      <!-- ───────────────────── HPA ───────────────────── -->
+      <h2 id="hpa">HorizontalPodAutoscaler (HPA)</h2>
+      <p>
+        HPA automatically scales the number of pods in a Deployment, ReplicaSet, or StatefulSet
+        based on observed metrics.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>scaleTargetRef</code></td><td>Reference to the resource to scale (kind, name, apiVersion).</td></tr>
+          <tr><td><code>minReplicas</code></td><td>Minimum replica count. Default 1.</td></tr>
+          <tr><td><code>maxReplicas</code></td><td>Maximum replica count. Required.</td></tr>
+          <tr><td><code>metrics</code></td><td>Array of metric targets. Types: <code>Resource</code>, <code>Pods</code>, <code>Object</code>, <code>External</code>.</td></tr>
+          <tr><td><code>behavior</code></td><td>Scale-up and scale-down policies with stabilization windows and rate limits.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">hpa.yaml</span>
+        </div>
+        <code>apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: AverageValue
+          averageValue: 500Mi
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create HPA from command line</span>
+kubectl autoscale deployment <span class="value">web</span> <span class="flag">--min=</span><span class="value">2</span> <span class="flag">--max=</span><span class="value">20</span> <span class="flag">--cpu-percent=</span><span class="value">70</span>
+
+<span class="comment"># View HPA status</span>
+kubectl get hpa
+
+<span class="comment"># Detailed view</span>
+kubectl describe hpa <span class="value">web-hpa</span></code>
+      </pre>
+
+      <!-- ───────────────────── VPA ───────────────────── -->
+      <h2 id="vpa">VerticalPodAutoscaler (VPA)</h2>
+      <p>
+        VPA adjusts container resource requests and limits based on observed usage. Unlike HPA,
+        it changes per-pod resources rather than replica count.
+      </p>
+
+      <h3>Update Modes</h3>
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Off</code></td><td>Only generate recommendations; do not apply them.</td></tr>
+          <tr><td><code>Initial</code></td><td>Apply recommendations only at pod creation time.</td></tr>
+          <tr><td><code>Auto</code></td><td>Apply recommendations by evicting and recreating pods with updated resources.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">vpa.yaml</span>
+        </div>
+        <code>apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: web-vpa
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  updatePolicy:
+    updateMode: Auto
+  resourcePolicy:
+    containerPolicies:
+      - containerName: "*"
+        minAllowed:
+          cpu: 100m
+          memory: 128Mi
+        maxAllowed:
+          cpu: "4"
+          memory: 4Gi
+        controlledResources: ["cpu", "memory"]</code>
+      </pre>
+
+      <!-- ───────────────────── PDB ───────────────────── -->
+      <h2 id="pdb">PodDisruptionBudget (PDB)</h2>
+      <p>
+        PDBs limit the number of pods that can be simultaneously unavailable during voluntary
+        disruptions (node drain, cluster upgrades, preemption). They do not protect against
+        involuntary disruptions (hardware failures).
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>minAvailable</code></td><td>Minimum pods that must be available. Can be integer or percentage.</td></tr>
+          <tr><td><code>maxUnavailable</code></td><td>Maximum pods that can be unavailable. Can be integer or percentage.</td></tr>
+          <tr><td><code>selector</code></td><td>Label selector for pods this PDB protects.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition warning">
+        <div class="admonition-title">Choose one</div>
+        <p>
+          Set either <code>minAvailable</code> or <code>maxUnavailable</code>, not both. If
+          neither is set, the PDB defaults to <code>maxUnavailable: 0</code>, which prevents
+          any voluntary disruption.
+        </p>
+      </div>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">pdb.yaml</span>
+        </div>
+        <code>apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: web</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create PDB</span>
+kubectl create pdb <span class="value">web-pdb</span> <span class="flag">--selector=</span><span class="value">app=web</span> <span class="flag">--max-unavailable=</span><span class="value">1</span>
+
+<span class="comment"># View PDB status</span>
+kubectl get pdb
+
+<span class="comment"># Drain a node (respects PDBs)</span>
+kubectl drain <span class="value">node-1</span> <span class="flag">--ignore-daemonsets</span> <span class="flag">--delete-emptydir-data</span>
+
+<span class="comment"># Cordon a node (prevent new scheduling, don't evict)</span>
+kubectl cordon <span class="value">node-1</span>
+
+<span class="comment"># Uncordon (re-enable scheduling)</span>
+kubectl uncordon <span class="value">node-1</span></code>
+      </pre>
+
+      <!-- ───────────────────── Scheduler Pipeline ───────────────────── -->
+      <h2 id="pipeline">Scheduler Pipeline</h2>
+      <p>
+        The scheduler processes each unscheduled pod through a two-phase pipeline:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">scheduler pipeline</span>
+        </div>
+        <code><span class="comment">Phase 1: Filter (eliminate infeasible nodes)</span>
+  NodeResourcesFit     &mdash; Check CPU, memory, extended resources
+  NodeAffinity         &mdash; Evaluate node affinity rules
+  TaintToleration      &mdash; Check taints vs. tolerations
+  PodTopologySpread    &mdash; Enforce maxSkew constraints
+  InterPodAffinity     &mdash; Evaluate pod affinity/anti-affinity
+  VolumeBinding        &mdash; Check PVC availability
+  NodeUnschedulable    &mdash; Skip cordoned nodes
+  HostPort             &mdash; Reject pods with conflicting hostPorts
+
+<span class="comment">Phase 2: Score (rank remaining nodes)</span>
+  NodeResourcesFit     &mdash; Prefer nodes with balanced resource utilization
+  NodeAffinity         &mdash; Score preferred affinity matches
+  TaintToleration      &mdash; Penalize PreferNoSchedule taints
+  PodTopologySpread    &mdash; Prefer even distribution
+  InterPodAffinity     &mdash; Score preferred pod affinity matches
+  ImageLocality        &mdash; Prefer nodes that already have the image
+
+<span class="comment">Phase 3: Bind</span>
+  Set pod.spec.nodeName to the highest-scoring node</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="crds.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Custom Resources
+        </a>
+        <a href="containers.html" class="next">
+          <span class="pager-label">Next</span>
+          Container Runtime &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

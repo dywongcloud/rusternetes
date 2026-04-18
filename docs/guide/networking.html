@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Networking - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html" class="active">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Networking</h1>
+      <p class="lead">
+        Rusternetes implements the Kubernetes networking model: every pod gets its own IP address,
+        Services provide stable endpoints for sets of pods, and kube-proxy programs iptables rules
+        for in-cluster routing. CoreDNS provides service discovery via DNS.
+      </p>
+
+      <!-- ───────────────────── Services ───────────────────── -->
+      <h2 id="services">Services</h2>
+      <p>
+        A Service provides a stable virtual IP (ClusterIP) and DNS name for a set of pods selected
+        by labels. Kubernetes supports five Service types, each building on the previous.
+      </p>
+
+      <h3>Service Types</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Description</th><th>Accessible From</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ClusterIP</code></td>
+            <td>Default. Allocates a virtual IP from the service CIDR (10.96.0.0/12). Only reachable within the cluster.</td>
+            <td>Inside cluster</td>
+          </tr>
+          <tr>
+            <td><code>NodePort</code></td>
+            <td>Extends ClusterIP. Opens a port (30000&ndash;32767) on every node that forwards to the service.</td>
+            <td>External via <code>&lt;NodeIP&gt;:&lt;NodePort&gt;</code></td>
+          </tr>
+          <tr>
+            <td><code>LoadBalancer</code></td>
+            <td>Extends NodePort. Provisions an external load balancer (cloud provider dependent).</td>
+            <td>External via load balancer IP</td>
+          </tr>
+          <tr>
+            <td><code>ExternalName</code></td>
+            <td>Maps the service to a DNS CNAME record. No proxy, no ClusterIP.</td>
+            <td>DNS alias only</td>
+          </tr>
+          <tr>
+            <td><code>Headless</code></td>
+            <td>Set <code>clusterIP: None</code>. Returns individual pod IPs in DNS A records. Used with StatefulSets.</td>
+            <td>DNS direct to pods</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>type</code></td><td>string</td><td>Service type. Default <code>ClusterIP</code>.</td></tr>
+          <tr><td><code>selector</code></td><td>map</td><td>Label selector for target pods. Omit for ExternalName or manual Endpoints.</td></tr>
+          <tr><td><code>ports</code></td><td>array</td><td>Port mappings: <code>port</code> (service port), <code>targetPort</code> (pod port), <code>protocol</code> (TCP/UDP), <code>nodePort</code> (for NodePort/LoadBalancer).</td></tr>
+          <tr><td><code>clusterIP</code></td><td>string</td><td>Virtual IP. Set to <code>None</code> for headless. Leave empty for auto-allocation.</td></tr>
+          <tr><td><code>externalTrafficPolicy</code></td><td>string</td><td><code>Cluster</code> (default, SNAT to any node) or <code>Local</code> (preserve source IP, only route to local pods).</td></tr>
+          <tr><td><code>internalTrafficPolicy</code></td><td>string</td><td><code>Cluster</code> (default) or <code>Local</code> (only route to pods on the same node).</td></tr>
+          <tr><td><code>sessionAffinity</code></td><td>string</td><td><code>None</code> (default) or <code>ClientIP</code>. Sticky sessions by source IP.</td></tr>
+          <tr><td><code>sessionAffinityConfig</code></td><td>object</td><td><code>clientIP.timeoutSeconds</code> &mdash; duration of sticky session (default 10800 = 3 hours).</td></tr>
+          <tr><td><code>externalName</code></td><td>string</td><td>DNS name for ExternalName services.</td></tr>
+          <tr><td><code>publishNotReadyAddresses</code></td><td>boolean</td><td>Include unready pods in Endpoints. Used for StatefulSet headless services.</td></tr>
+          <tr><td><code>ipFamilies</code></td><td>array</td><td><code>["IPv4"]</code>, <code>["IPv6"]</code>, or both for dual-stack.</td></tr>
+          <tr><td><code>ipFamilyPolicy</code></td><td>string</td><td><code>SingleStack</code>, <code>PreferDualStack</code>, or <code>RequireDualStack</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Examples</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">clusterip-service.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">nodeport-service.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: Service
+metadata:
+  name: web-external
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080    <span class="comment"># 30000-32767, or omit for auto-assign</span></code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">headless-service.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: Service
+metadata:
+  name: db-headless
+spec:
+  clusterIP: None
+  selector:
+    app: db
+  ports:
+    - port: 5432
+  publishNotReadyAddresses: true</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create services via kubectl</span>
+kubectl expose deployment <span class="value">web</span> <span class="flag">--port=</span><span class="value">80</span> <span class="flag">--target-port=</span><span class="value">8080</span> <span class="flag">--type=</span><span class="value">ClusterIP</span>
+kubectl expose deployment <span class="value">web</span> <span class="flag">--port=</span><span class="value">80</span> <span class="flag">--type=</span><span class="value">NodePort</span> <span class="flag">--name=</span><span class="value">web-np</span>
+kubectl create service externalname <span class="value">ext-db</span> <span class="flag">--external-name=</span><span class="value">db.example.com</span>
+
+<span class="comment"># List services</span>
+kubectl get services
+kubectl get svc <span class="flag">-o</span> <span class="value">wide</span></code>
+      </pre>
+
+      <!-- ───────────────────── Endpoints ───────────────────── -->
+      <h2 id="endpoints">Endpoints</h2>
+      <p>
+        The Endpoints controller automatically populates an Endpoints object for each Service
+        that has a selector. The Endpoints resource maps the service name to a list of pod
+        IP:port pairs.
+      </p>
+
+      <h3>Key Behaviors</h3>
+      <ul>
+        <li>Only pods in <code>Running</code> phase with passing readiness probes are included in the <code>addresses</code> list.</li>
+        <li>Pods that are not ready appear in <code>notReadyAddresses</code>.</li>
+        <li>Terminal pods (<code>Failed</code> or <code>Succeeded</code> phase) are always excluded.</li>
+        <li>Terminating pods (those with a <code>deletionTimestamp</code>) are excluded unless <code>publishNotReadyAddresses</code> is set on the Service.</li>
+        <li>When <code>publishNotReadyAddresses: true</code>, all non-terminal pods appear in <code>addresses</code> regardless of readiness.</li>
+      </ul>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># View endpoints for a service</span>
+kubectl get endpoints <span class="value">web</span>
+
+<span class="comment"># Detailed view showing addresses and ports</span>
+kubectl describe endpoints <span class="value">web</span></code>
+      </pre>
+
+      <!-- ───────────────────── EndpointSlice ───────────────────── -->
+      <h2 id="endpointslice">EndpointSlice</h2>
+      <p>
+        EndpointSlice is the scalable successor to Endpoints. Each slice holds up to 100 endpoints,
+        allowing large services (thousands of pods) to update efficiently without rewriting a single
+        massive Endpoints object.
+      </p>
+
+      <h3>Key Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>addressType</code></td><td><code>IPv4</code>, <code>IPv6</code>, or <code>FQDN</code>.</td></tr>
+          <tr><td><code>endpoints</code></td><td>Array of endpoint objects with <code>addresses</code>, <code>conditions</code> (ready, serving, terminating), <code>targetRef</code>, <code>nodeName</code>.</td></tr>
+          <tr><td><code>ports</code></td><td>Array of port objects. <code>name</code> must always be set (empty string is valid). A nil name causes client crashes.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition warning">
+        <div class="admonition-title">Port name must be set</div>
+        <p>
+          EndpointSlice <code>port.name</code> must always be present, even as an empty string.
+          If it is null/nil, <code>kubectl describe</code> will crash with a nil pointer dereference.
+          Rusternetes always sets port names on EndpointSlices.
+        </p>
+      </div>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List EndpointSlices</span>
+kubectl get endpointslices
+
+<span class="comment"># EndpointSlices for a specific service</span>
+kubectl get endpointslices <span class="flag">-l</span> <span class="value">kubernetes.io/service-name=web</span></code>
+      </pre>
+
+      <!-- ───────────────────── DNS ───────────────────── -->
+      <h2 id="dns">DNS (CoreDNS)</h2>
+      <p>
+        Rusternetes deploys CoreDNS as a pod in <code>kube-system</code> with a pinned ClusterIP
+        of <code>10.96.0.10</code>. The kubelet configures each pod's <code>/etc/resolv.conf</code>
+        to point to this address.
+      </p>
+
+      <h3>DNS Records</h3>
+      <table>
+        <thead>
+          <tr><th>Record Type</th><th>Format</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Service A record</td>
+            <td><code>{service}.{namespace}.svc.cluster.local</code></td>
+            <td><code>web.default.svc.cluster.local</code> &rarr; <code>10.96.0.42</code></td>
+          </tr>
+          <tr>
+            <td>Service SRV record</td>
+            <td><code>_{port-name}._{protocol}.{service}.{namespace}.svc.cluster.local</code></td>
+            <td><code>_http._tcp.web.default.svc.cluster.local</code></td>
+          </tr>
+          <tr>
+            <td>Headless A record</td>
+            <td><code>{pod-name}.{service}.{namespace}.svc.cluster.local</code></td>
+            <td><code>web-0.web-headless.default.svc.cluster.local</code> &rarr; pod IP</td>
+          </tr>
+          <tr>
+            <td>Pod A record</td>
+            <td><code>{pod-ip-dashed}.{namespace}.pod.cluster.local</code></td>
+            <td><code>10-244-0-5.default.pod.cluster.local</code></td>
+          </tr>
+          <tr>
+            <td>ExternalName CNAME</td>
+            <td><code>{service}.{namespace}.svc.cluster.local</code></td>
+            <td><code>ext-db.default.svc.cluster.local</code> &rarr; <code>db.example.com</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>DNS Policies</h3>
+      <table>
+        <thead>
+          <tr><th>Policy</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ClusterFirst</code></td><td>Default. Pod DNS queries go to CoreDNS. Falls back to upstream for non-cluster names.</td></tr>
+          <tr><td><code>Default</code></td><td>Use the node's DNS configuration (<code>/etc/resolv.conf</code> from the host).</td></tr>
+          <tr><td><code>ClusterFirstWithHostNet</code></td><td>Like ClusterFirst, but for pods using <code>hostNetwork: true</code>.</td></tr>
+          <tr><td><code>None</code></td><td>No auto-configuration. Must provide <code>dnsConfig</code> with nameservers and search domains.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>CoreDNS Configuration</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">Corefile (ConfigMap)</span>
+        </div>
+        <code>.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}</code>
+      </pre>
+
+      <!-- ───────────────────── kube-proxy ───────────────────── -->
+      <h2 id="kube-proxy">kube-proxy</h2>
+      <p>
+        kube-proxy runs in host network mode and programs iptables rules to route Service traffic
+        to backend pods. It watches Services, Endpoints, and EndpointSlices and syncs iptables
+        whenever they change.
+      </p>
+
+      <h3>iptables Chains</h3>
+      <table>
+        <thead>
+          <tr><th>Chain</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>KUBE-SERVICES</code></td><td>Entry point. Matches ClusterIP:port and jumps to per-service chains.</td></tr>
+          <tr><td><code>KUBE-SVC-*</code></td><td>Per-service chain. Load-balances across endpoints using probability-based rules.</td></tr>
+          <tr><td><code>KUBE-SEP-*</code></td><td>Per-endpoint chain. DNATs to the actual pod IP:port.</td></tr>
+          <tr><td><code>KUBE-NODEPORTS</code></td><td>Matches NodePort traffic and jumps to the service chain.</td></tr>
+          <tr><td><code>KUBE-MARK-MASQ</code></td><td>Marks packets for SNAT (masquerade) when leaving the node.</td></tr>
+          <tr><td><code>KUBE-POSTROUTING</code></td><td>Applies masquerade to marked packets.</td></tr>
+          <tr><td><code>KUBE-FORWARD</code></td><td>Accepts forwarded traffic. Includes RELATED,ESTABLISHED rules for return traffic.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">State-based sync</div>
+        <p>
+          kube-proxy uses an order-independent hash (XOR) of all service/endpoint state to detect
+          changes. If the hash matches the previous sync, rules are not flushed and rebuilt. This
+          avoids a brief "connection refused" window that would occur from full flushes every sync cycle.
+          XOR is used because etcd returns items in arbitrary order &mdash; an order-dependent hash
+          would cause unnecessary rebuilds.
+        </p>
+      </div>
+
+      <h3>Traffic Flow: ClusterIP</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">iptables flow</span>
+        </div>
+        <code><span class="comment"># Client pod sends to ClusterIP 10.96.0.42:80</span>
+
+PREROUTING &rarr; KUBE-SERVICES
+  &rarr; match 10.96.0.42/80 &rarr; KUBE-SVC-XXXX
+    &rarr; probability 0.33 &rarr; KUBE-SEP-AAA (DNAT to 10.244.0.5:8080)
+    &rarr; probability 0.50 &rarr; KUBE-SEP-BBB (DNAT to 10.244.1.3:8080)
+    &rarr; probability 1.00 &rarr; KUBE-SEP-CCC (DNAT to 10.244.1.7:8080)
+
+POSTROUTING &rarr; KUBE-POSTROUTING
+  &rarr; masquerade if marked</code>
+      </pre>
+
+      <h3>Session Affinity</h3>
+      <p>
+        When <code>sessionAffinity: ClientIP</code> is set, kube-proxy adds <code>--sticky</code>
+        iptables rules using the <code>recent</code> module to route repeat connections from the
+        same source IP to the same backend for the configured timeout (default 10800 seconds).
+      </p>
+
+      <h3>Filter Table Rules</h3>
+      <p>
+        kube-proxy also programs the filter table's FORWARD chain to accept traffic routed through
+        the cluster. The <code>KUBE-FORWARD</code> chain must include rules to accept
+        <code>RELATED,ESTABLISHED</code> return traffic and a jump from the OUTPUT chain for
+        locally-originated traffic.
+      </p>
+
+      <!-- ───────────────────── NetworkPolicy ───────────────────── -->
+      <h2 id="networkpolicy">NetworkPolicy</h2>
+      <p>
+        NetworkPolicies control traffic flow between pods. By default, all pods can communicate
+        with all other pods. Once a NetworkPolicy selects a pod, only explicitly allowed traffic
+        is permitted.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>podSelector</code></td><td>LabelSelector</td><td>Pods this policy applies to. Empty = all pods in namespace.</td></tr>
+          <tr><td><code>policyTypes</code></td><td>array</td><td><code>["Ingress"]</code>, <code>["Egress"]</code>, or <code>["Ingress", "Egress"]</code>.</td></tr>
+          <tr><td><code>ingress</code></td><td>array</td><td>Allowed inbound rules. Each rule has <code>from</code> (sources) and <code>ports</code>.</td></tr>
+          <tr><td><code>egress</code></td><td>array</td><td>Allowed outbound rules. Each rule has <code>to</code> (destinations) and <code>ports</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Peer Selectors</h3>
+      <p>
+        Each <code>from</code> or <code>to</code> entry can use one or more of these selectors.
+        Within a single entry, selectors are ANDed. Across entries, they are ORed.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Selector</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>podSelector</code></td><td>Match pods by labels in the same namespace.</td></tr>
+          <tr><td><code>namespaceSelector</code></td><td>Match pods in namespaces with matching labels.</td></tr>
+          <tr><td><code>ipBlock</code></td><td>Match IP ranges. Fields: <code>cidr</code> (required), <code>except</code> (excluded ranges).</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">networkpolicy.yaml</span>
+        </div>
+        <code>apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: frontend
+        - namespaceSelector:
+            matchLabels:
+              env: production
+      ports:
+        - protocol: TCP
+          port: 80
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+            except:
+              - 10.0.1.0/24
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:                       <span class="comment"># Allow DNS</span>
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">deny-all.yaml</span>
+        </div>
+        <code><span class="comment"># Default deny all ingress and egress in a namespace</span>
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress</code>
+      </pre>
+
+      <!-- ───────────────────── Ingress ───────────────────── -->
+      <h2 id="ingress">Ingress &amp; IngressClass</h2>
+      <p>
+        An Ingress defines HTTP(S) routing rules that map hostnames and paths to backend Services.
+        An IngressClass specifies which controller handles the Ingress.
+      </p>
+
+      <h3>IngressClass</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">ingressclass.yaml</span>
+        </div>
+        <code>apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: nginx
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: k8s.io/ingress-nginx</code>
+      </pre>
+
+      <h3>Ingress</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">ingress.yaml</span>
+        </div>
+        <code>apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.example.com
+      secretName: app-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080
+  defaultBackend:
+    service:
+      name: default-backend
+      port:
+        number: 80</code>
+      </pre>
+
+      <h3>Path Types</h3>
+      <table>
+        <thead>
+          <tr><th>pathType</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Exact</code></td><td>Case-sensitive exact match of the URL path.</td></tr>
+          <tr><td><code>Prefix</code></td><td>Match by URL path prefix, split by <code>/</code>.</td></tr>
+          <tr><td><code>ImplementationSpecific</code></td><td>Matching depends on the IngressClass controller.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create an Ingress</span>
+kubectl create ingress <span class="value">web</span> <span class="flag">--rule=</span><span class="value">"app.example.com/=web:80"</span> <span class="flag">--class=</span><span class="value">nginx</span>
+
+<span class="comment"># List Ingresses</span>
+kubectl get ingress
+
+<span class="comment"># Describe for status and events</span>
+kubectl describe ingress <span class="value">web-ingress</span></code>
+      </pre>
+
+      <!-- ───────────────────── ServiceCIDR / IPAddress ───────────────────── -->
+      <h2 id="servicecidr">ServiceCIDR &amp; IPAddress</h2>
+      <p>
+        <code>ServiceCIDR</code> resources define the IP ranges available for ClusterIP allocation.
+        The default range is <code>10.96.0.0/12</code>. <code>IPAddress</code> resources track
+        individual IP allocations.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">servicecidr.yaml</span>
+        </div>
+        <code>apiVersion: networking.k8s.io/v1beta1
+kind: ServiceCIDR
+metadata:
+  name: default
+spec:
+  cidrs:
+    - 10.96.0.0/12</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># View allocated IPs</span>
+kubectl get ipaddresses
+
+<span class="comment"># View ServiceCIDR configuration</span>
+kubectl get servicecidr</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="workloads.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Workloads
+        </a>
+        <a href="storage-volumes.html" class="next">
+          <span class="pager-label">Next</span>
+          Storage &amp; Volumes &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Troubleshooting - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html" class="active">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Troubleshooting</h1>
+      <p class="lead">
+        Common issues, their root causes, and how to fix them. Each entry includes the symptom,
+        underlying cause, and step-by-step resolution.
+      </p>
+
+      <h2>"Connection refused" on service access</h2>
+      <p>
+        <strong>Symptom:</strong> Intermittent <code>Connection refused</code> errors when accessing
+        a Kubernetes Service via its ClusterIP.
+      </p>
+      <p>
+        <strong>Cause:</strong> The kube-proxy flushes and rebuilds all iptables rules on every sync
+        cycle. During the brief window between flushing the old rules and installing the new ones,
+        connections are refused. This was fixed with hash-based state comparison &mdash; kube-proxy now
+        computes an order-independent hash (XOR) of the current state and skips the flush+rebuild if
+        nothing changed.
+      </p>
+      <p><strong>Fix:</strong></p>
+      <ul>
+        <li>Restart kube-proxy: <code>docker compose restart kube-proxy</code></li>
+        <li>Verify rules are installed: <code>docker compose exec kube-proxy iptables -t nat -L KUBE-SERVICES</code></li>
+        <li>Check kube-proxy logs for sync errors: <code>docker compose logs kube-proxy</code></li>
+      </ul>
+
+      <h2>"Watch failed: context canceled"</h2>
+      <p>
+        <strong>Symptom:</strong> Watch connections drop immediately with <code>context canceled</code>
+        errors. Controllers fail to receive events. kubectl <code>-w</code> exits unexpectedly.
+      </p>
+      <p>
+        <strong>Cause:</strong> HTTP/2 ALPN was not configured on the TLS server. Go's <code>client-go</code>
+        library requires the server to negotiate HTTP/2 via ALPN. Without it, the client falls back to
+        HTTP/1.1 and watches fail.
+      </p>
+      <p><strong>Fix:</strong></p>
+      <ul>
+        <li>Ensure the API server's TLS configuration includes ALPN protocols:
+          <code>alpn_protocols = [b"h2", b"http/1.1"]</code></li>
+        <li>Regenerate TLS certificates if needed: <code>bash scripts/generate-certs.sh</code></li>
+        <li>Restart the API server: <code>docker compose restart api-server</code></li>
+      </ul>
+
+      <div class="admonition note">
+        <div class="admonition-title">LIST resourceVersion</div>
+        <p>
+          A related issue was LIST operations returning timestamps instead of etcd mod_revisions as
+          the <code>resourceVersion</code>. This caused 1123+ watch failures in conformance testing.
+          Ensure your storage backend returns proper revision numbers.
+        </p>
+      </div>
+
+      <h2>DNS not working</h2>
+      <p>
+        <strong>Symptom:</strong> Pods cannot resolve service names. <code>nslookup kubernetes.default</code>
+        fails from inside a pod.
+      </p>
+      <p><strong>Cause:</strong> One of two issues:</p>
+      <ol>
+        <li>CoreDNS was not deployed &mdash; the bootstrap script was not run</li>
+        <li>The <code>br_netfilter</code> kernel module is not loaded, preventing bridged traffic
+          from being processed by iptables</li>
+      </ol>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run the bootstrap script to deploy CoreDNS</span>
+bash scripts/bootstrap-cluster.sh
+
+<span class="comment"># Verify CoreDNS is running</span>
+kubectl get pods <span class="flag">-n</span> kube-system <span class="flag">-l</span> k8s-app=kube-dns
+
+<span class="comment"># Load br_netfilter kernel module (Linux only)</span>
+sudo modprobe br_netfilter
+sudo sysctl net.bridge.bridge-nf-call-iptables=1</code>
+      </pre>
+
+      <h2>Pods stuck in Pending</h2>
+      <p>
+        <strong>Symptom:</strong> Pods remain in <code>Pending</code> phase indefinitely. No events
+        show scheduling attempts.
+      </p>
+      <p><strong>Cause:</strong> Several possible reasons:</p>
+      <ul>
+        <li>No schedulable nodes available (all nodes <code>NotReady</code> or cordoned)</li>
+        <li>Nodes are tainted and the pod lacks matching tolerations</li>
+        <li>Insufficient resources (CPU, memory, or extended resources like <code>fakecpu</code>)</li>
+        <li>The scheduler is not running</li>
+      </ul>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check node status</span>
+kubectl get nodes
+
+<span class="comment"># Check for taints on nodes</span>
+kubectl describe node node-1 | grep -A5 Taints
+
+<span class="comment"># Check scheduler is running</span>
+docker compose ps scheduler
+docker compose logs scheduler
+
+<span class="comment"># Describe the pod to see scheduling events</span>
+kubectl describe pod &lt;pod-name&gt;</code>
+      </pre>
+
+      <h2>Container restart loops</h2>
+      <p>
+        <strong>Symptom:</strong> Containers keep restarting. Pod shows high restart count in
+        <code>kubectl get pods</code>.
+      </p>
+      <p><strong>Cause:</strong> Several possibilities:</p>
+      <ul>
+        <li><strong>RestartPolicy:</strong> With <code>OnFailure</code>, containers that exit with a
+          non-zero code are automatically restarted. With <code>Always</code>, all containers are
+          restarted regardless of exit code.</li>
+        <li><strong>postStart hook failure:</strong> If a <code>postStart</code> lifecycle hook fails,
+          Kubernetes kills the container (not just logs the error). This triggers a restart.</li>
+        <li><strong>Liveness probe failure:</strong> A failing liveness probe causes the kubelet to
+          kill and restart the container.</li>
+        <li><strong>OOM kills:</strong> The container exceeds its memory limit.</li>
+      </ul>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check current container logs</span>
+kubectl logs &lt;pod-name&gt;
+
+<span class="comment"># Check previous container logs (before restart)</span>
+kubectl logs &lt;pod-name&gt; <span class="flag">--previous</span>
+
+<span class="comment"># Check pod events for restart reasons</span>
+kubectl describe pod &lt;pod-name&gt;
+
+<span class="comment"># Check container exit code and reason</span>
+kubectl get pod &lt;pod-name&gt; <span class="flag">-o</span> jsonpath='{.status.containerStatuses[0].lastState}'</code>
+      </pre>
+
+      <h2>PVC stuck in Pending</h2>
+      <p>
+        <strong>Symptom:</strong> PersistentVolumeClaim stays in <code>Pending</code> status.
+        Pods that reference it cannot start.
+      </p>
+      <p><strong>Cause:</strong></p>
+      <ul>
+        <li>No StorageClass is defined in the cluster</li>
+        <li>No dynamic provisioner is running to create PersistentVolumes</li>
+        <li>No matching PersistentVolume exists for static provisioning</li>
+      </ul>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check StorageClasses</span>
+kubectl get storageclasses
+
+<span class="comment"># Check available PersistentVolumes</span>
+kubectl get pv
+
+<span class="comment"># Describe the PVC for events</span>
+kubectl describe pvc &lt;pvc-name&gt;
+
+<span class="comment"># Check if there is a default StorageClass</span>
+kubectl get sc <span class="flag">-o</span> jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}'</code>
+      </pre>
+
+      <h2>"Port already in use" on startup</h2>
+      <p>
+        <strong>Symptom:</strong> <code>docker compose up</code> fails with
+        <code>bind: address already in use</code> on port 6443 or 2379.
+      </p>
+      <p>
+        <strong>Cause:</strong> Another process (minikube, kind, a real Kubernetes cluster, or
+        a previous Rusternetes instance) is already listening on the same port.
+      </p>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Find what is using port 6443</span>
+lsof <span class="flag">-i</span> :6443
+
+<span class="comment"># Find what is using port 2379 (etcd)</span>
+lsof <span class="flag">-i</span> :2379
+
+<span class="comment"># Stop a previous Rusternetes cluster</span>
+docker compose down
+
+<span class="comment"># Or change the port mapping in docker-compose.yml</span>
+<span class="comment"># ports: "7443:6443"</span></code>
+      </pre>
+
+      <h2>"Cannot connect to API server"</h2>
+      <p>
+        <strong>Symptom:</strong> <code>kubectl</code> commands return
+        <code>Unable to connect to the server</code>.
+      </p>
+      <p><strong>Cause:</strong> The API server is not running, TLS certificates are missing or
+        invalid, or the kubeconfig is not set.</p>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check all services are running</span>
+docker compose ps
+
+<span class="comment"># Check API server logs</span>
+docker compose logs api-server
+
+<span class="comment"># Verify TLS certs exist</span>
+ls -la .rusternetes/certs/
+
+<span class="comment"># Verify KUBECONFIG is set</span>
+echo $KUBECONFIG
+<span class="comment"># Should be: ~/.kube/rusternetes-config</span>
+
+<span class="comment"># Full restart</span>
+docker compose down
+docker compose up <span class="flag">-d</span>
+bash scripts/bootstrap-cluster.sh</code>
+      </pre>
+
+      <h2>Build is slow</h2>
+      <p>
+        <strong>Symptom:</strong> <code>docker compose build</code> takes 10&ndash;15 minutes.
+        Test binary compilation takes 5&ndash;10 minutes.
+      </p>
+      <p>
+        <strong>Cause:</strong> This is expected for the first build. Rust compilation of the full
+        workspace (216,000+ lines) is CPU-intensive. Subsequent builds use Docker layer caching and
+        only recompile changed crates.
+      </p>
+      <p><strong>Fix:</strong></p>
+      <ul>
+        <li>Allocate more CPUs and memory to Docker Desktop (Settings &rarr; Resources)</li>
+        <li>Rebuild only the changed service: <code>docker compose build api-server</code></li>
+        <li>Build natively instead of in Docker for faster iteration: <code>cargo build</code></li>
+        <li>Use <code>cargo test -p rusternetes-kubelet</code> to test a single crate instead of the entire workspace</li>
+      </ul>
+
+      <h2>Podman: permission denied</h2>
+      <p>
+        <strong>Symptom:</strong> kube-proxy fails to start with permission errors related to
+        iptables. Volume mounts fail with <code>EACCES</code>.
+      </p>
+      <p>
+        <strong>Cause:</strong> kube-proxy requires <code>CAP_NET_ADMIN</code> capability for
+        iptables manipulation. Rootless Podman does not grant this by default.
+      </p>
+      <p><strong>Fix:</strong></p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run with rootful Podman</span>
+sudo podman-compose up <span class="flag">-d</span>
+
+<span class="comment"># Or set Podman Machine to rootful mode</span>
+podman machine set <span class="flag">--rootful</span>
+podman machine stop
+podman machine start</code>
+      </pre>
+
+      <h2>Podman Machine fails on macOS</h2>
+      <p>
+        <strong>Symptom:</strong> Podman Machine fails to start with
+        <code>VZErrorDomain Code=1</code> or similar virtualization errors on macOS Sequoia 15.7+.
+      </p>
+      <p>
+        <strong>Cause:</strong> Compatibility issues between Podman Machine's virtualization
+        framework and newer macOS versions.
+      </p>
+      <p><strong>Fix:</strong></p>
+      <ul>
+        <li>Use <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> instead of Podman on macOS</li>
+        <li>If you must use Podman, try updating to the latest Podman version</li>
+      </ul>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Docker Desktop is recommended on macOS</div>
+        <p>
+          Docker Desktop provides the most reliable experience on macOS, especially for features
+          like host network mode (used by kube-proxy) and volume mounts. Podman works on Linux
+          with rootful mode.
+        </p>
+      </div>
+
+      <h2>Debugging Commands</h2>
+      <p>
+        A reference of useful commands for diagnosing issues:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Describe a resource for events and status</span>
+kubectl describe pod &lt;name&gt;
+kubectl describe node &lt;name&gt;
+kubectl describe svc &lt;name&gt;
+
+<span class="comment"># View pod logs (current and previous container)</span>
+kubectl logs &lt;pod-name&gt;
+kubectl logs &lt;pod-name&gt; <span class="flag">--previous</span>
+kubectl logs &lt;pod-name&gt; <span class="flag">-c</span> &lt;container-name&gt;
+
+<span class="comment"># View cluster events sorted by time</span>
+kubectl get events <span class="flag">--sort-by</span>='.lastTimestamp'
+kubectl get events <span class="flag">-A</span> <span class="flag">--sort-by</span>='.lastTimestamp'
+
+<span class="comment"># View Docker Compose service logs</span>
+docker compose logs <span class="flag">-f</span> api-server
+docker compose logs <span class="flag">-f</span> scheduler
+docker compose logs <span class="flag">-f</span> controller-manager
+docker compose logs <span class="flag">-f</span> kubelet
+docker compose logs <span class="flag">-f</span> kube-proxy
+
+<span class="comment"># Enable debug logging for a service</span>
+RUST_LOG=<span class="value">debug</span> docker compose up api-server
+
+<span class="comment"># Check service health</span>
+docker compose ps
+curl <span class="flag">-k</span> https://localhost:6443/healthz
+
+<span class="comment"># Check iptables rules (kube-proxy)</span>
+docker compose exec kube-proxy iptables <span class="flag">-t</span> nat <span class="flag">-L</span> KUBE-SERVICES
+
+<span class="comment"># Check etcd health</span>
+docker compose exec etcd etcdctl endpoint health</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="monitoring.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Monitoring
+        </a>
+        <a href="cloud-providers.html" class="next">
+          <span class="pager-label">Next</span>
+          Cloud Providers &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

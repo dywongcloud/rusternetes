@@ -234,19 +234,19 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full guide and [CONTRIBUTING.m
 
 ## Documentation
 
+**[Full Documentation Site](docs/guide/index.html)** — 28 pages covering every feature, configuration option, and use case.
+
 | Topic | Link |
 |-------|------|
-| Quick Start | [QUICKSTART.md](docs/QUICKSTART.md) |
-| Architecture | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Quick Start | [Quick Start](docs/guide/quickstart.html) |
+| Deployment Modes | [Deployment Overview](docs/guide/deployment.html) |
+| All-in-One Binary | [All-in-One](docs/guide/all-in-one.html) |
+| Configuration | [API Server](docs/guide/api-server-config.html) / [Kubelet](docs/guide/kubelet-config.html) / [Storage](docs/guide/storage-config.html) |
+| Features | [Workloads](docs/guide/workloads.html) / [Networking](docs/guide/networking.html) / [Security](docs/guide/security.html) / [CRDs](docs/guide/crds.html) |
+| kubectl | [kubectl Reference](docs/guide/kubectl.html) |
+| API Reference | [API Reference](docs/guide/api-reference.html) |
+| Conformance | [Conformance Status](docs/guide/conformance.html) |
 | Development | [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
-| Conformance | [CONFORMANCE.md](docs/CONFORMANCE.md) |
-| High Availability | [HIGH_AVAILABILITY.md](docs/HIGH_AVAILABILITY.md) |
-| Security | [SECURITY.md](docs/SECURITY.md) |
-| CRDs | [CRD_IMPLEMENTATION.md](docs/CRD_IMPLEMENTATION.md) |
-| Networking | [CNI_INTEGRATION.md](docs/CNI_INTEGRATION.md) |
-| Storage Backends | [STORAGE_BACKENDS.md](docs/storage/STORAGE_BACKENDS.md) |
-| Volume Provisioning | [DYNAMIC_PROVISIONING.md](docs/DYNAMIC_PROVISIONING.md) |
-| All docs | [DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) |
 
 ## License
 

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kubelet Configuration - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html" class="active">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <p class="breadcrumb">Configuration &rsaquo; Kubelet</p>
+      <h1>Kubelet Configuration</h1>
+      <p class="lead">
+        The kubelet is the node agent that manages container lifecycle via the Docker API (bollard).
+        It supports CLI flags, a YAML configuration file, and environment variables with a clear
+        precedence order.
+      </p>
+
+      <h2>CLI Flags</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--node-name</code></td>
+            <td>String</td>
+            <td><em>required</em></td>
+            <td>Name of this node (must be unique in the cluster)</td>
+          </tr>
+          <tr>
+            <td><code>--etcd-servers</code></td>
+            <td>String</td>
+            <td><code>http://localhost:2379</code></td>
+            <td>Comma-separated list of etcd endpoints</td>
+          </tr>
+          <tr>
+            <td><code>--config</code></td>
+            <td>String</td>
+            <td>&mdash;</td>
+            <td>Path to KubeletConfiguration YAML file</td>
+          </tr>
+          <tr>
+            <td><code>--root-dir</code></td>
+            <td>String</td>
+            <td><em>cwd or /var/lib/kubelet</em></td>
+            <td>Root directory for managing kubelet files</td>
+          </tr>
+          <tr>
+            <td><code>--volume-dir</code></td>
+            <td>String</td>
+            <td><code>{root-dir}/volumes</code></td>
+            <td>Directory path for managing volume data</td>
+          </tr>
+          <tr>
+            <td><code>--volume-plugin-dir</code></td>
+            <td>String</td>
+            <td><code>/usr/libexec/kubernetes/kubelet-plugins/volume/exec</code></td>
+            <td>Directory where volume plugins are installed</td>
+          </tr>
+          <tr>
+            <td><code>--log-level</code></td>
+            <td>String</td>
+            <td><code>info</code></td>
+            <td>Log level: <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td>
+          </tr>
+          <tr>
+            <td><code>--sync-interval</code></td>
+            <td>u64</td>
+            <td><code>10</code></td>
+            <td>Pod sync interval in seconds</td>
+          </tr>
+          <tr>
+            <td><code>--metrics-port</code></td>
+            <td>u16</td>
+            <td><code>8082</code></td>
+            <td>Metrics and configz server port</td>
+          </tr>
+          <tr>
+            <td><code>--cluster-dns</code></td>
+            <td>String</td>
+            <td><em>auto-discovered</em></td>
+            <td>Cluster DNS service IP. Auto-discovered from kube-dns Service if not set.</td>
+          </tr>
+          <tr>
+            <td><code>--cluster-domain</code></td>
+            <td>String</td>
+            <td><code>cluster.local</code></td>
+            <td>Cluster domain suffix for DNS</td>
+          </tr>
+          <tr>
+            <td><code>--network</code></td>
+            <td>String</td>
+            <td><code>rusternetes-network</code></td>
+            <td>Docker network to connect pods to</td>
+          </tr>
+          <tr>
+            <td><code>--storage-backend</code></td>
+            <td>String</td>
+            <td><code>etcd</code></td>
+            <td>Storage backend: <code>etcd</code> or <code>sqlite</code></td>
+          </tr>
+          <tr>
+            <td><code>--data-dir</code></td>
+            <td>String</td>
+            <td><code>./data/rusternetes.db</code></td>
+            <td>SQLite database path (only with <code>--storage-backend=sqlite</code>)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>KubeletConfiguration File</h2>
+      <p>
+        The kubelet can load configuration from a YAML file specified with <code>--config</code>.
+        The file format follows the Kubernetes <code>kubelet.config.k8s.io/v1beta1</code> API:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">kubelet-config.yaml</span>
+        </div>
+        <code>apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+rootDir: <span class="value">/var/lib/kubelet</span>
+volumeDir: <span class="value">/var/lib/kubelet/volumes</span>
+volumePluginDir: <span class="value">/usr/libexec/kubernetes/kubelet-plugins/volume/exec</span>
+syncFrequency: <span class="value">10</span>
+metricsBindPort: <span class="value">8082</span>
+logLevel: <span class="value">info</span>
+clusterServiceCidr: <span class="value">10.96.0.0/12</span></code>
+      </pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>apiVersion</code></td>
+            <td>String</td>
+            <td>Must be <code>kubelet.config.k8s.io/v1beta1</code></td>
+          </tr>
+          <tr>
+            <td><code>kind</code></td>
+            <td>String</td>
+            <td>Must be <code>KubeletConfiguration</code></td>
+          </tr>
+          <tr>
+            <td><code>rootDir</code></td>
+            <td>String</td>
+            <td>Root directory for kubelet files</td>
+          </tr>
+          <tr>
+            <td><code>volumeDir</code></td>
+            <td>String</td>
+            <td>Directory for volume data</td>
+          </tr>
+          <tr>
+            <td><code>volumePluginDir</code></td>
+            <td>String</td>
+            <td>Directory for volume plugins (FlexVolume)</td>
+          </tr>
+          <tr>
+            <td><code>syncFrequency</code></td>
+            <td>u64</td>
+            <td>Pod sync interval in seconds (must be &gt; 0)</td>
+          </tr>
+          <tr>
+            <td><code>metricsBindPort</code></td>
+            <td>u16</td>
+            <td>Port for the metrics server</td>
+          </tr>
+          <tr>
+            <td><code>logLevel</code></td>
+            <td>String</td>
+            <td>Log verbosity level</td>
+          </tr>
+          <tr>
+            <td><code>clusterServiceCidr</code></td>
+            <td>String</td>
+            <td>Service CIDR range. First IP becomes the kubernetes service host.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Environment Variables</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Maps To</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>KUBELET_ROOT_DIR</code></td>
+            <td><code>rootDir</code></td>
+            <td>Root directory for kubelet files</td>
+          </tr>
+          <tr>
+            <td><code>KUBELET_VOLUMES_PATH</code></td>
+            <td><code>volumeDir</code></td>
+            <td>Volume data directory</td>
+          </tr>
+          <tr>
+            <td><code>KUBELET_VOLUME_PLUGIN_DIR</code></td>
+            <td><code>volumePluginDir</code></td>
+            <td>Volume plugin directory</td>
+          </tr>
+          <tr>
+            <td><code>CLUSTER_SERVICE_CIDR</code></td>
+            <td><code>clusterServiceCidr</code></td>
+            <td>Service CIDR for deriving kubernetes service IP</td>
+          </tr>
+          <tr>
+            <td><code>KUBERNETES_SERVICE_HOST_OVERRIDE</code></td>
+            <td>&mdash;</td>
+            <td>Override the kubernetes service host IP. Used in Docker Desktop where the ClusterIP is not routable from bridge containers.</td>
+          </tr>
+          <tr>
+            <td><code>RUST_LOG</code></td>
+            <td><code>logLevel</code></td>
+            <td>Log level (standard Rust tracing env var)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Configuration Precedence</h2>
+      <p>
+        When the same setting is specified in multiple places, the kubelet resolves it
+        with this precedence (highest wins):
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">precedence</span>
+        </div>
+        <code>CLI flags           <span class="comment"># highest priority</span>
+Config file         <span class="comment"># --config kubelet-config.yaml</span>
+Environment vars    <span class="comment"># KUBELET_ROOT_DIR, etc.</span>
+Built-in defaults   <span class="comment"># lowest priority</span></code>
+      </pre>
+
+      <h2>RuntimeConfig Defaults</h2>
+      <p>
+        After merging all configuration sources, these defaults apply for any unset values:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Default Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Sync frequency</td>
+            <td>10 seconds</td>
+          </tr>
+          <tr>
+            <td>Metrics port</td>
+            <td>8082</td>
+          </tr>
+          <tr>
+            <td>Cluster DNS</td>
+            <td><code>10.96.0.10</code> (auto-discovered from kube-dns)</td>
+          </tr>
+          <tr>
+            <td>Cluster service CIDR</td>
+            <td><code>10.96.0.0/12</code></td>
+          </tr>
+          <tr>
+            <td>Volume plugin dir</td>
+            <td><code>/usr/libexec/kubernetes/kubelet-plugins/volume/exec</code></td>
+          </tr>
+          <tr>
+            <td>Log level</td>
+            <td><code>info</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Service CIDR to Kubernetes Service IP</h2>
+      <p>
+        The kubelet derives the <code>kubernetes</code> service ClusterIP by taking the first
+        usable IP address from the service CIDR range. This IP is injected into pods as
+        the <code>KUBERNETES_SERVICE_HOST</code> environment variable.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">CIDR derivation</span>
+        </div>
+        <code><span class="comment"># Service CIDR       -> Kubernetes Service IP</span>
+10.96.0.0/12        -> <span class="value">10.96.0.1</span>
+10.0.0.0/16         -> <span class="value">10.0.0.1</span>
+192.168.0.0/24      -> <span class="value">192.168.0.1</span></code>
+      </pre>
+
+      <div class="admonition tip">
+        <div class="admonition-title">DOCKER DESKTOP OVERRIDE</div>
+        <p>
+          In Docker Desktop environments, the ClusterIP (<code>10.96.0.1</code>) is not routable
+          from bridge containers because kube-proxy's iptables DNAT only applies in the host
+          network namespace. Set <code>KUBERNETES_SERVICE_HOST_OVERRIDE</code> to the API server's
+          direct container IP instead. The TLS certificate includes Docker bridge IPs as SANs.
+        </p>
+      </div>
+
+      <h2>Kubelet API Endpoints</h2>
+      <p>
+        The kubelet exposes a local API server on the metrics port:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Method</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/metrics</code></td>
+            <td>GET</td>
+            <td>Prometheus metrics</td>
+          </tr>
+          <tr>
+            <td><code>/configz</code></td>
+            <td>GET</td>
+            <td>Current kubelet configuration (JSON)</td>
+          </tr>
+          <tr>
+            <td><code>/exec/:container_id</code></td>
+            <td>POST</td>
+            <td>Execute a command in a container</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="api-server-config.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; API Server Config
+        </a>
+        <a href="scheduler-config.html" class="next">
+          <span class="pager-label">Next</span>
+          Scheduler Config &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

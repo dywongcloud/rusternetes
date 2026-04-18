@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conformance Status - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html" class="active">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Conformance Status</h1>
+      <p class="lead">
+        Rusternetes is tested against the official Kubernetes v1.35 conformance suite via Sonobuoy.
+        Current pass rate: 398 of 441 tests (90.2%), with fixes coded for all 43 remaining failures.
+      </p>
+
+      <h2>Current Status</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conformance suite version</td>
+            <td>Kubernetes v1.35</td>
+          </tr>
+          <tr>
+            <td>Latest round</td>
+            <td>Round 149</td>
+          </tr>
+          <tr>
+            <td>Tests passing</td>
+            <td>398 / 441</td>
+          </tr>
+          <tr>
+            <td>Pass rate</td>
+            <td>90.2%</td>
+          </tr>
+          <tr>
+            <td>Tests failing</td>
+            <td>43</td>
+          </tr>
+          <tr>
+            <td>Fixes coded</td>
+            <td>43 (all remaining failures)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Progress Over Time</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Round</th>
+            <th>Passing</th>
+            <th>Total</th>
+            <th>Pass Rate</th>
+            <th>Milestone</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>97</td>
+            <td>~40</td>
+            <td>441</td>
+            <td>~9%</td>
+            <td>Baseline &mdash; initial conformance run</td>
+          </tr>
+          <tr>
+            <td>101</td>
+            <td>245</td>
+            <td>441</td>
+            <td>56%</td>
+            <td>76 fixes deployed &mdash; core CRUD, watches, basic workloads</td>
+          </tr>
+          <tr>
+            <td>141</td>
+            <td>368</td>
+            <td>441</td>
+            <td>83%</td>
+            <td>Watch + storage fixes &mdash; resourceVersion, etcd revisions</td>
+          </tr>
+          <tr>
+            <td>146</td>
+            <td>379</td>
+            <td>441</td>
+            <td>86%</td>
+            <td>CRD + scheduler fixes &mdash; schema validation, extended resources</td>
+          </tr>
+          <tr>
+            <td>149</td>
+            <td>398</td>
+            <td>441</td>
+            <td>90%</td>
+            <td>Latest &mdash; admission, RBAC, namespace lifecycle</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>What's Passing</h2>
+      <p>
+        The following areas have full or near-full conformance coverage:
+      </p>
+      <ul>
+        <li><strong>Workloads</strong> &mdash; Deployments, ReplicaSets, StatefulSets, DaemonSets, Jobs, CronJobs</li>
+        <li><strong>Services</strong> &mdash; ClusterIP, NodePort, headless services, EndpointSlices</li>
+        <li><strong>RBAC</strong> &mdash; Roles, ClusterRoles, Bindings, ServiceAccount token creation</li>
+        <li><strong>Custom Resources</strong> &mdash; CRD lifecycle, schema validation, status/scale subresources</li>
+        <li><strong>Storage</strong> &mdash; PersistentVolumes, PersistentVolumeClaims, StorageClasses, volume mounts</li>
+        <li><strong>Scheduling</strong> &mdash; Node affinity, pod affinity/anti-affinity, taints/tolerations, priority/preemption</li>
+        <li><strong>Admission</strong> &mdash; Validating webhooks, mutating webhooks, ValidatingAdmissionPolicy (CEL)</li>
+        <li><strong>ConfigMaps &amp; Secrets</strong> &mdash; CRUD, volume projection, environment variable injection</li>
+        <li><strong>Namespaces</strong> &mdash; Lifecycle, finalizers, cascading deletion</li>
+        <li><strong>Events &amp; Logging</strong> &mdash; Pod log streaming, event recording</li>
+      </ul>
+
+      <h2>Remaining Failures</h2>
+      <p>
+        The 43 remaining failures fall into these categories:
+      </p>
+      <ul>
+        <li><strong>CRD OpenAPI schema edge cases</strong> &mdash; Complex nested schema validation, x-kubernetes-* extensions</li>
+        <li><strong>Webhook edge cases</strong> &mdash; Timeout handling, failure policy interactions</li>
+        <li><strong>Networking proxy</strong> &mdash; Pod proxy subresource, port-forwarding edge cases</li>
+        <li><strong>Container restart timing</strong> &mdash; Docker container start/stop race conditions, restart backoff</li>
+      </ul>
+
+      <div class="admonition note">
+        <div class="admonition-title">All failures have fixes coded</div>
+        <p>
+          Fixes for all 43 remaining failures have been implemented and are awaiting deployment
+          in the next conformance round. See the full failure tracker for details.
+        </p>
+      </div>
+
+      <h2>Running Conformance Tests</h2>
+
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>A running Rusternetes cluster (Docker Compose or all-in-one)</li>
+        <li>The cluster must be bootstrapped: <code>bash scripts/bootstrap-cluster.sh</code></li>
+        <li><code>KUBECONFIG</code> set to <code>~/.kube/rusternetes-config</code></li>
+      </ul>
+
+      <h3>Start the conformance suite</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run the full conformance lifecycle</span>
+bash scripts/run-conformance.sh</code>
+      </pre>
+
+      <p>
+        This script uses Sonobuoy to run the official Kubernetes e2e conformance test suite
+        against your cluster. The tests take approximately 2&ndash;4 hours to complete depending
+        on hardware.
+      </p>
+
+      <h3>Monitor progress</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Watch pass/fail counts in real time</span>
+bash scripts/conformance-progress.sh
+
+<span class="comment"># View raw e2e output (inside the e2e container)</span>
+<span class="comment"># Log location: /tmp/sonobuoy/results/e2e.log</span>
+docker compose exec e2e tail <span class="flag">-f</span> /tmp/sonobuoy/results/e2e.log</code>
+      </pre>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Use conformance-progress.sh for accurate counts</div>
+        <p>
+          The <code>conformance-progress.sh</code> script parses the e2e output and provides
+          accurate real-time pass/fail counts. Do not rely on Sonobuoy's built-in status
+          reporting, which can lag behind the actual test execution.
+        </p>
+      </div>
+
+      <h3>E2e log location</h3>
+      <p>
+        The detailed test output is written to <code>/tmp/sonobuoy/results/e2e.log</code> inside
+        the e2e container. This log contains the full Ginkgo test output, including individual
+        test names, pass/fail status, and failure details with stack traces.
+      </p>
+
+      <h2>Key Fixes by Round</h2>
+      <p>
+        Major conformance improvements and the fixes that unlocked them:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Fix</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>LIST resourceVersion: timestamps to etcd mod_revisions</td>
+            <td>Fixed 1123 watch failures &mdash; watches now track correct revisions</td>
+          </tr>
+          <tr>
+            <td>HTTP/2 ALPN: add <code>h2</code> to TLS alpn_protocols</td>
+            <td>Fixed all "context canceled" watch errors from Go client-go</td>
+          </tr>
+          <tr>
+            <td>CRI sandbox semantics: block until pause container running</td>
+            <td>Eliminated pod startup race conditions</td>
+          </tr>
+          <tr>
+            <td>GC re-verification: snapshot-based orphan detection was racy</td>
+            <td>Fixed garbage collection false positives</td>
+          </tr>
+          <tr>
+            <td>Scheduler extended resources: check fakecpu/etc. in resource fit</td>
+            <td>Fixed scheduling failures for custom resources</td>
+          </tr>
+          <tr>
+            <td>CRD raw JSON storage: preserve enum/extensions on update</td>
+            <td>Fixed CRD round-trip data loss</td>
+          </tr>
+          <tr>
+            <td>kube-proxy hash: order-independent XOR for state comparison</td>
+            <td>Eliminated connection-refused windows during iptables sync</td>
+          </tr>
+          <tr>
+            <td>DaemonSet SafeEncodeString: use K8s alphabet mapping</td>
+            <td>Fixed DaemonSet controller revision naming</td>
+          </tr>
+          <tr>
+            <td>Namespace deletion ordering: delete pods before configmaps</td>
+            <td>Fixed namespace finalizer deadlocks</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Full Failure Tracker</h2>
+      <p>
+        A detailed breakdown of every failing test, its root cause, and fix status is maintained in the
+        project repository:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">path</span>
+        </div>
+        <code>docs/CONFORMANCE_FAILURES.md</code>
+      </pre>
+
+      <p>
+        This file is updated after each conformance round and tracks:
+      </p>
+      <ul>
+        <li>Every failing test name</li>
+        <li>Root cause analysis</li>
+        <li>Fix status (coded, deployed, verified)</li>
+        <li>Related code changes</li>
+      </ul>
+
+      <div class="doc-pager">
+        <a href="api-reference.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; API Reference
+        </a>
+        <div></div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

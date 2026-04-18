@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom Resource Definitions - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html" class="active">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Custom Resource Definitions</h1>
+      <p class="lead">
+        CRDs extend the Kubernetes API with your own resource types. Rusternetes supports the full
+        CRD lifecycle: creation, schema validation, CRUD operations, watch streams, status and
+        scale subresources, schema defaulting, structural pruning, and strict field validation.
+      </p>
+
+      <!-- ───────────────────── Creating a CRD ───────────────────── -->
+      <h2 id="creating">Creating a CRD</h2>
+
+      <h3>CRD Structure</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>group</code></td><td>API group (e.g., <code>stable.example.com</code>). Used in API paths: <code>/apis/{group}/{version}/{plural}</code>.</td></tr>
+          <tr><td><code>names.kind</code></td><td>PascalCase kind (e.g., <code>CronTab</code>).</td></tr>
+          <tr><td><code>names.plural</code></td><td>Lowercase plural (e.g., <code>crontabs</code>). Used in API paths.</td></tr>
+          <tr><td><code>names.singular</code></td><td>Lowercase singular (e.g., <code>crontab</code>). Used by kubectl.</td></tr>
+          <tr><td><code>names.shortNames</code></td><td>Short aliases (e.g., <code>["ct"]</code>). Used by kubectl.</td></tr>
+          <tr><td><code>names.categories</code></td><td>Groups like <code>["all"]</code> so <code>kubectl get all</code> includes this resource.</td></tr>
+          <tr><td><code>scope</code></td><td><code>Namespaced</code> or <code>Cluster</code>.</td></tr>
+          <tr><td><code>versions</code></td><td>Array of version definitions. Each has <code>name</code>, <code>served</code>, <code>storage</code>, and <code>schema</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Full CRD Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">crontab-crd.yaml</span>
+        </div>
+        <code>apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: crontabs.stable.example.com
+spec:
+  group: stable.example.com
+  names:
+    kind: CronTab
+    plural: crontabs
+    singular: crontab
+    shortNames:
+      - ct
+    categories:
+      - all
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["cronSpec", "image"]
+              properties:
+                cronSpec:
+                  type: string
+                  pattern: "^(\\d+|\\*) (\\d+|\\*) (\\d+|\\*) (\\d+|\\*) (\\d+|\\*)$"
+                image:
+                  type: string
+                replicas:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  default: 1
+            status:
+              type: object
+              properties:
+                replicas:
+                  type: integer
+                labelSelector:
+                  type: string
+      subresources:
+        status: {}
+        scale:
+          specReplicasPath: .spec.replicas
+          statusReplicasPath: .status.replicas
+          labelSelectorPath: .status.labelSelector
+      additionalPrinterColumns:
+        - name: Schedule
+          type: string
+          jsonPath: .spec.cronSpec
+        - name: Image
+          type: string
+          jsonPath: .spec.image
+        - name: Replicas
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp</code>
+      </pre>
+
+      <!-- ───────────────────── OpenAPI Schema ───────────────────── -->
+      <h2 id="schema">OpenAPI v3 Schema</h2>
+      <p>
+        The <code>openAPIV3Schema</code> validates custom resource instances. Schema validation
+        runs against <code>schema.properties["spec"]</code>, not the top-level schema directly.
+      </p>
+
+      <h3>Supported Validation Keywords</h3>
+      <table>
+        <thead>
+          <tr><th>Keyword</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>type</code></td><td>JSON type: <code>object</code>, <code>array</code>, <code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code>.</td></tr>
+          <tr><td><code>format</code></td><td>String format: <code>date-time</code>, <code>date</code>, <code>int32</code>, <code>int64</code>, <code>float</code>, <code>double</code>, <code>byte</code>.</td></tr>
+          <tr><td><code>pattern</code></td><td>Regex pattern for strings.</td></tr>
+          <tr><td><code>required</code></td><td>Array of required property names.</td></tr>
+          <tr><td><code>properties</code></td><td>Map of property name to sub-schema.</td></tr>
+          <tr><td><code>additionalProperties</code></td><td>Schema or boolean for properties not in <code>properties</code>.</td></tr>
+          <tr><td><code>minimum</code> / <code>maximum</code></td><td>Numeric bounds (inclusive).</td></tr>
+          <tr><td><code>exclusiveMinimum</code> / <code>exclusiveMaximum</code></td><td>Numeric bounds (exclusive).</td></tr>
+          <tr><td><code>minLength</code> / <code>maxLength</code></td><td>String length bounds.</td></tr>
+          <tr><td><code>enum</code></td><td>Array of allowed values.</td></tr>
+          <tr><td><code>oneOf</code> / <code>anyOf</code> / <code>allOf</code> / <code>not</code></td><td>Schema composition.</td></tr>
+          <tr><td><code>items</code></td><td>Schema for array elements.</td></tr>
+          <tr><td><code>minItems</code> / <code>maxItems</code></td><td>Array length bounds.</td></tr>
+          <tr><td><code>default</code></td><td>Default value applied on read.</td></tr>
+          <tr><td><code>nullable</code></td><td>Allow null values.</td></tr>
+          <tr><td><code>description</code></td><td>Human-readable description.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">Schema validation scope</div>
+        <p>
+          Validation is applied to <code>spec</code> and <code>status</code> sub-schemas
+          within <code>openAPIV3Schema</code>. The top-level schema wraps
+          <code>spec</code>, <code>status</code>, and <code>metadata</code> &mdash; validate
+          against the appropriate sub-property, not the root.
+        </p>
+      </div>
+
+      <!-- ───────────────────── CRUD ───────────────────── -->
+      <h2 id="crud">CRUD Operations</h2>
+
+      <h3>Custom Resource Instance</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">my-crontab.yaml</span>
+        </div>
+        <code>apiVersion: stable.example.com/v1
+kind: CronTab
+metadata:
+  name: my-cron
+  namespace: default
+spec:
+  cronSpec: "*/5 * * * *"
+  image: my-cron-image:v1
+  replicas: 3</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create the CRD</span>
+kubectl apply <span class="flag">-f</span> <span class="value">crontab-crd.yaml</span>
+
+<span class="comment"># Create a custom resource</span>
+kubectl apply <span class="flag">-f</span> <span class="value">my-crontab.yaml</span>
+
+<span class="comment"># Get custom resources (using plural, singular, or short name)</span>
+kubectl get crontabs
+kubectl get crontab <span class="value">my-cron</span>
+kubectl get ct
+
+<span class="comment"># Get with custom columns from additionalPrinterColumns</span>
+kubectl get ct <span class="flag">-o</span> <span class="value">wide</span>
+
+<span class="comment"># Describe</span>
+kubectl describe ct <span class="value">my-cron</span>
+
+<span class="comment"># Update</span>
+kubectl apply <span class="flag">-f</span> <span class="value">my-crontab.yaml</span>
+
+<span class="comment"># Patch (all three types supported)</span>
+kubectl patch ct <span class="value">my-cron</span> <span class="flag">--type=</span><span class="value">merge</span> <span class="flag">-p</span> <span class="value">'{"spec":{"replicas":5}}'</span>
+kubectl patch ct <span class="value">my-cron</span> <span class="flag">--type=</span><span class="value">json</span> <span class="flag">-p</span> <span class="value">'[{"op":"replace","path":"/spec/replicas","value":5}]'</span>
+kubectl apply <span class="flag">--server-side</span> <span class="flag">-f</span> <span class="value">my-crontab.yaml</span>  <span class="comment"># Server-side apply</span>
+
+<span class="comment"># Delete</span>
+kubectl delete ct <span class="value">my-cron</span></code>
+      </pre>
+
+      <!-- ───────────────────── Watch ───────────────────── -->
+      <h2 id="watch">Watch</h2>
+      <p>
+        Custom resources support real-time watch streams, identical to built-in resources.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Watch for changes</span>
+kubectl get ct <span class="flag">-w</span>
+
+<span class="comment"># Watch with raw API (for debugging)</span>
+curl <span class="flag">-k</span> "https://localhost:6443/apis/stable.example.com/v1/crontabs?watch=true&amp;timeoutSeconds=60"</code>
+      </pre>
+
+      <h3>Watch Event Types</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ADDED</code></td><td>Resource created or first seen in initial list.</td></tr>
+          <tr><td><code>MODIFIED</code></td><td>Resource updated.</td></tr>
+          <tr><td><code>DELETED</code></td><td>Resource deleted.</td></tr>
+          <tr><td><code>BOOKMARK</code></td><td>Checkpoint with the latest resourceVersion. Used by clients to resume watches.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Watch Query Parameters</h3>
+      <table>
+        <thead>
+          <tr><th>Parameter</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>watch=true</code></td><td>Enable watch mode.</td></tr>
+          <tr><td><code>resourceVersion</code></td><td>Start watching from this version. <code>0</code> = start from current state.</td></tr>
+          <tr><td><code>timeoutSeconds</code></td><td>Server-side timeout for the watch connection.</td></tr>
+          <tr><td><code>sendInitialEvents=true</code></td><td>Send ADDED events for all existing resources before streaming changes.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ───────────────────── Status Subresource ───────────────────── -->
+      <h2 id="status">Status Subresource</h2>
+      <p>
+        When <code>subresources.status: {}</code> is set in the CRD version, a separate
+        <code>/status</code> endpoint is created. Updates to the main resource ignore
+        changes to <code>.status</code>, and updates to <code>/status</code> ignore changes
+        to <code>.spec</code>.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Get status</span>
+kubectl get ct <span class="value">my-cron</span> <span class="flag">-o</span> <span class="value">jsonpath='{.status}'</span>
+
+<span class="comment"># Update status (typically done by a controller)</span>
+curl <span class="flag">-k</span> <span class="flag">-X PUT</span> \
+  "https://localhost:6443/apis/stable.example.com/v1/namespaces/default/crontabs/my-cron/status" \
+  <span class="flag">-H</span> "Content-Type: application/json" \
+  <span class="flag">-d</span> '{"apiVersion":"stable.example.com/v1","kind":"CronTab","metadata":{"name":"my-cron","namespace":"default"},"status":{"replicas":3}}'
+
+<span class="comment"># Patch status</span>
+kubectl patch ct <span class="value">my-cron</span> <span class="flag">--subresource=</span><span class="value">status</span> <span class="flag">--type=</span><span class="value">merge</span> <span class="flag">-p</span> <span class="value">'{"status":{"replicas":3}}'</span></code>
+      </pre>
+
+      <!-- ───────────────────── Scale Subresource ───────────────────── -->
+      <h2 id="scale">Scale Subresource</h2>
+      <p>
+        When <code>subresources.scale</code> is configured, the CRD gets a <code>/scale</code>
+        endpoint compatible with <code>kubectl scale</code> and HPA.
+      </p>
+
+      <h3>Scale Configuration</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>specReplicasPath</code></td><td>JSONPath to the replica count in spec (e.g., <code>.spec.replicas</code>).</td></tr>
+          <tr><td><code>statusReplicasPath</code></td><td>JSONPath to the replica count in status (e.g., <code>.status.replicas</code>).</td></tr>
+          <tr><td><code>labelSelectorPath</code></td><td>Optional. JSONPath to the label selector string in status.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">Scale selector format</div>
+        <p>
+          The scale subresource returns the label selector as a plain string
+          (<code>key=value,key2=value2</code>), not JSON. kubectl expects this format and
+          will crash on JSON-encoded selectors.
+        </p>
+      </div>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Scale a custom resource</span>
+kubectl scale ct <span class="value">my-cron</span> <span class="flag">--replicas=</span><span class="value">5</span>
+
+<span class="comment"># Get scale</span>
+kubectl get ct <span class="value">my-cron</span> <span class="flag">--subresource=</span><span class="value">scale</span></code>
+      </pre>
+
+      <!-- ───────────────────── Defaulting ───────────────────── -->
+      <h2 id="defaulting">Schema Defaulting</h2>
+      <p>
+        Fields with a <code>default</code> value in the schema have that value applied when
+        the resource is read if the field is not present. In the CronTab example above,
+        <code>spec.replicas</code> defaults to <code>1</code>.
+      </p>
+
+      <!-- ───────────────────── Pruning ───────────────────── -->
+      <h2 id="pruning">Structural Pruning</h2>
+      <p>
+        Unknown fields &mdash; fields not declared in the schema &mdash; are automatically removed
+        when the resource is created or updated. This ensures custom resources conform strictly
+        to the declared schema.
+      </p>
+
+      <p>
+        To preserve unknown fields (e.g., for free-form JSON), add the extension:
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">preserve-unknown.yaml</span>
+        </div>
+        <code>properties:
+  spec:
+    type: object
+    x-kubernetes-preserve-unknown-fields: true
+    properties:
+      knownField:
+        type: string
+      <span class="comment"># Additional fields are preserved, not pruned</span></code>
+      </pre>
+
+      <!-- ───────────────────── Strict Validation ───────────────────── -->
+      <h2 id="strict">Strict Field Validation</h2>
+      <p>
+        Clients can request strict validation to reject requests with unknown or duplicate fields:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Strict validation via query parameter</span>
+curl <span class="flag">-k</span> <span class="flag">-X POST</span> \
+  "https://localhost:6443/apis/stable.example.com/v1/namespaces/default/crontabs?fieldValidation=Strict" \
+  <span class="flag">-H</span> "Content-Type: application/json" \
+  <span class="flag">-d</span> @my-crontab.json
+
+<span class="comment"># kubectl uses Strict by default with --validate=strict</span>
+kubectl apply <span class="flag">-f</span> <span class="value">my-crontab.yaml</span> <span class="flag">--validate=</span><span class="value">strict</span></code>
+      </pre>
+
+      <table>
+        <thead>
+          <tr><th>fieldValidation</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Strict</code></td><td>Reject unknown fields. Return error.</td></tr>
+          <tr><td><code>Warn</code></td><td>Accept but return warnings for unknown fields.</td></tr>
+          <tr><td><code>Ignore</code></td><td>Silently drop unknown fields (default behavior).</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ───────────────────── Storage ───────────────────── -->
+      <h2 id="storage">Storage</h2>
+      <p>
+        Custom resources are stored in the backend (etcd or SQLite) at the key path:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">storage key format</span>
+        </div>
+        <code>/registry/{group_underscored}_{plural}/{namespace}/{name}
+
+<span class="comment"># Example:</span>
+/registry/stable_example_com_crontabs/default/my-cron</code>
+      </pre>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Raw JSON storage</div>
+        <p>
+          Custom resources are stored as raw JSON, not as typed Rust structs. This preserves
+          nested schemas, enum values, and extension fields that would be lost in a
+          serialize/deserialize round-trip through typed structures.
+        </p>
+      </div>
+
+      <!-- ───────────────────── JSONSchemaProps ───────────────────── -->
+      <h2 id="serialization">Schema Serialization</h2>
+      <p>
+        The CRD's <code>JSONSchemaProps</code> uses <code>skip_serializing_if</code> helpers
+        to omit empty strings and false booleans. This is required because the Kubernetes API
+        distinguishes between "field absent" and "field set to zero value" for schema properties.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Rust</th><th>JSON</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>nullable: Some(false)</code></td><td>Omitted (not <code>"nullable": false</code>)</td></tr>
+          <tr><td><code>nullable: Some(true)</code></td><td><code>"nullable": true</code></td></tr>
+          <tr><td><code>format: Some("")</code></td><td>Omitted (not <code>"format": ""</code>)</td></tr>
+          <tr><td><code>format: Some("date-time")</code></td><td><code>"format": "date-time"</code></td></tr>
+        </tbody>
+      </table>
+
+      <!-- ───────────────────── kubectl explain ───────────────────── -->
+      <h2 id="explain">kubectl explain</h2>
+      <p>
+        CRDs support <code>kubectl explain</code> for documentation. The API server adds the
+        <code>x-kubernetes-group-version-kind</code> extension to the schema so kubectl can
+        discover the resource type.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Explain custom resource fields</span>
+kubectl explain crontab
+kubectl explain crontab.spec
+kubectl explain crontab.spec.cronSpec
+kubectl explain crontab <span class="flag">--recursive</span></code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="security.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Security
+        </a>
+        <a href="scheduling.html" class="next">
+          <span class="pager-label">Next</span>
+          Scheduling &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

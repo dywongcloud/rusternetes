@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Storage Backends - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html" class="active">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <p class="breadcrumb">Configuration &rsaquo; Storage Backends</p>
+      <h1>Storage Backends</h1>
+      <p class="lead">
+        Rusternetes supports three storage backends: etcd for production clusters, SQLite
+        (via rhino) for lightweight deployments, and an in-memory backend for testing.
+        All backends implement the same <code>Storage</code> trait.
+      </p>
+
+      <h2>Backend Comparison</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>etcd</th>
+            <th>SQLite (rhino)</th>
+            <th>Memory</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Use case</td>
+            <td>Production clusters</td>
+            <td>Lightweight / all-in-one</td>
+            <td>Unit tests only</td>
+          </tr>
+          <tr>
+            <td>Persistence</td>
+            <td>Distributed, replicated</td>
+            <td>Single file on disk</td>
+            <td>None (lost on restart)</td>
+          </tr>
+          <tr>
+            <td>Watch support</td>
+            <td>gRPC watch streams</td>
+            <td>Broadcast channel (capacity 1000)</td>
+            <td>Broadcast channel</td>
+          </tr>
+          <tr>
+            <td>External dependency</td>
+            <td>etcd cluster required</td>
+            <td>None (embedded) or rhino gRPC server</td>
+            <td>None</td>
+          </tr>
+          <tr>
+            <td>HA support</td>
+            <td>Yes (etcd replication)</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Auto-compaction</td>
+            <td>Yes (etcd built-in)</td>
+            <td>Yes (every 300s)</td>
+            <td>N/A</td>
+          </tr>
+          <tr>
+            <td>Auto-UID generation</td>
+            <td>No</td>
+            <td>No</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td>Feature flag</td>
+            <td>Always available</td>
+            <td><code>sqlite</code></td>
+            <td>Always available</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>etcd Backend</h2>
+      <p>
+        The production-grade backend. Connects to an external etcd cluster via gRPC and
+        provides full watch support through etcd's native watch API.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Start with etcd (default)</span>
+rusternetes-api-server \
+  <span class="flag">--storage-backend</span> <span class="value">etcd</span> \
+  <span class="flag">--etcd-servers</span> <span class="value">http://etcd:2379</span></code>
+      </pre>
+
+      <h3>etcd Configuration</h3>
+      <p>
+        etcd itself is configured separately. Recommended settings for Rusternetes:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Recommended</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--auto-compaction-retention</code></td>
+            <td><code>1</code> (hour)</td>
+            <td>Automatically compact old revisions to save disk space</td>
+          </tr>
+          <tr>
+            <td><code>--quota-backend-bytes</code></td>
+            <td><code>8589934592</code> (8 GB)</td>
+            <td>Maximum database size</td>
+          </tr>
+          <tr>
+            <td><code>--snapshot-count</code></td>
+            <td><code>10000</code></td>
+            <td>Number of committed transactions to trigger a snapshot</td>
+          </tr>
+          <tr>
+            <td><code>--listen-client-urls</code></td>
+            <td><code>http://0.0.0.0:2379</code></td>
+            <td>Client-facing listen address</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.yml</span>
+        </div>
+        <code>etcd:
+  image: quay.io/coreos/etcd:v3.5.17
+  command:
+    - etcd
+    - <span class="flag">--name</span>=<span class="value">etcd0</span>
+    - <span class="flag">--data-dir</span>=<span class="value">/etcd-data</span>
+    - <span class="flag">--listen-client-urls</span>=<span class="value">http://0.0.0.0:2379</span>
+    - <span class="flag">--advertise-client-urls</span>=<span class="value">http://etcd:2379</span>
+    - <span class="flag">--auto-compaction-retention</span>=<span class="value">1</span>
+    - <span class="flag">--snapshot-count</span>=<span class="value">10000</span></code>
+      </pre>
+
+      <h2>SQLite Backend (rhino)</h2>
+      <p>
+        The lightweight backend uses <a href="https://github.com/calfonso/rhino">rhino</a>,
+        an embedded SQLite engine that implements the same key-value semantics as etcd.
+        It can run in two modes:
+      </p>
+
+      <h3>Embedded Mode (All-in-One)</h3>
+      <p>
+        The SQLite database runs in-process with no external dependencies. This is the
+        default for the all-in-one binary.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># All-in-one with embedded SQLite</span>
+rusternetes \
+  <span class="flag">--storage-backend</span> <span class="value">sqlite</span> \
+  <span class="flag">--data-dir</span> <span class="value">./data/rusternetes.db</span></code>
+      </pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>compact_interval</code></td>
+            <td>300s</td>
+            <td>How often to compact old revisions</td>
+          </tr>
+          <tr>
+            <td>Watch mechanism</td>
+            <td>Broadcast channel</td>
+            <td>In-process tokio broadcast for watch events</td>
+          </tr>
+          <tr>
+            <td>Feature flag</td>
+            <td><code>sqlite</code></td>
+            <td>Must be enabled at compile time</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>gRPC Mode (Docker Compose)</h3>
+      <p>
+        For multi-container deployments without etcd, rhino can run as a separate gRPC
+        service that multiple components connect to. Use <code>docker-compose.sqlite.yml</code>:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Start with SQLite gRPC backend</span>
+docker compose -f docker-compose.sqlite.yml up -d</code>
+      </pre>
+
+      <h2>Memory Backend</h2>
+      <p>
+        An in-memory <code>HashMap</code>-based storage backend used exclusively for unit tests.
+        It provides all <code>Storage</code> trait operations including watch support via
+        broadcast channels. Data is lost when the process exits.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">rust test</span>
+        </div>
+        <code><span class="comment">// Unit tests use MemoryStorage</span>
+#[tokio::test]
+async fn test_create_pod() {
+    let storage = Arc::new(MemoryStorage::new());
+    <span class="comment">// MemoryStorage auto-generates UIDs for resources</span>
+    let pod = storage.create("/registry/pods/default/test", &amp;pod).await?;
+}</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">TESTING ONLY</div>
+        <p>
+          The memory backend is not suitable for any production or development use.
+          It has no persistence, no compaction, and auto-generates UIDs which differs
+          from the production backends.
+        </p>
+      </div>
+
+      <h2>Storage Trait</h2>
+      <p>
+        All backends implement the <code>Storage</code> trait, which provides the complete
+        API for resource persistence:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>create(key, value)</code></td>
+            <td>Create a new resource. Returns the created resource with resourceVersion set.</td>
+          </tr>
+          <tr>
+            <td><code>get(key)</code></td>
+            <td>Get a resource by key. Returns 404 if not found.</td>
+          </tr>
+          <tr>
+            <td><code>update(key, value)</code></td>
+            <td>Update an existing resource. Returns the updated resource.</td>
+          </tr>
+          <tr>
+            <td><code>update_raw(key, value)</code></td>
+            <td>Update with raw JSON value (used by garbage collector).</td>
+          </tr>
+          <tr>
+            <td><code>delete(key)</code></td>
+            <td>Delete a resource by key.</td>
+          </tr>
+          <tr>
+            <td><code>list(prefix)</code></td>
+            <td>List all resources matching a key prefix.</td>
+          </tr>
+          <tr>
+            <td><code>watch(prefix)</code></td>
+            <td>Watch for changes to resources with a given prefix.</td>
+          </tr>
+          <tr>
+            <td><code>watch_from_revision(prefix, revision)</code></td>
+            <td>Watch for changes starting from a specific revision.</td>
+          </tr>
+          <tr>
+            <td><code>current_revision()</code></td>
+            <td>Get the current storage revision number.</td>
+          </tr>
+          <tr>
+            <td><code>is_revision_compacted(revision)</code></td>
+            <td>Check if a revision has been compacted and is no longer available.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Key Schema</h2>
+      <p>
+        All backends use the same key format, matching Kubernetes conventions:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">key format</span>
+        </div>
+        <code><span class="comment"># Namespaced resources</span>
+/registry/{resource_type}/{namespace}/{name}
+
+<span class="comment"># Cluster-scoped resources</span>
+/registry/{resource_type}/{name}
+
+<span class="comment"># Examples</span>
+/registry/pods/default/nginx          <span class="comment"># Pod "nginx" in namespace "default"</span>
+/registry/services/kube-system/kube-dns  <span class="comment"># Service "kube-dns" in kube-system</span>
+/registry/nodes/node-1                <span class="comment"># Node "node-1" (cluster-scoped)</span>
+/registry/clusterroles/admin          <span class="comment"># ClusterRole "admin"</span>
+
+<span class="comment"># List prefixes</span>
+/registry/pods/default/               <span class="comment"># All pods in "default" namespace</span>
+/registry/pods/                       <span class="comment"># All pods in all namespaces</span>
+/registry/nodes/                      <span class="comment"># All nodes</span></code>
+      </pre>
+
+      <h2>Resource Versions</h2>
+      <p>
+        The <code>metadata.resourceVersion</code> field is derived from the storage backend's
+        modification revision:
+      </p>
+
+      <ul>
+        <li><strong>etcd</strong>: <code>resourceVersion</code> = etcd <code>mod_revision</code> (monotonically increasing integer)</li>
+        <li><strong>SQLite</strong>: <code>resourceVersion</code> = rhino <code>mod_revision</code> (same semantics)</li>
+        <li><strong>Memory</strong>: <code>resourceVersion</code> = internal counter</li>
+      </ul>
+
+      <p>
+        Resource versions are used for optimistic concurrency control (conflict detection on updates)
+        and as watch resume tokens (<code>watch_from_revision</code>).
+      </p>
+
+      <div class="admonition tip">
+        <div class="admonition-title">CHOOSING A BACKEND</div>
+        <p>
+          Use <strong>etcd</strong> for production multi-node clusters that need HA and replication.
+          Use <strong>SQLite</strong> for single-node or development deployments where simplicity
+          matters. Use <strong>memory</strong> only in test code.
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="kube-proxy-config.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Kube-Proxy Config
+        </a>
+        <a href="workloads.html" class="next">
+          <span class="pager-label">Next</span>
+          Workloads &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

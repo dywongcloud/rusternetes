@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docker Compose with etcd - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html" class="active">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Docker Compose with etcd</h1>
+      <p class="lead">
+        The full cluster deployment runs each Rusternetes component as a separate Docker container,
+        backed by etcd for distributed state storage. This is the production-recommended deployment
+        mode and the configuration used for conformance testing.
+      </p>
+
+      <h2>Services</h2>
+      <p>
+        The <code>docker-compose.yml</code> defines seven services that form the complete cluster:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Image</th>
+            <th>Ports</th>
+            <th>Network</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>etcd</code></td>
+            <td><code>quay.io/coreos/etcd:v3.5</code></td>
+            <td>2379 (client), 2380 (peer)</td>
+            <td>rusternetes-net</td>
+            <td>Distributed key-value store for all cluster state</td>
+          </tr>
+          <tr>
+            <td><code>api-server</code></td>
+            <td><code>rusternetes-api-server</code></td>
+            <td>6443 (HTTPS)</td>
+            <td>rusternetes-net</td>
+            <td>REST API with TLS, RBAC, webhooks, watch</td>
+          </tr>
+          <tr>
+            <td><code>scheduler</code></td>
+            <td><code>rusternetes-scheduler</code></td>
+            <td>&mdash;</td>
+            <td>rusternetes-net</td>
+            <td>Pod scheduling with affinity, taints, priority</td>
+          </tr>
+          <tr>
+            <td><code>controller-manager</code></td>
+            <td><code>rusternetes-controller-manager</code></td>
+            <td>&mdash;</td>
+            <td>rusternetes-net</td>
+            <td>31 reconciliation controllers</td>
+          </tr>
+          <tr>
+            <td><code>node-1</code></td>
+            <td><code>rusternetes-kubelet</code></td>
+            <td>10250 (metrics)</td>
+            <td>rusternetes-net</td>
+            <td>Kubelet managing pod containers on node 1</td>
+          </tr>
+          <tr>
+            <td><code>node-2</code></td>
+            <td><code>rusternetes-kubelet</code></td>
+            <td>10251 (metrics)</td>
+            <td>rusternetes-net</td>
+            <td>Kubelet managing pod containers on node 2</td>
+          </tr>
+          <tr>
+            <td><code>kube-proxy</code></td>
+            <td><code>rusternetes-kube-proxy</code></td>
+            <td>&mdash;</td>
+            <td>host</td>
+            <td>iptables-based service routing (requires <code>CAP_NET_ADMIN</code>)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">NOTE</div>
+        <p>
+          The kube-proxy service runs in host network mode because it needs to manipulate the host's
+          iptables rules. It requires the <code>CAP_NET_ADMIN</code> capability.
+        </p>
+      </div>
+
+      <h2>Ports</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Port</th>
+            <th>Protocol</th>
+            <th>Service</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>6443</code></td>
+            <td>HTTPS</td>
+            <td>api-server</td>
+            <td>Kubernetes API endpoint (TLS). This is the port you point <code>kubectl</code> at.</td>
+          </tr>
+          <tr>
+            <td><code>2379</code></td>
+            <td>HTTP</td>
+            <td>etcd</td>
+            <td>etcd client API. Used internally by the API server.</td>
+          </tr>
+          <tr>
+            <td><code>2380</code></td>
+            <td>HTTP</td>
+            <td>etcd</td>
+            <td>etcd peer communication. Used for HA clustering.</td>
+          </tr>
+          <tr>
+            <td><code>10250</code></td>
+            <td>HTTP</td>
+            <td>node-1</td>
+            <td>Kubelet metrics and health endpoint.</td>
+          </tr>
+          <tr>
+            <td><code>10251</code></td>
+            <td>HTTP</td>
+            <td>node-2</td>
+            <td>Kubelet metrics and health endpoint (offset to avoid collision).</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Environment Variables</h2>
+
+      <h3>Required</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Description</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>KUBELET_VOLUMES_PATH</code></td>
+            <td>Absolute path on the host where pod volumes are stored. This directory is bind-mounted into the kubelet containers. Must be an absolute path.</td>
+            <td><code>/home/user/rusternetes/.rusternetes/volumes</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Optional</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RUST_LOG</code></td>
+            <td><code>info</code></td>
+            <td>Log level for all Rust components. Accepts <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>. Can be per-crate: <code>rusternetes_api_server=debug,info</code>.</td>
+          </tr>
+          <tr>
+            <td><code>DOCKER_HOST</code></td>
+            <td><code>unix:///var/run/docker.sock</code></td>
+            <td>Docker daemon socket path. Override if Docker uses a non-default socket location.</td>
+          </tr>
+          <tr>
+            <td><code>KUBERNETES_SERVICE_HOST_OVERRIDE</code></td>
+            <td>&mdash;</td>
+            <td>Override the API server address injected into pod environments. Used when pods need to reach the API server at a different address than the default service IP.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>etcd Configuration</h2>
+      <p>
+        The etcd instance is configured for single-node operation with settings tuned for
+        Kubernetes workloads:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>auto-compaction-retention</code></td>
+            <td><code>10m</code></td>
+            <td>Automatically compact the keyspace every 10 minutes. Prevents unbounded history growth from Kubernetes watch operations.</td>
+          </tr>
+          <tr>
+            <td><code>quota-backend-bytes</code></td>
+            <td><code>8589934592</code> (8 GB)</td>
+            <td>Maximum database size. etcd raises an alarm and stops writes when this limit is reached.</td>
+          </tr>
+          <tr>
+            <td><code>snapshot-count</code></td>
+            <td><code>5000</code></td>
+            <td>Number of committed transactions between snapshots. Lower values trade disk I/O for faster recovery.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition tip">
+        <div class="admonition-title">TIP</div>
+        <p>
+          Monitor etcd database size with <code>docker compose exec etcd etcdctl endpoint status --write-out=table</code>.
+          If the database grows beyond 4 GB, run a manual defragmentation:
+          <code>docker compose exec etcd etcdctl defrag</code>.
+        </p>
+      </div>
+
+      <h2>Network</h2>
+      <p>
+        All services (except kube-proxy) communicate over the <code>rusternetes-net</code> bridge network.
+        Docker assigns IPs from the bridge subnet (typically <code>172.18.0.0/16</code>). The TLS
+        certificates include SANs for these bridge IPs so that internal component-to-API-server
+        communication works over HTTPS.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.yml (network)</span>
+        </div>
+        <code>
+networks:
+  rusternetes-net:
+    driver: bridge
+    name: rusternetes-net
+</code>
+      </pre>
+
+      <h2>Step-by-Step Setup</h2>
+
+      <h3>1. Set the volumes path</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Must be an absolute path</span>
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+mkdir -p $KUBELET_VOLUMES_PATH
+</code>
+      </pre>
+
+      <h3>2. Generate TLS certificates</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Generates CA + server certs with Docker bridge IP SANs</span>
+bash scripts/generate-certs.sh
+</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">WARNING</div>
+        <p>
+          The generated certificates include SANs for Docker bridge IPs (172.18.0.2-5). If your
+          Docker network uses a different subnet, edit <code>scripts/generate-certs.sh</code> to
+          match your environment before generating certs.
+        </p>
+      </div>
+
+      <h3>3. Build Docker images</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># First build takes ~10-15 minutes (Rust compilation)</span>
+<span class="comment"># Subsequent builds are faster due to Docker layer caching</span>
+docker compose build
+</code>
+      </pre>
+
+      <h3>4. Start the cluster</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+docker compose up -d
+</code>
+      </pre>
+
+      <h3>5. Bootstrap the cluster</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Creates CoreDNS, kubernetes service, service account tokens</span>
+bash scripts/bootstrap-cluster.sh
+</code>
+      </pre>
+
+      <h3>6. Verify the cluster</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Set kubeconfig</span>
+export KUBECONFIG=~/.kube/rusternetes-config
+
+<span class="comment"># Check nodes</span>
+kubectl get nodes
+<span class="comment"># NAME     STATUS   ROLES    AGE   VERSION</span>
+<span class="comment"># node-1   Ready    &lt;none&gt;   30s   v1.35.0</span>
+<span class="comment"># node-2   Ready    &lt;none&gt;   30s   v1.35.0</span>
+
+<span class="comment"># Check system pods</span>
+kubectl get pods -n kube-system
+<span class="comment"># NAME                       READY   STATUS    RESTARTS   AGE</span>
+<span class="comment"># coredns-xxxxxxxxxx-xxxxx   1/1     Running   0          30s</span>
+
+<span class="comment"># Deploy a test workload</span>
+kubectl create deployment nginx <span class="flag">--image</span>=<span class="value">nginx:alpine</span>
+kubectl get pods -w
+</code>
+      </pre>
+
+      <h2>Operations</h2>
+
+      <h3>Viewing logs</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># All services</span>
+docker compose logs -f
+
+<span class="comment"># Single service</span>
+docker compose logs -f api-server
+
+<span class="comment"># With timestamps</span>
+docker compose logs -f <span class="flag">--timestamps</span> controller-manager
+
+<span class="comment"># Last 100 lines</span>
+docker compose logs <span class="flag">--tail</span>=<span class="value">100</span> scheduler
+</code>
+      </pre>
+
+      <h3>Rebuilding a single service</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Rebuild and restart just the api-server</span>
+docker compose build api-server
+docker compose up -d api-server
+
+<span class="comment"># Rebuild and restart kubelet node-1</span>
+docker compose build node-1
+docker compose up -d node-1
+</code>
+      </pre>
+
+      <h3>Clean restart</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Stop all services and remove containers</span>
+docker compose down
+
+<span class="comment"># Remove etcd data for a fresh start</span>
+docker volume rm rusternetes_etcd-data 2>/dev/null
+
+<span class="comment"># Remove pod volumes</span>
+rm -rf .rusternetes/volumes/*
+
+<span class="comment"># Rebuild and start fresh</span>
+docker compose build
+docker compose up -d
+bash scripts/bootstrap-cluster.sh
+</code>
+      </pre>
+
+      <h3>Checking etcd health</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Endpoint status</span>
+docker compose exec etcd etcdctl endpoint status <span class="flag">--write-out</span>=<span class="value">table</span>
+
+<span class="comment"># Endpoint health</span>
+docker compose exec etcd etcdctl endpoint health
+
+<span class="comment"># List all keys</span>
+docker compose exec etcd etcdctl get / <span class="flag">--prefix</span> <span class="flag">--keys-only</span>
+
+<span class="comment"># Count keys by resource type</span>
+docker compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</span> <span class="flag">--keys-only</span> | \
+  sed 's|/registry/\([^/]*\)/.*|\1|' | sort | uniq -c | sort -rn
+</code>
+      </pre>
+
+      <div class="admonition danger">
+        <div class="admonition-title">DANGER</div>
+        <p>
+          Never run <code>docker compose down -v</code> unless you intend to destroy all cluster
+          state. The <code>-v</code> flag removes named volumes including etcd data.
+        </p>
+      </div>
+
+      <h2>Troubleshooting</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Symptom</th>
+            <th>Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>API server won't start</td>
+            <td>etcd not ready yet</td>
+            <td>Wait 5-10 seconds; api-server retries connection to etcd on startup</td>
+          </tr>
+          <tr>
+            <td>TLS certificate errors</td>
+            <td>Docker bridge IPs changed</td>
+            <td>Regenerate certs: <code>bash scripts/generate-certs.sh</code></td>
+          </tr>
+          <tr>
+            <td>kube-proxy permission denied</td>
+            <td>Missing <code>CAP_NET_ADMIN</code></td>
+            <td>Ensure the kube-proxy service has <code>cap_add: [NET_ADMIN]</code> in docker-compose.yml</td>
+          </tr>
+          <tr>
+            <td>Pods stuck in Pending</td>
+            <td>Kubelets not registered</td>
+            <td>Check <code>kubectl get nodes</code>; verify kubelets can reach the API server</td>
+          </tr>
+          <tr>
+            <td>Watch "context canceled"</td>
+            <td>Missing HTTP/2 ALPN</td>
+            <td>Verify TLS config includes <code>h2</code> ALPN protocol; regenerate certs if needed</td>
+          </tr>
+          <tr>
+            <td>Volume mount failures</td>
+            <td><code>KUBELET_VOLUMES_PATH</code> not set</td>
+            <td>Export the variable with an absolute path before running <code>docker compose up</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="all-in-one.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; All-in-One Binary
+        </a>
+        <a href="sqlite-cluster.html" class="next">
+          <span class="pager-label">Next</span>
+          Docker + SQLite &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

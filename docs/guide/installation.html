@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Installation - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html" class="active">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Installation</h1>
+      <p class="lead">
+        Build Rusternetes from source, understand feature flags, and set up your development
+        environment. For a quick Docker-based setup without building from source, see the
+        <a href="quickstart.html">Quick Start</a>.
+      </p>
+
+      <h2>Build from Source</h2>
+
+      <h3>Install the Rust toolchain</h3>
+      <p>
+        Rusternetes requires Rust 2021 edition. Install via
+        <a href="https://rustup.rs/">rustup</a>:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env</code>
+      </pre>
+
+      <p>Verify your installation:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>rustc --version   <span class="comment"># 1.75+ required</span>
+cargo --version</code>
+      </pre>
+
+      <h3>Clone and build</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>git clone https://github.com/calfonso/rusternetes.git
+cd rusternetes
+
+<span class="comment"># Debug build (faster compilation, slower runtime)</span>
+cargo build
+
+<span class="comment"># Release build (slower compilation, optimized runtime)</span>
+cargo build <span class="flag">--release</span></code>
+      </pre>
+
+      <p>
+        The workspace contains 10 crates. A full debug build takes 3&ndash;5 minutes; release
+        builds take 8&ndash;15 minutes depending on hardware. Incremental builds after code changes
+        are much faster.
+      </p>
+
+      <h3>Build individual components</h3>
+      <p>
+        You can build a single crate to save time during development:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Build the all-in-one binary</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes</span>
+
+<span class="comment"># Build individual components</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-api-server</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-scheduler</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-controller-manager</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-kubelet</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-kube-proxy</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-kubectl</span></code>
+      </pre>
+
+      <h3>Run tests</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run all workspace tests</span>
+cargo test
+
+<span class="comment"># Run tests for a single crate</span>
+cargo test <span class="flag">-p</span> <span class="value">rusternetes-kubelet</span>
+
+<span class="comment"># Run a specific test by name</span>
+cargo test <span class="value">test_pod_scheduling</span>
+
+<span class="comment"># With stdout output</span>
+cargo test <span class="value">test_pod_scheduling</span> <span class="flag">-- --nocapture</span>
+
+<span class="comment"># Lint and format (run before committing)</span>
+make pre-commit</code>
+      </pre>
+
+      <h2>Feature Flags</h2>
+      <p>
+        Rusternetes uses Cargo feature flags to control optional functionality at compile time.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sqlite</code></td>
+            <td>On</td>
+            <td>Enables the embedded SQLite storage backend via <a href="https://github.com/calfonso/rhino">rhino</a>. Required for the all-in-one binary.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Build with default features (includes SQLite)</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes</span>
+
+<span class="comment"># Build without SQLite (etcd-only)</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> <span class="flag">--no-default-features</span>
+
+<span class="comment"># Explicitly enable SQLite</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> <span class="flag">--features</span> <span class="value">sqlite</span></code>
+      </pre>
+
+      <div class="admonition note">
+        <div class="admonition-title">SQLite and rhino</div>
+        <p>
+          The <code>sqlite</code> feature pulls in <a href="https://github.com/calfonso/rhino">rhino</a>,
+          a gRPC-compatible SQLite storage backend that implements the same <code>Storage</code>
+          trait as etcd. It can run embedded in the same process (all-in-one mode) or as a
+          standalone gRPC server. See <a href="storage-config.html">Storage Backends</a> for details.
+        </p>
+      </div>
+
+      <h2>Docker Images</h2>
+      <p>
+        Each component has its own Dockerfile for containerized deployment. The
+        <code>docker compose build</code> command builds all of them.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Dockerfile</th>
+            <th>Binary</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Dockerfile.api-server</code></td>
+            <td><code>api-server</code></td>
+            <td>Axum HTTPS REST API</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile.scheduler</code></td>
+            <td><code>scheduler</code></td>
+            <td>Pod scheduler with filter/score plugins</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile.controller-manager</code></td>
+            <td><code>controller-manager</code></td>
+            <td>31 reconciliation controllers</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile.kubelet</code></td>
+            <td><code>kubelet</code></td>
+            <td>Node agent with Docker runtime</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile.kube-proxy</code></td>
+            <td><code>kube-proxy</code></td>
+            <td>iptables service routing</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile.kubectl</code></td>
+            <td><code>kubectl</code></td>
+            <td>Built-in Rust kubectl</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile.rhino</code></td>
+            <td><code>rhino</code></td>
+            <td>Standalone SQLite storage server</td>
+          </tr>
+          <tr>
+            <td><code>Dockerfile</code></td>
+            <td><code>rusternetes</code></td>
+            <td>All-in-one binary</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>To build individual images:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Build a single image</span>
+docker compose build api-server
+
+<span class="comment"># Build the all-in-one image directly</span>
+docker build <span class="flag">-t</span> <span class="value">rusternetes:latest</span> <span class="flag">-f</span> <span class="value">Dockerfile</span> .</code>
+      </pre>
+
+      <h2>All-in-One Binary</h2>
+      <p>
+        The <code>rusternetes</code> crate produces a single binary that runs the API server,
+        scheduler, controller manager, kubelet, and kube-proxy as concurrent tokio tasks in
+        one process. It defaults to embedded SQLite storage, so no external etcd is needed.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Build the all-in-one binary</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> <span class="flag">--release</span>
+
+<span class="comment"># Run it (no Docker or etcd required)</span>
+./target/release/rusternetes</code>
+      </pre>
+
+      <p>
+        This is the simplest way to run a Rusternetes cluster &mdash; a single process, a single
+        binary, no containers or external dependencies. See <a href="all-in-one.html">All-in-One Binary</a>
+        for configuration options and production usage.
+      </p>
+
+      <div class="admonition tip">
+        <div class="admonition-title">When to use all-in-one vs Docker</div>
+        <p>
+          The all-in-one binary is ideal for development, testing, and single-node deployments.
+          For multi-node clusters or production workloads, use the Docker Compose setup with etcd
+          for proper distributed state.
+        </p>
+      </div>
+
+      <h2>kubectl</h2>
+      <p>
+        Rusternetes includes a built-in <code>kubectl</code> implementation in the
+        <code>crates/kubectl</code> crate. It implements the most common kubectl commands
+        natively in Rust.
+      </p>
+
+      <h3>Built-in Rust kubectl</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Build the Rust kubectl</span>
+cargo build <span class="flag">-p</span> <span class="value">rusternetes-kubectl</span> <span class="flag">--release</span>
+
+<span class="comment"># Run it</span>
+./target/release/kubectl get pods
+./target/release/kubectl get nodes</code>
+      </pre>
+
+      <h3>System kubectl</h3>
+      <p>
+        The standard <code>kubectl</code> from the Kubernetes project works perfectly with
+        Rusternetes. The API is fully compatible. Install it via your package manager or from
+        the <a href="https://kubernetes.io/docs/tasks/tools/">Kubernetes docs</a>.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># macOS (Homebrew)</span>
+brew install kubectl
+
+<span class="comment"># Linux (apt)</span>
+sudo apt-get install -y kubectl
+
+<span class="comment"># Linux (dnf)</span>
+sudo dnf install -y kubectl</code>
+      </pre>
+
+      <div class="admonition note">
+        <div class="admonition-title">Which kubectl to use?</div>
+        <p>
+          Both the Rust and upstream Go <code>kubectl</code> work. The upstream Go version is
+          recommended for day-to-day use since it has complete feature coverage. The built-in
+          Rust kubectl is useful for development and for environments where you want a single
+          Rust-only toolchain.
+        </p>
+      </div>
+
+      <h2>Platform Support</h2>
+
+      <h3>macOS</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Runtime</th>
+            <th>Status</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Docker Desktop</td>
+            <td>Recommended</td>
+            <td>Works out of the box on Intel and Apple Silicon</td>
+          </tr>
+          <tr>
+            <td>Podman Desktop</td>
+            <td>Supported</td>
+            <td>Requires rootful mode. CNI networking is not available in Podman Machine &mdash; the kubelet falls back to bridge networking automatically</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition warning">
+        <div class="admonition-title">macOS Sequoia and Podman</div>
+        <p>
+          macOS Sequoia (15.x) introduced networking changes that can cause issues with Podman Machine.
+          If you experience connection problems, try Docker Desktop or ensure Podman Machine is
+          updated to the latest version.
+        </p>
+      </div>
+
+      <h3>Linux</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Runtime</th>
+            <th>Status</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Docker Engine</td>
+            <td>Recommended</td>
+            <td>Native Docker socket, full CNI support</td>
+          </tr>
+          <tr>
+            <td>Podman (rootful)</td>
+            <td>Supported</td>
+            <td>Must run as root or with rootful configuration. Rootless Podman is not supported due to network namespace restrictions.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>Fedora / RHEL notes</h4>
+      <p>
+        Fedora ships Podman by default. To use Docker Engine instead:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Install Docker on Fedora</span>
+sudo dnf -y install dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+sudo dnf install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo systemctl start docker
+sudo systemctl enable docker
+
+<span class="comment"># Add your user to the docker group</span>
+sudo usermod -aG docker $USER
+newgrp docker</code>
+      </pre>
+
+      <p>
+        If you prefer Podman, ensure it runs in rootful mode for kube-proxy (which needs
+        <code>CAP_NET_ADMIN</code> and host network access for iptables):
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run with rootful Podman</span>
+sudo podman compose up -d</code>
+      </pre>
+
+      <h3>Build dependencies</h3>
+      <p>
+        When building from source, you may need system libraries depending on your platform:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Packages</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ubuntu / Debian</td>
+            <td><code>build-essential pkg-config libssl-dev</code></td>
+          </tr>
+          <tr>
+            <td>Fedora / RHEL</td>
+            <td><code>gcc openssl-devel pkg-config</code></td>
+          </tr>
+          <tr>
+            <td>macOS</td>
+            <td>Xcode Command Line Tools (<code>xcode-select --install</code>)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Ubuntu / Debian</span>
+sudo apt-get install -y build-essential pkg-config libssl-dev
+
+<span class="comment"># Fedora / RHEL</span>
+sudo dnf install -y gcc openssl-devel pkg-config
+
+<span class="comment"># macOS (if not already installed)</span>
+xcode-select --install</code>
+      </pre>
+
+      <h2>Verify Your Installation</h2>
+      <p>
+        After building, confirm the binaries are present:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check the all-in-one binary</span>
+./target/release/rusternetes <span class="flag">--help</span>
+
+<span class="comment"># Check individual components</span>
+./target/release/api-server <span class="flag">--help</span>
+./target/release/scheduler <span class="flag">--help</span>
+./target/release/controller-manager <span class="flag">--help</span>
+./target/release/kubelet <span class="flag">--help</span>
+./target/release/kube-proxy <span class="flag">--help</span>
+./target/release/kubectl <span class="flag">--help</span></code>
+      </pre>
+
+      <h2>Next Steps</h2>
+      <ul>
+        <li><a href="quickstart.html">Quick Start</a> &mdash; get a Docker Compose cluster running in 5 minutes</li>
+        <li><a href="deployment.html">Deployment Overview</a> &mdash; choose between all-in-one, Docker+etcd, and Docker+SQLite</li>
+        <li><a href="all-in-one.html">All-in-One Binary</a> &mdash; run everything in a single process</li>
+        <li><a href="storage-config.html">Storage Backends</a> &mdash; compare etcd, SQLite, and in-memory storage</li>
+      </ul>
+
+      <div class="doc-pager">
+        <a href="quickstart.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Quick Start
+        </a>
+        <a href="deployment.html" class="next">
+          <span class="pager-label">Next</span>
+          Deployment Overview &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

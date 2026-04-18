@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workloads - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html" class="active">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Workloads</h1>
+      <p class="lead">
+        Rusternetes supports the full range of Kubernetes workload resources: Pods, Deployments,
+        ReplicaSets, StatefulSets, DaemonSets, Jobs, CronJobs, and the legacy ReplicationController.
+        Each is managed by a dedicated controller in the controller-manager.
+      </p>
+
+      <!-- ───────────────────── Pod ───────────────────── -->
+      <h2 id="pod">Pod</h2>
+      <p>
+        A Pod is the smallest deployable unit &mdash; one or more containers that share networking,
+        storage, and a lifecycle. Pods are rarely created directly; they are usually managed by a
+        higher-level controller such as a Deployment or Job.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>containers</code></td><td>array</td><td>Required. List of application containers to run in the pod.</td></tr>
+          <tr><td><code>initContainers</code></td><td>array</td><td>Containers that run to completion before app containers start. Run sequentially &mdash; each must succeed before the next begins.</td></tr>
+          <tr><td><code>restartPolicy</code></td><td>string</td><td><code>Always</code> (default), <code>OnFailure</code>, or <code>Never</code>. Controls whether the kubelet restarts exited containers.</td></tr>
+          <tr><td><code>terminationGracePeriodSeconds</code></td><td>integer</td><td>Seconds to wait after SIGTERM before SIGKILL. Default 30.</td></tr>
+          <tr><td><code>serviceAccountName</code></td><td>string</td><td>ServiceAccount to use. Defaults to <code>default</code> in the pod's namespace. Projected token auto-injected.</td></tr>
+          <tr><td><code>hostNetwork</code></td><td>boolean</td><td>Use the host's network namespace instead of a pod-private one.</td></tr>
+          <tr><td><code>dnsPolicy</code></td><td>string</td><td><code>ClusterFirst</code> (default, uses CoreDNS), <code>Default</code> (host DNS), <code>ClusterFirstWithHostNet</code>, or <code>None</code> (requires <code>dnsConfig</code>).</td></tr>
+          <tr><td><code>nodeName</code></td><td>string</td><td>Bypass the scheduler and assign the pod to a specific node.</td></tr>
+          <tr><td><code>nodeSelector</code></td><td>map</td><td>Simple label-match constraints for node selection.</td></tr>
+          <tr><td><code>tolerations</code></td><td>array</td><td>Allow scheduling onto nodes with matching taints.</td></tr>
+          <tr><td><code>volumes</code></td><td>array</td><td>List of volumes that containers can mount. See <a href="storage-volumes.html">Storage &amp; Volumes</a>.</td></tr>
+          <tr><td><code>securityContext</code></td><td>object</td><td>Pod-level security settings (runAsUser, fsGroup, etc.). See <a href="security.html">Security</a>.</td></tr>
+          <tr><td><code>priorityClassName</code></td><td>string</td><td>Name of a PriorityClass for scheduling priority and preemption.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Pod Phases</h3>
+      <table>
+        <thead>
+          <tr><th>Phase</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Pending</code></td><td>Accepted but not yet scheduled or containers not yet started.</td></tr>
+          <tr><td><code>Running</code></td><td>At least one container is running.</td></tr>
+          <tr><td><code>Succeeded</code></td><td>All containers terminated successfully (exit code 0).</td></tr>
+          <tr><td><code>Failed</code></td><td>At least one container terminated with a non-zero exit code.</td></tr>
+          <tr><td><code>Unknown</code></td><td>Cannot determine pod state (usually a communication error with the kubelet).</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">pod.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+  restartPolicy: Always
+  terminationGracePeriodSeconds: 30</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create a pod</span>
+kubectl apply <span class="flag">-f</span> <span class="value">pod.yaml</span>
+
+<span class="comment"># List pods with wide output</span>
+kubectl get pods <span class="flag">-o</span> <span class="value">wide</span>
+
+<span class="comment"># Watch pod status in real time</span>
+kubectl get pods <span class="flag">-w</span>
+
+<span class="comment"># Describe a pod (events, conditions, volumes)</span>
+kubectl describe pod <span class="value">nginx</span>
+
+<span class="comment"># Delete a pod</span>
+kubectl delete pod <span class="value">nginx</span></code>
+      </pre>
+
+      <!-- ───────────────────── Deployment ───────────────────── -->
+      <h2 id="deployment">Deployment</h2>
+      <p>
+        A Deployment manages a set of identical pods through ReplicaSets. It provides declarative
+        updates, rollback, scaling, and rolling update strategies. This is the most common way to
+        run stateless applications.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>replicas</code></td><td>integer</td><td>Desired number of pod replicas. Default 1.</td></tr>
+          <tr><td><code>selector</code></td><td>LabelSelector</td><td>Required. Must match <code>.spec.template.metadata.labels</code>.</td></tr>
+          <tr><td><code>template</code></td><td>PodTemplateSpec</td><td>Pod template used to create new pods.</td></tr>
+          <tr><td><code>strategy.type</code></td><td>string</td><td><code>RollingUpdate</code> (default) or <code>Recreate</code>.</td></tr>
+          <tr><td><code>strategy.rollingUpdate.maxSurge</code></td><td>int or %</td><td>Max pods above desired count during update. Default <code>25%</code>.</td></tr>
+          <tr><td><code>strategy.rollingUpdate.maxUnavailable</code></td><td>int or %</td><td>Max pods that can be unavailable during update. Default <code>25%</code>.</td></tr>
+          <tr><td><code>revisionHistoryLimit</code></td><td>integer</td><td>Number of old ReplicaSets to keep for rollback. Default 10.</td></tr>
+          <tr><td><code>minReadySeconds</code></td><td>integer</td><td>Seconds a pod must be ready before considered available. Default 0.</td></tr>
+          <tr><td><code>paused</code></td><td>boolean</td><td>Pause the deployment to batch multiple changes before rolling out.</td></tr>
+          <tr><td><code>progressDeadlineSeconds</code></td><td>integer</td><td>Seconds to wait for progress before reporting failure. Default 600.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Rolling Update Behavior</h3>
+      <p>
+        With <code>RollingUpdate</code> strategy, the deployment controller creates a new ReplicaSet
+        and scales it up while scaling down the old ReplicaSet. The <code>maxSurge</code> and
+        <code>maxUnavailable</code> parameters control the pace.
+      </p>
+
+      <div class="admonition note">
+        <div class="admonition-title">maxUnavailable rounding</div>
+        <p>
+          When <code>maxUnavailable</code> rounds to 0 (e.g., 25% of 1 replica), the deployment
+          controller forces old ReplicaSets to scale down once the new ReplicaSet is fully available.
+          This prevents a deadlock where neither RS can make progress.
+        </p>
+      </div>
+
+      <p>
+        With <code>Recreate</code> strategy, all existing pods are killed before new ones are created.
+        This causes downtime but guarantees no two versions run simultaneously.
+      </p>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">deployment.yaml</span>
+        </div>
+        <code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  revisionHistoryLimit: 5
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10</code>
+      </pre>
+
+      <h3>Rollout Commands</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create a deployment quickly</span>
+kubectl create deployment <span class="value">web</span> <span class="flag">--image=</span><span class="value">nginx:1.27</span> <span class="flag">--replicas=</span><span class="value">3</span>
+
+<span class="comment"># Check rollout status</span>
+kubectl rollout status deployment/<span class="value">web</span>
+
+<span class="comment"># View rollout history</span>
+kubectl rollout history deployment/<span class="value">web</span>
+
+<span class="comment"># View a specific revision</span>
+kubectl rollout history deployment/<span class="value">web</span> <span class="flag">--revision=</span><span class="value">2</span>
+
+<span class="comment"># Roll back to the previous revision</span>
+kubectl rollout undo deployment/<span class="value">web</span>
+
+<span class="comment"># Roll back to a specific revision</span>
+kubectl rollout undo deployment/<span class="value">web</span> <span class="flag">--to-revision=</span><span class="value">1</span>
+
+<span class="comment"># Restart all pods (triggers a new rollout)</span>
+kubectl rollout restart deployment/<span class="value">web</span>
+
+<span class="comment"># Pause a rollout to batch changes</span>
+kubectl rollout pause deployment/<span class="value">web</span>
+
+<span class="comment"># Resume a paused rollout</span>
+kubectl rollout resume deployment/<span class="value">web</span>
+
+<span class="comment"># Scale the deployment</span>
+kubectl scale deployment/<span class="value">web</span> <span class="flag">--replicas=</span><span class="value">5</span>
+
+<span class="comment"># Update the image (triggers rolling update)</span>
+kubectl set image deployment/<span class="value">web</span> nginx=<span class="value">nginx:1.28</span></code>
+      </pre>
+
+      <!-- ───────────────────── ReplicaSet ───────────────────── -->
+      <h2 id="replicaset">ReplicaSet</h2>
+      <p>
+        A ReplicaSet ensures a specified number of pod replicas are running at all times. ReplicaSets
+        are rarely created directly &mdash; they are managed by Deployments. Each Deployment revision
+        creates a new ReplicaSet.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>replicas</code></td><td>integer</td><td>Desired number of replicas. Default 1.</td></tr>
+          <tr><td><code>selector</code></td><td>LabelSelector</td><td>Required. Label selector for pods this RS manages.</td></tr>
+          <tr><td><code>template</code></td><td>PodTemplateSpec</td><td>Pod template for creating new replicas.</td></tr>
+          <tr><td><code>minReadySeconds</code></td><td>integer</td><td>Seconds a pod must be ready before considered available.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Ownership</div>
+        <p>
+          ReplicaSets created by a Deployment have an <code>ownerReferences</code> entry pointing
+          back to the Deployment. The garbage collector deletes orphaned ReplicaSets when the
+          parent Deployment is deleted with <code>--cascade=foreground</code> or <code>--cascade=background</code>.
+        </p>
+      </div>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">replicaset.yaml</span>
+        </div>
+        <code>apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: web-rs
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List ReplicaSets</span>
+kubectl get replicasets
+
+<span class="comment"># Describe a ReplicaSet</span>
+kubectl describe rs <span class="value">web-rs</span>
+
+<span class="comment"># Scale directly (prefer scaling the Deployment instead)</span>
+kubectl scale rs <span class="value">web-rs</span> <span class="flag">--replicas=</span><span class="value">5</span></code>
+      </pre>
+
+      <!-- ───────────────────── StatefulSet ───────────────────── -->
+      <h2 id="statefulset">StatefulSet</h2>
+      <p>
+        A StatefulSet manages stateful applications that need stable network identities and persistent
+        storage. Pods get predictable names (<code>web-0</code>, <code>web-1</code>, <code>web-2</code>)
+        and are created/deleted in order.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>serviceName</code></td><td>string</td><td>Required. Name of the headless Service that provides network identity to pods.</td></tr>
+          <tr><td><code>replicas</code></td><td>integer</td><td>Desired number of replicas. Default 1.</td></tr>
+          <tr><td><code>selector</code></td><td>LabelSelector</td><td>Required. Must match <code>.spec.template.metadata.labels</code>.</td></tr>
+          <tr><td><code>template</code></td><td>PodTemplateSpec</td><td>Pod template. Pods are named <code>{statefulset}-{ordinal}</code>.</td></tr>
+          <tr><td><code>podManagementPolicy</code></td><td>string</td><td><code>OrderedReady</code> (default) &mdash; create/delete sequentially. <code>Parallel</code> &mdash; create/delete all at once.</td></tr>
+          <tr><td><code>volumeClaimTemplates</code></td><td>array</td><td>PVC templates. Each pod gets its own PVC, named <code>{pvc}-{pod}</code>.</td></tr>
+          <tr><td><code>updateStrategy.type</code></td><td>string</td><td><code>RollingUpdate</code> (default) or <code>OnDelete</code>.</td></tr>
+          <tr><td><code>updateStrategy.rollingUpdate.partition</code></td><td>integer</td><td>Only pods with ordinal &ge; partition are updated. Enables canary deploys.</td></tr>
+          <tr><td><code>minReadySeconds</code></td><td>integer</td><td>Seconds a pod must be ready before the next is updated.</td></tr>
+          <tr><td><code>ordinals.start</code></td><td>integer</td><td>Starting ordinal (default 0). Allows non-zero-based numbering.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Stable Network Identity</h3>
+      <p>
+        Each pod in a StatefulSet gets a DNS name:
+        <code>{pod-name}.{service-name}.{namespace}.svc.cluster.local</code>.
+        For example, <code>web-0.web-headless.default.svc.cluster.local</code>.
+      </p>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">statefulset.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: Service
+metadata:
+  name: web-headless
+spec:
+  clusterIP: None
+  selector:
+    app: web
+  ports:
+    - port: 80
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  serviceName: web-headless
+  replicas: 3
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: web
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/nginx/html
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List StatefulSet pods (ordered names: web-0, web-1, web-2)</span>
+kubectl get pods <span class="flag">-l</span> <span class="value">app=web</span>
+
+<span class="comment"># Scale a StatefulSet</span>
+kubectl scale statefulset <span class="value">web</span> <span class="flag">--replicas=</span><span class="value">5</span>
+
+<span class="comment"># Canary update: only update pod web-2 and above</span>
+kubectl patch statefulset <span class="value">web</span> <span class="flag">-p</span> <span class="value">'{"spec":{"updateStrategy":{"rollingUpdate":{"partition":2}}}}'</span>
+
+<span class="comment"># Rollout the update to all pods</span>
+kubectl patch statefulset <span class="value">web</span> <span class="flag">-p</span> <span class="value">'{"spec":{"updateStrategy":{"rollingUpdate":{"partition":0}}}}'</span></code>
+      </pre>
+
+      <!-- ───────────────────── DaemonSet ───────────────────── -->
+      <h2 id="daemonset">DaemonSet</h2>
+      <p>
+        A DaemonSet ensures one pod runs on every node (or a subset of nodes). Typical use cases
+        include log collectors, monitoring agents, and network plugins. When a new node joins the
+        cluster, the DaemonSet controller automatically creates a pod on it.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>selector</code></td><td>LabelSelector</td><td>Required. Must match <code>.spec.template.metadata.labels</code>.</td></tr>
+          <tr><td><code>template</code></td><td>PodTemplateSpec</td><td>Pod template. Each node gets one pod.</td></tr>
+          <tr><td><code>updateStrategy.type</code></td><td>string</td><td><code>RollingUpdate</code> (default) or <code>OnDelete</code>.</td></tr>
+          <tr><td><code>updateStrategy.rollingUpdate.maxUnavailable</code></td><td>int or %</td><td>Max pods that can be unavailable during update. Default 1.</td></tr>
+          <tr><td><code>updateStrategy.rollingUpdate.maxSurge</code></td><td>int or %</td><td>Max extra pods during update. Default 0.</td></tr>
+          <tr><td><code>minReadySeconds</code></td><td>integer</td><td>Seconds a pod must be ready before considered available.</td></tr>
+          <tr><td><code>revisionHistoryLimit</code></td><td>integer</td><td>Number of old ControllerRevisions to keep. Default 10.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">Pod naming</div>
+        <p>
+          DaemonSet pod names are generated using a deterministic hash of the template, encoded
+          with the Kubernetes-standard alphabet <code>bcdfghjklmnpqrstvwxz2456789</code>.
+          This ensures consistent naming across controller restarts.
+        </p>
+      </div>
+
+      <h3>Node Selection</h3>
+      <p>
+        Use <code>nodeSelector</code>, <code>affinity</code>, or <code>tolerations</code> in the
+        pod template to target specific nodes:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">daemonset.yaml</span>
+        </div>
+        <code>apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: node-exporter
+    spec:
+      tolerations:
+        - operator: Exists    <span class="comment"># Run on all nodes including masters</span>
+      hostNetwork: true
+      containers:
+        - name: exporter
+          image: prom/node-exporter:v1.8.0
+          ports:
+            - containerPort: 9100
+              hostPort: 9100</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List DaemonSets</span>
+kubectl get daemonsets <span class="flag">-A</span>
+
+<span class="comment"># Check desired/current/ready counts</span>
+kubectl get ds <span class="value">node-exporter</span> <span class="flag">-n</span> <span class="value">kube-system</span>
+
+<span class="comment"># Rollout status</span>
+kubectl rollout status daemonset/<span class="value">node-exporter</span> <span class="flag">-n</span> <span class="value">kube-system</span></code>
+      </pre>
+
+      <!-- ───────────────────── Job ───────────────────── -->
+      <h2 id="job">Job</h2>
+      <p>
+        A Job creates one or more pods and ensures a specified number of them run to successful
+        completion. Jobs are for batch processing, data migrations, one-off tasks, and anything
+        that should run to completion rather than continuously.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>completions</code></td><td>integer</td><td>Number of successful completions needed. Default 1. Set to null for "any completion" mode.</td></tr>
+          <tr><td><code>parallelism</code></td><td>integer</td><td>Max pods running concurrently. Default 1.</td></tr>
+          <tr><td><code>backoffLimit</code></td><td>integer</td><td>Number of retries before marking the job failed. Default 6.</td></tr>
+          <tr><td><code>activeDeadlineSeconds</code></td><td>integer</td><td>Max lifetime of the job in seconds. Overrides backoffLimit.</td></tr>
+          <tr><td><code>ttlSecondsAfterFinished</code></td><td>integer</td><td>Auto-delete the job this many seconds after completion. Null = never delete.</td></tr>
+          <tr><td><code>completionMode</code></td><td>string</td><td><code>NonIndexed</code> (default) or <code>Indexed</code>. Indexed mode sets <code>JOB_COMPLETION_INDEX</code> env var (0 to completions-1).</td></tr>
+          <tr><td><code>suspend</code></td><td>boolean</td><td>Suspend the job (delete active pods, do not create new ones).</td></tr>
+          <tr><td><code>backoffLimitPerIndex</code></td><td>integer</td><td>Per-index retry limit (Indexed mode only).</td></tr>
+          <tr><td><code>maxFailedIndexes</code></td><td>integer</td><td>Max failed indexes before the whole job fails (Indexed mode only).</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Completion Patterns</h3>
+      <table>
+        <thead>
+          <tr><th>Pattern</th><th>completions</th><th>parallelism</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Single pod</td><td>1</td><td>1</td><td>One pod runs to completion</td></tr>
+          <tr><td>Fixed completions</td><td>N</td><td>M</td><td>N pods must succeed, up to M at a time</td></tr>
+          <tr><td>Work queue</td><td>null</td><td>M</td><td>Pods coordinate via an external queue; first success completes the job</td></tr>
+          <tr><td>Indexed</td><td>N</td><td>M</td><td>Each pod gets a unique index; all N indexes must succeed</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">job.yaml</span>
+        </div>
+        <code>apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-migration
+spec:
+  completions: 10
+  parallelism: 3
+  backoffLimit: 4
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  completionMode: Indexed
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: myapp:migrate
+          env:
+            - name: BATCH_INDEX
+              value: "$(JOB_COMPLETION_INDEX)"</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create a quick job</span>
+kubectl create job <span class="value">pi</span> <span class="flag">--image=</span><span class="value">perl:5.34</span> <span class="flag">--</span> perl -Mbignum=bpi -wle "print bpi(2000)"
+
+<span class="comment"># Watch job progress</span>
+kubectl get jobs <span class="flag">-w</span>
+
+<span class="comment"># View completed/failed pod count</span>
+kubectl describe job <span class="value">data-migration</span>
+
+<span class="comment"># View logs from a job pod</span>
+kubectl logs job/<span class="value">data-migration</span>
+
+<span class="comment"># Delete a job and its pods</span>
+kubectl delete job <span class="value">data-migration</span></code>
+      </pre>
+
+      <!-- ───────────────────── CronJob ───────────────────── -->
+      <h2 id="cronjob">CronJob</h2>
+      <p>
+        A CronJob creates Jobs on a time-based schedule. It uses standard cron syntax with
+        five fields: minute, hour, day-of-month, month, day-of-week.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>schedule</code></td><td>string</td><td>Required. Cron expression, e.g., <code>"*/5 * * * *"</code> (every 5 minutes).</td></tr>
+          <tr><td><code>timeZone</code></td><td>string</td><td>IANA timezone, e.g., <code>"America/New_York"</code>. Default is controller-manager timezone.</td></tr>
+          <tr><td><code>concurrencyPolicy</code></td><td>string</td><td><code>Allow</code> (default, concurrent jobs OK), <code>Forbid</code> (skip if previous still running), <code>Replace</code> (kill previous, start new).</td></tr>
+          <tr><td><code>successfulJobsHistoryLimit</code></td><td>integer</td><td>Number of successful jobs to keep. Default 3.</td></tr>
+          <tr><td><code>failedJobsHistoryLimit</code></td><td>integer</td><td>Number of failed jobs to keep. Default 1.</td></tr>
+          <tr><td><code>startingDeadlineSeconds</code></td><td>integer</td><td>Deadline for starting the job if it missed its scheduled time. If more than 100 schedules are missed, the CronJob stops.</td></tr>
+          <tr><td><code>suspend</code></td><td>boolean</td><td>Suspend the CronJob (no new jobs will be created).</td></tr>
+          <tr><td><code>jobTemplate</code></td><td>JobTemplateSpec</td><td>Template for jobs to create.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">cronjob.yaml</span>
+        </div>
+        <code>apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup
+spec:
+  schedule: "0 2 * * *"        <span class="comment"># Daily at 2am</span>
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: myapp:cleanup
+              command: ["/bin/sh", "-c", "cleanup.sh"]</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create a CronJob</span>
+kubectl create cronjob <span class="value">hello</span> <span class="flag">--image=</span><span class="value">busybox</span> <span class="flag">--schedule=</span><span class="value">"*/1 * * * *"</span> <span class="flag">--</span> echo "Hello"
+
+<span class="comment"># List CronJobs</span>
+kubectl get cronjobs
+
+<span class="comment"># Trigger a job manually from a CronJob</span>
+kubectl create job <span class="value">cleanup-manual</span> <span class="flag">--from=</span><span class="value">cronjob/cleanup</span>
+
+<span class="comment"># Suspend a CronJob</span>
+kubectl patch cronjob <span class="value">cleanup</span> <span class="flag">-p</span> <span class="value">'{"spec":{"suspend":true}}'</span>
+
+<span class="comment"># View scheduled jobs</span>
+kubectl describe cronjob <span class="value">cleanup</span></code>
+      </pre>
+
+      <!-- ───────────────────── ReplicationController ───────────────────── -->
+      <h2 id="replicationcontroller">ReplicationController (Legacy)</h2>
+      <p>
+        ReplicationController is the predecessor to ReplicaSet. It functions the same way
+        &mdash; maintaining a specified number of pod replicas &mdash; but uses equality-based
+        selectors only (no <code>matchExpressions</code>). Use Deployments and ReplicaSets
+        for new workloads.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>replicas</code></td><td>integer</td><td>Desired number of replicas.</td></tr>
+          <tr><td><code>selector</code></td><td>map</td><td>Equality-based label selector (key=value pairs only).</td></tr>
+          <tr><td><code>template</code></td><td>PodTemplateSpec</td><td>Pod template for creating replicas.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">rc.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: nginx-rc
+spec:
+  replicas: 3
+  selector:
+    app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">Deprecated</div>
+        <p>
+          ReplicationController is supported for backward compatibility but considered deprecated.
+          Use a <code>Deployment</code> with a <code>ReplicaSet</code> instead, which supports
+          set-based selectors, rolling updates, and rollback.
+        </p>
+      </div>
+
+      <!-- ───────────────────── Summary Table ───────────────────── -->
+      <h2 id="comparison">Workload Comparison</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>API Group</th>
+            <th>Use Case</th>
+            <th>Manages</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Pod</code></td>
+            <td>v1</td>
+            <td>Single instance, debugging, testing</td>
+            <td>Containers directly</td>
+          </tr>
+          <tr>
+            <td><code>Deployment</code></td>
+            <td>apps/v1</td>
+            <td>Stateless apps with rolling updates</td>
+            <td>ReplicaSets &rarr; Pods</td>
+          </tr>
+          <tr>
+            <td><code>ReplicaSet</code></td>
+            <td>apps/v1</td>
+            <td>Maintain replica count (usually via Deployment)</td>
+            <td>Pods</td>
+          </tr>
+          <tr>
+            <td><code>StatefulSet</code></td>
+            <td>apps/v1</td>
+            <td>Stateful apps needing stable identity and storage</td>
+            <td>Pods + PVCs</td>
+          </tr>
+          <tr>
+            <td><code>DaemonSet</code></td>
+            <td>apps/v1</td>
+            <td>One pod per node (agents, collectors)</td>
+            <td>Pods</td>
+          </tr>
+          <tr>
+            <td><code>Job</code></td>
+            <td>batch/v1</td>
+            <td>Run-to-completion batch tasks</td>
+            <td>Pods</td>
+          </tr>
+          <tr>
+            <td><code>CronJob</code></td>
+            <td>batch/v1</td>
+            <td>Scheduled recurring tasks</td>
+            <td>Jobs &rarr; Pods</td>
+          </tr>
+          <tr>
+            <td><code>ReplicationController</code></td>
+            <td>v1</td>
+            <td>Legacy replica management</td>
+            <td>Pods</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="storage-config.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Storage Backends
+        </a>
+        <a href="networking.html" class="next">
+          <span class="pager-label">Next</span>
+          Networking &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

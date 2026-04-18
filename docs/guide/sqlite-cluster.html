@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docker Compose with SQLite - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html" class="active">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Docker Compose with SQLite (Rhino)</h1>
+      <p class="lead">
+        Run a multi-node Rusternetes cluster with SQLite as the storage backend instead of etcd.
+        The <a href="https://github.com/calfonso/rhino">Rhino</a> server provides an etcd-compatible
+        gRPC API backed by SQLite, giving you the same multi-node architecture with simpler operations
+        and a smaller footprint.
+      </p>
+
+      <h2>What is Rhino?</h2>
+      <p>
+        Rhino is an etcd-compatible gRPC server that implements the etcd v3 API (KV, Watch, Lease)
+        using a relational database backend. It supports:
+      </p>
+
+      <ul>
+        <li><strong>SQLite</strong> &mdash; single-file embedded database, no external dependencies</li>
+        <li><strong>PostgreSQL</strong> &mdash; for environments with existing PostgreSQL infrastructure</li>
+        <li><strong>MySQL</strong> &mdash; for environments with existing MySQL infrastructure</li>
+      </ul>
+
+      <p>
+        From the Rusternetes components' perspective, Rhino is indistinguishable from etcd. The
+        API server, scheduler, controller manager, kubelets, and kube-proxy all connect to Rhino
+        using the standard etcd client library. No code changes are needed &mdash; you simply
+        swap the service in your Docker Compose file.
+      </p>
+
+      <div class="admonition note">
+        <div class="admonition-title">NOTE</div>
+        <p>
+          Rhino is designed for single-writer deployments. It does not support etcd's Raft
+          consensus or multi-node replication. For high availability, use the
+          <a href="high-availability.html">etcd-based deployment</a>.
+        </p>
+      </div>
+
+      <h2>Difference from etcd Mode</h2>
+      <p>
+        The only difference between the etcd and SQLite cluster deployments is the storage service.
+        All other services &mdash; api-server, scheduler, controller-manager, kubelets, and kube-proxy
+        &mdash; are identical.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>etcd Mode</th>
+            <th>SQLite Mode (Rhino)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Storage service</td>
+            <td><code>etcd</code> (quay.io/coreos/etcd)</td>
+            <td><code>rhino</code> (ghcr.io/calfonso/rhino)</td>
+          </tr>
+          <tr>
+            <td>Compose file</td>
+            <td><code>docker-compose.yml</code></td>
+            <td><code>docker-compose.sqlite.yml</code></td>
+          </tr>
+          <tr>
+            <td>State storage</td>
+            <td>etcd data directory (bbolt)</td>
+            <td>Single SQLite file</td>
+          </tr>
+          <tr>
+            <td>Memory usage</td>
+            <td>~300-500 MB (etcd)</td>
+            <td>~50-100 MB (rhino)</td>
+          </tr>
+          <tr>
+            <td>Backup method</td>
+            <td><code>etcdctl snapshot save</code></td>
+            <td><code>cp state.db backup.db</code></td>
+          </tr>
+          <tr>
+            <td>HA capable</td>
+            <td>Yes (Raft consensus)</td>
+            <td>No (single writer)</td>
+          </tr>
+          <tr>
+            <td>All other services</td>
+            <td>Identical</td>
+            <td>Identical</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Rhino Configuration</h2>
+      <p>
+        The Rhino service in <code>docker-compose.sqlite.yml</code> is configured with these settings:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>listen-address</code></td>
+            <td><code>0.0.0.0:2379</code></td>
+            <td>gRPC listen address. Matches etcd's client port so all components connect without changes.</td>
+          </tr>
+          <tr>
+            <td><code>endpoint</code></td>
+            <td><code>sqlite:///data/rusternetes.db</code></td>
+            <td>Database connection string. For SQLite, this is a file path. For PostgreSQL, use <code>postgres://user:pass@host/db</code>.</td>
+          </tr>
+          <tr>
+            <td><code>max-connections</code></td>
+            <td><code>20</code></td>
+            <td>Maximum number of database connections in the pool. SQLite supports concurrent reads but serializes writes.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.sqlite.yml (rhino service)</span>
+        </div>
+        <code>
+services:
+  rhino:
+    image: ghcr.io/calfonso/rhino:latest
+    command:
+      - <span class="flag">--listen-address</span>=<span class="value">0.0.0.0:2379</span>
+      - <span class="flag">--endpoint</span>=<span class="value">sqlite:///data/rusternetes.db</span>
+      - <span class="flag">--max-connections</span>=<span class="value">20</span>
+    volumes:
+      - rhino-data:/data
+    networks:
+      - rusternetes-net
+
+  api-server:
+    <span class="comment"># Connects to rhino:2379 — same as etcd:2379</span>
+    environment:
+      - ETCD_SERVERS=http://rhino:2379
+    depends_on:
+      - rhino
+    <span class="comment"># ... rest is identical to docker-compose.yml</span>
+</code>
+      </pre>
+
+      <h2>Step-by-Step Setup</h2>
+
+      <h3>1. Set the volumes path</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+mkdir -p $KUBELET_VOLUMES_PATH
+</code>
+      </pre>
+
+      <h3>2. Generate TLS certificates</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+bash scripts/generate-certs.sh
+</code>
+      </pre>
+
+      <h3>3. Build Docker images</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Build using the SQLite compose file</span>
+docker compose -f docker-compose.sqlite.yml build
+</code>
+      </pre>
+
+      <h3>4. Start the cluster</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+docker compose -f docker-compose.sqlite.yml up -d
+</code>
+      </pre>
+
+      <h3>5. Bootstrap and verify</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Bootstrap CoreDNS, services, and SA tokens</span>
+bash scripts/bootstrap-cluster.sh
+
+<span class="comment"># Verify</span>
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+kubectl get pods -A
+</code>
+      </pre>
+
+      <h2>Advantages</h2>
+
+      <h3>No etcd</h3>
+      <p>
+        etcd requires careful capacity planning, defragmentation, compaction monitoring, and
+        backup procedures. With Rhino + SQLite, state management is as simple as managing a
+        single file.
+      </p>
+
+      <h3>Simpler operations</h3>
+      <ul>
+        <li><strong>Backup</strong>: <code>cp state.db backup.db</code> (no <code>etcdctl snapshot</code> required)</li>
+        <li><strong>Restore</strong>: <code>cp backup.db state.db</code> and restart</li>
+        <li><strong>Inspect</strong>: <code>sqlite3 state.db "SELECT key FROM kv"</code></li>
+        <li><strong>Size check</strong>: <code>ls -lh state.db</code></li>
+        <li><strong>No compaction</strong>: SQLite handles its own page management</li>
+        <li><strong>No defragmentation</strong>: Use <code>VACUUM</code> if needed, but rarely necessary</li>
+      </ul>
+
+      <h3>Lighter resource footprint</h3>
+      <p>
+        etcd typically uses 300-500 MB of RAM and requires fast SSD storage for its write-ahead log.
+        Rhino with SQLite uses 50-100 MB and works fine on any storage medium, including SD cards
+        and network-attached storage.
+      </p>
+
+      <h3>Single file for all state</h3>
+      <p>
+        Every resource in the cluster &mdash; pods, services, secrets, configmaps, CRDs, leases,
+        and everything else &mdash; lives in one SQLite file. You can copy this file to another
+        machine and start a cluster with the exact same state.
+      </p>
+
+      <h2>Inspecting State with SQLite</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Connect to the Rhino container's database</span>
+docker compose -f docker-compose.sqlite.yml exec rhino \
+  sqlite3 /data/rusternetes.db
+
+<span class="comment"># Or copy the database locally and inspect</span>
+docker compose -f docker-compose.sqlite.yml cp rhino:/data/rusternetes.db ./state.db
+sqlite3 ./state.db
+
+<span class="comment"># List all resources</span>
+.headers on
+.mode column
+SELECT key, length(value) AS bytes FROM kv ORDER BY key;
+
+<span class="comment"># Find all pods</span>
+SELECT key FROM kv WHERE key LIKE '/registry/pods/%';
+
+<span class="comment"># View a specific resource as JSON</span>
+SELECT value FROM kv WHERE key = '/registry/services/default/kubernetes';
+
+<span class="comment"># Database statistics</span>
+SELECT * FROM pragma_database_list;
+SELECT page_count * page_size / 1024 / 1024 AS size_mb
+FROM pragma_page_count(), pragma_page_size();
+</code>
+      </pre>
+
+      <h2>Switching Between etcd and SQLite</h2>
+      <p>
+        You can switch between deployment modes without changing any workload YAML. The API
+        is identical &mdash; only the storage backend changes.
+      </p>
+
+      <div class="admonition warning">
+        <div class="admonition-title">WARNING</div>
+        <p>
+          State is not automatically migrated between etcd and SQLite. If you switch modes,
+          you start with a fresh cluster. To migrate state, you would need to export all
+          resources from one backend and re-apply them to the other using <code>kubectl</code>.
+        </p>
+      </div>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Stop the etcd cluster</span>
+docker compose down
+
+<span class="comment"># Start with SQLite instead</span>
+docker compose -f docker-compose.sqlite.yml up -d
+
+<span class="comment"># Or switch back to etcd</span>
+docker compose -f docker-compose.sqlite.yml down
+docker compose up -d
+</code>
+      </pre>
+
+      <h2>Troubleshooting</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Symptom</th>
+            <th>Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Rhino fails to start</td>
+            <td>Data volume permission issue</td>
+            <td>Check that the <code>rhino-data</code> volume is writable. Try <code>docker volume rm</code> and recreate.</td>
+          </tr>
+          <tr>
+            <td>"database is locked" errors</td>
+            <td>Too many concurrent writers</td>
+            <td>Increase <code>--max-connections</code> or check for long-running transactions.</td>
+          </tr>
+          <tr>
+            <td>API server can't connect to storage</td>
+            <td>Rhino not ready yet</td>
+            <td>The api-server retries on startup. Check <code>docker compose logs rhino</code> for errors.</td>
+          </tr>
+          <tr>
+            <td>Watch events not delivered</td>
+            <td>Rhino watch implementation issue</td>
+            <td>Restart the rhino service. Check Rhino logs for panics or errors.</td>
+          </tr>
+          <tr>
+            <td>Database file growing large</td>
+            <td>Historical revisions accumulating</td>
+            <td>Rhino auto-compacts, but you can run <code>sqlite3 state.db "VACUUM"</code> to reclaim space.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="docker-cluster.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Docker + etcd
+        </a>
+        <a href="high-availability.html" class="next">
+          <span class="pager-label">Next</span>
+          High Availability &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

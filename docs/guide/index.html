@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Rusternetes Documentation</h1>
+      <p class="lead">
+        A ground-up reimplementation of Kubernetes in Rust. 216,000+ lines across 10 crates.
+        31 controllers. 3,100+ tests. 90% conformance pass rate.
+      </p>
+
+      <h2>Get Started</h2>
+      <div class="features-grid" style="margin-bottom: 32px;">
+        <a href="quickstart.html" class="feature-card" style="text-decoration:none;">
+          <div class="feature-icon">&#128640;</div>
+          <h3>Quick Start</h3>
+          <p style="font-family:'VT323',monospace;font-size:17px;color:var(--text-dim);">Get a cluster running in 5 minutes with Docker Compose.</p>
+        </a>
+        <a href="deployment.html" class="feature-card" style="text-decoration:none;">
+          <div class="feature-icon">&#9881;</div>
+          <h3>Deployment Modes</h3>
+          <p style="font-family:'VT323',monospace;font-size:17px;color:var(--text-dim);">Choose: full cluster with etcd, SQLite cluster, or single binary.</p>
+        </a>
+        <a href="all-in-one.html" class="feature-card" style="text-decoration:none;">
+          <div class="feature-icon">&#128230;</div>
+          <h3>All-in-One Binary</h3>
+          <p style="font-family:'VT323',monospace;font-size:17px;color:var(--text-dim);">Full Kubernetes in a single process with embedded SQLite.</p>
+        </a>
+      </div>
+
+      <h2>Learn</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>I want to...</th>
+            <th>Read this</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Get a cluster running quickly</td>
+            <td><a href="quickstart.html">Quick Start</a></td>
+          </tr>
+          <tr>
+            <td>Understand the deployment options</td>
+            <td><a href="deployment.html">Deployment Overview</a></td>
+          </tr>
+          <tr>
+            <td>Run everything in a single binary</td>
+            <td><a href="all-in-one.html">All-in-One Binary</a></td>
+          </tr>
+          <tr>
+            <td>Deploy workloads</td>
+            <td><a href="workloads.html">Workloads</a></td>
+          </tr>
+          <tr>
+            <td>Set up networking and services</td>
+            <td><a href="networking.html">Networking</a></td>
+          </tr>
+          <tr>
+            <td>Configure storage and volumes</td>
+            <td><a href="storage-volumes.html">Storage &amp; Volumes</a></td>
+          </tr>
+          <tr>
+            <td>Secure the cluster</td>
+            <td><a href="security.html">Security</a></td>
+          </tr>
+          <tr>
+            <td>Extend the API with CRDs</td>
+            <td><a href="crds.html">Custom Resources</a></td>
+          </tr>
+          <tr>
+            <td>Configure each component</td>
+            <td><a href="api-server-config.html">Configuration</a></td>
+          </tr>
+          <tr>
+            <td>Debug issues</td>
+            <td><a href="troubleshooting.html">Troubleshooting</a></td>
+          </tr>
+          <tr>
+            <td>See every API endpoint</td>
+            <td><a href="api-reference.html">API Reference</a></td>
+          </tr>
+          <tr>
+            <td>Check conformance status</td>
+            <td><a href="conformance.html">Conformance</a></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Architecture</h2>
+      <p>
+        Rusternetes follows the standard Kubernetes architecture with five core components,
+        all written in safe Rust. They can run as separate containers in a cluster or as
+        concurrent tokio tasks in a single process.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">architecture</span>
+        </div>
+        <code>
+<span class="comment">Control Plane</span>
+  api-server          Axum HTTPS REST API (76 handlers, 2500-line router)
+  scheduler           Filter/score plugin scheduling
+  controller-manager  31 reconciliation controllers
+
+<span class="comment">Node Components</span>
+  kubelet             Container runtime via bollard (Docker API)
+  kube-proxy          iptables service routing
+
+<span class="comment">Storage</span>
+  etcd                Production — distributed key-value store
+  SQLite (rhino)      Lightweight — embedded or gRPC server
+  memory              Testing only
+</code>
+      </pre>
+
+      <h2>Key Features</h2>
+      <ul>
+        <li>Full Kubernetes REST API — core/v1, apps/v1, batch/v1, networking, storage, RBAC, and 15+ more API groups</li>
+        <li>80+ resource types — Pods, Deployments, StatefulSets, Services, Secrets, CRDs, and more</li>
+        <li>Watch API — real-time event streaming with Server-Sent Events, bookmarks, and HTTP/2</li>
+        <li>Custom Resource Definitions — full CRUD, watch, status/scale subresources, schema validation</li>
+        <li>12 volume types — emptyDir, hostPath, PVC, configMap, secret, projected, NFS, CSI, and more</li>
+        <li>RBAC — Roles, ClusterRoles, Bindings, ServiceAccount tokens (RS256 JWT)</li>
+        <li>Admission webhooks — validating, mutating, and ValidatingAdmissionPolicy (CEL)</li>
+        <li>Probes — liveness, readiness, startup with HTTP, TCP, exec, and gRPC handlers</li>
+        <li>Three deployment modes — full cluster, SQLite cluster, or single binary</li>
+        <li>90% Kubernetes conformance — tested against the official K8s v1.35 e2e test suite</li>
+      </ul>
+
+      <div class="doc-pager">
+        <div></div>
+        <a href="quickstart.html" class="next">
+          <span class="pager-label">Next</span>
+          Quick Start &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Storage &amp; Volumes - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html" class="active">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Storage &amp; Volumes</h1>
+      <p class="lead">
+        Rusternetes supports 12 volume types for mounting data into pod containers. This page covers
+        every volume type, the PersistentVolume / PersistentVolumeClaim lifecycle, StorageClasses,
+        dynamic provisioning, volume snapshots, and online expansion.
+      </p>
+
+      <!-- ───────────────────── Volume Types ───────────────────── -->
+      <h2 id="volume-types">Volume Types</h2>
+
+      <!-- emptyDir -->
+      <h3 id="emptydir">1. emptyDir</h3>
+      <p>
+        A temporary directory created when a pod is assigned to a node and deleted when the pod
+        is removed. All containers in the pod can read and write to it. Useful for scratch space,
+        caches, and sharing data between containers.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">emptydir.yaml</span>
+        </div>
+        <code>volumes:
+  - name: cache
+    emptyDir:
+      medium: ""               <span class="comment"># "" = disk (default), "Memory" = tmpfs</span>
+      sizeLimit: 256Mi         <span class="comment"># Optional size limit</span>
+containers:
+  - name: app
+    volumeMounts:
+      - name: cache
+        mountPath: /tmp/cache</code>
+      </pre>
+
+      <div class="admonition note">
+        <div class="admonition-title">POSIX permissions</div>
+        <p>
+          emptyDir volumes use a container-local path on the kubelet host, ensuring proper POSIX
+          permission support for <code>fsGroup</code>, <code>chmod</code>, and file ownership changes.
+        </p>
+      </div>
+
+      <!-- hostPath -->
+      <h3 id="hostpath">2. hostPath</h3>
+      <p>
+        Mounts a file or directory from the host node's filesystem. Use with caution &mdash; pods
+        become tied to a specific node and can access sensitive host data.
+      </p>
+      <table>
+        <thead>
+          <tr><th>type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>""</code></td><td>No check (default). Path may or may not exist.</td></tr>
+          <tr><td><code>Directory</code></td><td>Must be an existing directory.</td></tr>
+          <tr><td><code>DirectoryOrCreate</code></td><td>Create directory if missing (0755, same owner as kubelet).</td></tr>
+          <tr><td><code>File</code></td><td>Must be an existing file.</td></tr>
+          <tr><td><code>FileOrCreate</code></td><td>Create file if missing (0644, same owner as kubelet).</td></tr>
+          <tr><td><code>Socket</code></td><td>Must be an existing UNIX socket.</td></tr>
+          <tr><td><code>CharDevice</code></td><td>Must be an existing character device.</td></tr>
+          <tr><td><code>BlockDevice</code></td><td>Must be an existing block device.</td></tr>
+        </tbody>
+      </table>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">hostpath.yaml</span>
+        </div>
+        <code>volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+      type: Socket
+containers:
+  - name: docker-cli
+    volumeMounts:
+      - name: docker-sock
+        mountPath: /var/run/docker.sock</code>
+      </pre>
+
+      <!-- configMap -->
+      <h3 id="configmap">3. configMap</h3>
+      <p>
+        Mounts a ConfigMap's data as files in the container. Each key becomes a filename and its
+        value becomes the file content.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">configmap-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: config
+    configMap:
+      name: app-config        <span class="comment"># ConfigMap name</span>
+      defaultMode: 0644        <span class="comment"># File permissions (default 0644)</span>
+      optional: false          <span class="comment"># Fail pod if ConfigMap missing?</span>
+      items:                   <span class="comment"># Optional: select specific keys</span>
+        - key: nginx.conf
+          path: nginx.conf     <span class="comment"># Filename in the mount</span>
+        - key: mime.types
+          path: mime.types
+containers:
+  - name: nginx
+    volumeMounts:
+      - name: config
+        mountPath: /etc/nginx/conf.d
+        readOnly: true</code>
+      </pre>
+
+      <!-- secret -->
+      <h3 id="secret">4. secret</h3>
+      <p>
+        Mounts a Secret's data as files. Identical to configMap volumes but for sensitive data.
+        Files are base64-decoded automatically.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">secret-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: tls
+    secret:
+      secretName: app-tls      <span class="comment"># Secret name</span>
+      defaultMode: 0400         <span class="comment"># Restrictive permissions</span>
+      optional: false
+      items:
+        - key: tls.crt
+          path: cert.pem
+        - key: tls.key
+          path: key.pem
+containers:
+  - name: app
+    volumeMounts:
+      - name: tls
+        mountPath: /etc/ssl/app
+        readOnly: true</code>
+      </pre>
+
+      <!-- downwardAPI -->
+      <h3 id="downwardapi">5. downwardAPI</h3>
+      <p>
+        Exposes pod and container metadata as files. Supports both <code>fieldRef</code> (pod
+        metadata) and <code>resourceFieldRef</code> (container resource limits/requests).
+      </p>
+      <table>
+        <thead>
+          <tr><th>fieldRef.fieldPath</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>metadata.name</code></td><td>Pod name</td></tr>
+          <tr><td><code>metadata.namespace</code></td><td>Pod namespace</td></tr>
+          <tr><td><code>metadata.uid</code></td><td>Pod UID</td></tr>
+          <tr><td><code>metadata.labels</code></td><td>All labels, one per line as <code>key="value"</code></td></tr>
+          <tr><td><code>metadata.annotations</code></td><td>All annotations, one per line</td></tr>
+          <tr><td><code>spec.nodeName</code></td><td>Node the pod is running on</td></tr>
+          <tr><td><code>spec.serviceAccountName</code></td><td>ServiceAccount name</td></tr>
+          <tr><td><code>status.hostIP</code></td><td>Node IP address</td></tr>
+          <tr><td><code>status.podIP</code></td><td>Pod IP address</td></tr>
+        </tbody>
+      </table>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">downwardapi-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: podinfo
+    downwardAPI:
+      items:
+        - path: labels
+          fieldRef:
+            fieldPath: metadata.labels
+        - path: cpu-limit
+          resourceFieldRef:
+            containerName: app
+            resource: limits.cpu
+containers:
+  - name: app
+    volumeMounts:
+      - name: podinfo
+        mountPath: /etc/podinfo</code>
+      </pre>
+
+      <!-- projected -->
+      <h3 id="projected">6. projected</h3>
+      <p>
+        Combines multiple volume sources into a single mount directory. Can project
+        serviceAccountToken, configMap, secret, and downwardAPI sources together. This is the
+        mechanism used for automatic ServiceAccount token injection.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">projected-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: kube-api-access
+    projected:
+      defaultMode: 0644
+      sources:
+        - serviceAccountToken:
+            expirationSeconds: 3607
+            path: token
+        - configMap:
+            name: kube-root-ca.crt
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - downwardAPI:
+            items:
+              - path: namespace
+                fieldRef:
+                  fieldPath: metadata.namespace
+        - secret:
+            name: extra-creds
+            items:
+              - key: password
+                path: password
+containers:
+  - name: app
+    volumeMounts:
+      - name: kube-api-access
+        mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        readOnly: true</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">Projected volume resync</div>
+        <p>
+          When the kubelet resyncs projected volumes, it deletes files not in the expected file
+          list. ServiceAccountToken files must be listed in the expected files or they will be
+          removed on resync.
+        </p>
+      </div>
+
+      <!-- persistentVolumeClaim -->
+      <h3 id="pvc-volume">7. persistentVolumeClaim</h3>
+      <p>
+        References a PersistentVolumeClaim to mount a PersistentVolume into the pod. The PVC
+        must be bound to a PV before the pod can start.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">pvc-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: my-pvc        <span class="comment"># PVC name in the same namespace</span>
+      readOnly: false
+containers:
+  - name: app
+    volumeMounts:
+      - name: data
+        mountPath: /data</code>
+      </pre>
+
+      <!-- nfs -->
+      <h3 id="nfs">8. nfs</h3>
+      <p>
+        Mounts an NFS share directly. The NFS server must be accessible from the node.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">nfs-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: nfs-data
+    nfs:
+      server: 10.0.0.100       <span class="comment"># NFS server address</span>
+      path: /exports/data       <span class="comment"># Export path</span>
+      readOnly: false</code>
+      </pre>
+
+      <!-- iscsi -->
+      <h3 id="iscsi">9. iscsi</h3>
+      <p>
+        Mounts an iSCSI (SCSI over IP) block storage device. Provides access to enterprise SAN storage.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">iscsi-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: iscsi-data
+    iscsi:
+      targetPortal: 10.0.0.50:3260
+      iqn: iqn.2025-01.com.example:storage
+      lun: 0
+      fsType: ext4
+      readOnly: false</code>
+      </pre>
+
+      <!-- csi -->
+      <h3 id="csi">10. csi</h3>
+      <p>
+        Container Storage Interface &mdash; the standard plugin mechanism for external storage
+        providers. CSI drivers run as separate pods and handle volume provisioning, attaching,
+        and mounting.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">csi-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: csi-data
+    csi:
+      driver: ebs.csi.aws.com
+      volumeHandle: vol-0abc123def456
+      readOnly: false
+      fsType: ext4
+      volumeAttributes:
+        storage.kubernetes.io/csiProvisionerIdentity: "1234"</code>
+      </pre>
+
+      <!-- ephemeral -->
+      <h3 id="ephemeral">11. ephemeral</h3>
+      <p>
+        An inline PVC that is created when the pod is scheduled and deleted when the pod is
+        removed. Combines the simplicity of emptyDir with the flexibility of PVCs (StorageClass,
+        access modes, size).
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">ephemeral-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: scratch
+    ephemeral:
+      volumeClaimTemplate:
+        metadata:
+          labels:
+            type: scratch
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: fast
+          resources:
+            requests:
+              storage: 10Gi</code>
+      </pre>
+
+      <!-- image -->
+      <h3 id="image">12. image</h3>
+      <p>
+        Mounts the contents of an OCI image as a read-only volume. The image is pulled by the
+        container runtime and its filesystem is mounted directly.
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">image-volume.yaml</span>
+        </div>
+        <code>volumes:
+  - name: static-assets
+    image:
+      reference: myregistry.com/assets:v1.2
+      pullPolicy: IfNotPresent
+containers:
+  - name: web
+    volumeMounts:
+      - name: static-assets
+        mountPath: /usr/share/nginx/html
+        readOnly: true</code>
+      </pre>
+
+      <!-- ───────────────────── Volume Type Summary ───────────────────── -->
+      <h2 id="volume-summary">Volume Type Summary</h2>
+      <table>
+        <thead>
+          <tr><th>Volume Type</th><th>Persists</th><th>Shared</th><th>Use Case</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>emptyDir</code></td><td>Pod lifetime</td><td>Same pod</td><td>Scratch space, inter-container data sharing</td></tr>
+          <tr><td><code>hostPath</code></td><td>Node lifetime</td><td>Same node</td><td>Node-level logs, Docker socket</td></tr>
+          <tr><td><code>configMap</code></td><td>ConfigMap lifetime</td><td>Same pod</td><td>Application configuration files</td></tr>
+          <tr><td><code>secret</code></td><td>Secret lifetime</td><td>Same pod</td><td>TLS certificates, credentials</td></tr>
+          <tr><td><code>downwardAPI</code></td><td>Pod lifetime</td><td>Same pod</td><td>Pod metadata (labels, annotations, resources)</td></tr>
+          <tr><td><code>projected</code></td><td>Varies</td><td>Same pod</td><td>Combined SA tokens + ConfigMaps + Secrets</td></tr>
+          <tr><td><code>persistentVolumeClaim</code></td><td>PV lifetime</td><td>Cross-pod</td><td>Databases, stateful data</td></tr>
+          <tr><td><code>nfs</code></td><td>NFS server</td><td>Cross-pod</td><td>Shared filesystem across pods</td></tr>
+          <tr><td><code>iscsi</code></td><td>SAN</td><td>Single pod</td><td>Block storage from enterprise SAN</td></tr>
+          <tr><td><code>csi</code></td><td>Provider</td><td>Varies</td><td>Cloud block storage (EBS, GCE PD, Azure Disk)</td></tr>
+          <tr><td><code>ephemeral</code></td><td>Pod lifetime</td><td>Same pod</td><td>Temp storage with PVC features</td></tr>
+          <tr><td><code>image</code></td><td>Image lifetime</td><td>Read-only</td><td>Static assets from container images</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ───────────────────── PV / PVC ───────────────────── -->
+      <h2 id="pv-pvc">PersistentVolume &amp; PersistentVolumeClaim</h2>
+      <p>
+        PersistentVolumes (PVs) are cluster-scoped storage resources. PersistentVolumeClaims (PVCs)
+        are namespace-scoped requests for storage. The PV controller binds PVCs to matching PVs.
+      </p>
+
+      <h3>Lifecycle</h3>
+      <table>
+        <thead>
+          <tr><th>Phase</th><th>PV Status</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Provisioning</td><td>Available</td><td>PV created (statically or dynamically). Waiting for a matching PVC.</td></tr>
+          <tr><td>Binding</td><td>Bound</td><td>PVC matched and bound to this PV. Both reference each other.</td></tr>
+          <tr><td>Using</td><td>Bound</td><td>Pod is actively using the PVC. PV is mounted on a node.</td></tr>
+          <tr><td>Reclaiming</td><td>Released</td><td>PVC deleted. PV enters reclaim phase based on <code>persistentVolumeReclaimPolicy</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Access Modes</h3>
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Abbreviation</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ReadWriteOnce</code></td><td>RWO</td><td>Mount as read-write by a single node.</td></tr>
+          <tr><td><code>ReadOnlyMany</code></td><td>ROX</td><td>Mount as read-only by many nodes.</td></tr>
+          <tr><td><code>ReadWriteMany</code></td><td>RWX</td><td>Mount as read-write by many nodes.</td></tr>
+          <tr><td><code>ReadWriteOncePod</code></td><td>RWOP</td><td>Mount as read-write by a single pod.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">pv-pvc.yaml</span>
+        </div>
+        <code><span class="comment"># PersistentVolume</span>
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-data
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: standard
+  hostPath:
+    path: /mnt/data
+---
+<span class="comment"># PersistentVolumeClaim</span>
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 5Gi</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List PersistentVolumes</span>
+kubectl get pv
+
+<span class="comment"># List PersistentVolumeClaims</span>
+kubectl get pvc
+
+<span class="comment"># Describe binding status</span>
+kubectl describe pvc <span class="value">my-pvc</span>
+
+<span class="comment"># Delete a PVC (PV reclaim policy determines what happens to data)</span>
+kubectl delete pvc <span class="value">my-pvc</span></code>
+      </pre>
+
+      <!-- ───────────────────── StorageClass ───────────────────── -->
+      <h2 id="storageclass">StorageClass</h2>
+      <p>
+        A StorageClass defines a "class" of storage with a provisioner, parameters, and reclaim
+        policy. PVCs that reference a StorageClass trigger dynamic provisioning of a PV.
+      </p>
+
+      <h3>Key Spec Fields</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>provisioner</code></td><td>string</td><td>Required. Name of the volume provisioner (e.g., <code>kubernetes.io/aws-ebs</code>, <code>ebs.csi.aws.com</code>).</td></tr>
+          <tr><td><code>reclaimPolicy</code></td><td>string</td><td><code>Retain</code> (keep PV after PVC deletion) or <code>Delete</code> (delete PV and underlying storage). Default <code>Delete</code>.</td></tr>
+          <tr><td><code>allowVolumeExpansion</code></td><td>boolean</td><td>Allow PVCs to request more storage than originally provisioned.</td></tr>
+          <tr><td><code>volumeBindingMode</code></td><td>string</td><td><code>Immediate</code> (bind PVC immediately) or <code>WaitForFirstConsumer</code> (bind when pod is scheduled).</td></tr>
+          <tr><td><code>parameters</code></td><td>map</td><td>Provisioner-specific key-value pairs (e.g., <code>type: gp3</code>, <code>iopsPerGB: "50"</code>).</td></tr>
+          <tr><td><code>mountOptions</code></td><td>array</td><td>Mount options for PVs created by this class (e.g., <code>["nfsvers=4.1"]</code>).</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">storageclass.yaml</span>
+        </div>
+        <code>apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: gp3
+  iopsPerGB: "50"
+  encrypted: "true"</code>
+      </pre>
+
+      <!-- ───────────────────── Dynamic Provisioning ───────────────────── -->
+      <h2 id="dynamic-provisioning">Dynamic Provisioning</h2>
+      <p>
+        The DynamicProvisionerController watches for unbound PVCs that reference a StorageClass.
+        When a match is found, it automatically creates a PV with the requested capacity and
+        binds it to the PVC.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">architecture</span>
+        </div>
+        <code><span class="comment"># Dynamic provisioning flow</span>
+1. User creates PVC with storageClassName: fast
+2. DynamicProvisionerController detects unbound PVC
+3. Controller creates PV matching PVC spec + StorageClass params
+4. PV controller binds PVC &lt;-&gt; PV
+5. Pod starts and mounts the volume</code>
+      </pre>
+
+      <!-- ───────────────────── Volume Snapshots ───────────────────── -->
+      <h2 id="snapshots">Volume Snapshots</h2>
+      <p>
+        Volume snapshots provide point-in-time copies of PersistentVolumes.
+      </p>
+
+      <h3>Resources</h3>
+      <table>
+        <thead>
+          <tr><th>Resource</th><th>Scope</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>VolumeSnapshotClass</code></td><td>Cluster</td><td>Defines the CSI driver and parameters for taking snapshots.</td></tr>
+          <tr><td><code>VolumeSnapshot</code></td><td>Namespace</td><td>Request to snapshot a PVC. References a VolumeSnapshotClass.</td></tr>
+          <tr><td><code>VolumeSnapshotContent</code></td><td>Cluster</td><td>The actual snapshot resource. Bound to a VolumeSnapshot.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">snapshot.yaml</span>
+        </div>
+        <code><span class="comment"># VolumeSnapshotClass</span>
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: csi-snapclass
+driver: ebs.csi.aws.com
+deletionPolicy: Delete
+---
+<span class="comment"># VolumeSnapshot</span>
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: my-snapshot
+spec:
+  volumeSnapshotClassName: csi-snapclass
+  source:
+    persistentVolumeClaimName: my-pvc</code>
+      </pre>
+
+      <h3>Restoring from Snapshot</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">restore-pvc.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: restored-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 10Gi
+  dataSource:
+    name: my-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io</code>
+      </pre>
+
+      <!-- ───────────────────── Volume Expansion ───────────────────── -->
+      <h2 id="expansion">Volume Expansion</h2>
+      <p>
+        PVCs can be expanded online if the StorageClass has <code>allowVolumeExpansion: true</code>.
+        The PVC controller detects size increases and updates the PV capacity.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Expand a PVC from 5Gi to 20Gi</span>
+kubectl patch pvc <span class="value">my-pvc</span> <span class="flag">-p</span> <span class="value">'{"spec":{"resources":{"requests":{"storage":"20Gi"}}}}'</span>
+
+<span class="comment"># Check expansion status</span>
+kubectl describe pvc <span class="value">my-pvc</span>
+<span class="comment"># Look for condition: FileSystemResizePending or condition type Resizing</span></code>
+      </pre>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Online expansion</div>
+        <p>
+          Most CSI drivers support online expansion (no pod restart needed). The filesystem
+          resize happens transparently while the pod is running.
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="networking.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Networking
+        </a>
+        <a href="security.html" class="next">
+          <span class="pager-label">Next</span>
+          Security &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

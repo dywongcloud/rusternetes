@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>High Availability - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html" class="active">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>High Availability</h1>
+      <p class="lead">
+        Run Rusternetes in a highly available configuration with a 3-node etcd cluster, leader
+        election for the scheduler and controller manager, and multiple API server instances
+        behind a load balancer. Tolerate the loss of any single component without cluster downtime.
+      </p>
+
+      <div class="admonition note">
+        <div class="admonition-title">NOTE</div>
+        <p>
+          High availability requires the etcd storage backend. The SQLite/Rhino backend does
+          not support replication or multi-writer setups. See the
+          <a href="deployment.html">Deployment Overview</a> for a comparison of all modes.
+        </p>
+      </div>
+
+      <h2>Architecture Overview</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">HA cluster architecture</span>
+        </div>
+        <code>
+<span class="comment"># High Availability Deployment</span>
+
+                    +------------------+
+                    |  Load Balancer   |
+                    |  :6443 (HTTPS)   |
+                    +--------+---------+
+                             |
+              +--------------+--------------+
+              |              |              |
+     +--------+---+  +------+-----+  +-----+------+
+     |api-server-1|  |api-server-2|  |api-server-3|
+     +--------+---+  +------+-----+  +-----+------+
+              |              |              |
+     +--------+--------------+--------------+--------+
+     |                etcd cluster                    |
+     |  +--------+    +--------+    +--------+       |
+     |  | etcd-1 |----| etcd-2 |----| etcd-3 |       |
+     |  | :2379  |    | :2379  |    | :2379  |       |
+     |  | :2380  |    | :2380  |    | :2380  |       |
+     |  +--------+    +--------+    +--------+       |
+     +------------------------------------------------+
+
+     +-------------------+    +-------------------+
+     | scheduler         |    | controller-mgr    |
+     | (leader elected)  |    | (leader elected)  |
+     +-------------------+    +-------------------+
+
+     +----------+  +----------+  +----------+
+     | kubelet-1|  | kubelet-2|  | kubelet-3|
+     +----------+  +----------+  +----------+
+</code>
+      </pre>
+
+      <h2>3-Node etcd Cluster</h2>
+      <p>
+        A 3-node etcd cluster tolerates the failure of one node while maintaining quorum (2/3).
+        The <code>docker-compose.ha.yml</code> file defines three etcd instances with static
+        bootstrapping.
+      </p>
+
+      <h3>etcd cluster configuration</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.ha.yml (etcd cluster)</span>
+        </div>
+        <code>
+services:
+  etcd-1:
+    image: quay.io/coreos/etcd:v3.5
+    command:
+      - etcd
+      - <span class="flag">--name</span>=<span class="value">etcd-1</span>
+      - <span class="flag">--data-dir</span>=<span class="value">/etcd-data</span>
+      - <span class="flag">--listen-client-urls</span>=<span class="value">http://0.0.0.0:2379</span>
+      - <span class="flag">--advertise-client-urls</span>=<span class="value">http://etcd-1:2379</span>
+      - <span class="flag">--listen-peer-urls</span>=<span class="value">http://0.0.0.0:2380</span>
+      - <span class="flag">--initial-advertise-peer-urls</span>=<span class="value">http://etcd-1:2380</span>
+      - <span class="flag">--initial-cluster</span>=<span class="value">etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380</span>
+      - <span class="flag">--initial-cluster-token</span>=<span class="value">rusternetes-etcd-cluster</span>
+      - <span class="flag">--initial-cluster-state</span>=<span class="value">new</span>
+      - <span class="flag">--auto-compaction-retention</span>=<span class="value">10m</span>
+      - <span class="flag">--quota-backend-bytes</span>=<span class="value">8589934592</span>
+      - <span class="flag">--snapshot-count</span>=<span class="value">5000</span>
+    volumes:
+      - etcd-1-data:/etcd-data
+    networks:
+      - rusternetes-net
+
+  etcd-2:
+    image: quay.io/coreos/etcd:v3.5
+    command:
+      - etcd
+      - <span class="flag">--name</span>=<span class="value">etcd-2</span>
+      - <span class="flag">--data-dir</span>=<span class="value">/etcd-data</span>
+      - <span class="flag">--listen-client-urls</span>=<span class="value">http://0.0.0.0:2379</span>
+      - <span class="flag">--advertise-client-urls</span>=<span class="value">http://etcd-2:2379</span>
+      - <span class="flag">--listen-peer-urls</span>=<span class="value">http://0.0.0.0:2380</span>
+      - <span class="flag">--initial-advertise-peer-urls</span>=<span class="value">http://etcd-2:2380</span>
+      - <span class="flag">--initial-cluster</span>=<span class="value">etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380</span>
+      - <span class="flag">--initial-cluster-token</span>=<span class="value">rusternetes-etcd-cluster</span>
+      - <span class="flag">--initial-cluster-state</span>=<span class="value">new</span>
+      - <span class="flag">--auto-compaction-retention</span>=<span class="value">10m</span>
+      - <span class="flag">--quota-backend-bytes</span>=<span class="value">8589934592</span>
+      - <span class="flag">--snapshot-count</span>=<span class="value">5000</span>
+    volumes:
+      - etcd-2-data:/etcd-data
+    networks:
+      - rusternetes-net
+
+  etcd-3:
+    image: quay.io/coreos/etcd:v3.5
+    command:
+      - etcd
+      - <span class="flag">--name</span>=<span class="value">etcd-3</span>
+      - <span class="flag">--data-dir</span>=<span class="value">/etcd-data</span>
+      - <span class="flag">--listen-client-urls</span>=<span class="value">http://0.0.0.0:2379</span>
+      - <span class="flag">--advertise-client-urls</span>=<span class="value">http://etcd-3:2379</span>
+      - <span class="flag">--listen-peer-urls</span>=<span class="value">http://0.0.0.0:2380</span>
+      - <span class="flag">--initial-advertise-peer-urls</span>=<span class="value">http://etcd-3:2380</span>
+      - <span class="flag">--initial-cluster</span>=<span class="value">etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380</span>
+      - <span class="flag">--initial-cluster-token</span>=<span class="value">rusternetes-etcd-cluster</span>
+      - <span class="flag">--initial-cluster-state</span>=<span class="value">new</span>
+      - <span class="flag">--auto-compaction-retention</span>=<span class="value">10m</span>
+      - <span class="flag">--quota-backend-bytes</span>=<span class="value">8589934592</span>
+      - <span class="flag">--snapshot-count</span>=<span class="value">5000</span>
+    volumes:
+      - etcd-3-data:/etcd-data
+    networks:
+      - rusternetes-net
+
+volumes:
+  etcd-1-data:
+  etcd-2-data:
+  etcd-3-data:
+</code>
+      </pre>
+
+      <h3>etcd ports</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Port</th>
+            <th>Protocol</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>2379</code></td>
+            <td>HTTP</td>
+            <td>Client API. The API server connects to all three endpoints: <code>http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379</code>. The client automatically fails over if one node is down.</td>
+          </tr>
+          <tr>
+            <td><code>2380</code></td>
+            <td>HTTP</td>
+            <td>Peer communication. Used for Raft consensus, log replication, and leader election between etcd nodes. Must be reachable between all etcd members.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Key etcd settings</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>initial-cluster-token</code></td>
+            <td><code>rusternetes-etcd-cluster</code></td>
+            <td>Unique token to distinguish this cluster from other etcd clusters on the same network. All members must use the same token.</td>
+          </tr>
+          <tr>
+            <td><code>initial-cluster-state</code></td>
+            <td><code>new</code></td>
+            <td>Set to <code>new</code> for initial bootstrap. Change to <code>existing</code> when adding a member to an already-running cluster.</td>
+          </tr>
+          <tr>
+            <td><code>auto-compaction-retention</code></td>
+            <td><code>10m</code></td>
+            <td>Compacts history older than 10 minutes. Critical for Kubernetes workloads that generate many watch revisions.</td>
+          </tr>
+          <tr>
+            <td><code>quota-backend-bytes</code></td>
+            <td><code>8 GB</code></td>
+            <td>Maximum database size per member. etcd stops accepting writes when any member exceeds this limit.</td>
+          </tr>
+          <tr>
+            <td><code>snapshot-count</code></td>
+            <td><code>5000</code></td>
+            <td>Transactions between snapshots. Lower values increase disk I/O but speed up node recovery after crashes.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Leader Election</h2>
+      <p>
+        The scheduler and controller manager use etcd-based leader election to ensure only one
+        instance of each component is actively reconciling at any time. Standby instances monitor
+        the lease and take over if the leader fails.
+      </p>
+
+      <h3>How it works</h3>
+      <ol>
+        <li>Each instance creates or renews a lease in etcd at a well-known key.</li>
+        <li>The instance that holds the lease is the <strong>leader</strong> and actively runs reconciliation loops.</li>
+        <li>Standby instances watch the lease key and attempt to acquire it if the leader's lease expires.</li>
+        <li>The leader renews its lease at <code>lease-duration / 3</code> intervals (default: every 5 seconds for a 15-second lease).</li>
+        <li>If a leader crashes, the lease expires after the full lease duration, and a standby takes over.</li>
+      </ol>
+
+      <h3>Scheduler leader election flags</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--enable-leader-election</span></code></td>
+            <td>bool</td>
+            <td><code><span class="value">false</span></code></td>
+            <td>Enable leader election. Required when running multiple scheduler instances. When disabled, the scheduler assumes it is the sole instance.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--leader-election-identity</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"scheduler-1"</span></code></td>
+            <td>Unique identity for this scheduler instance. Must be different for each instance in the HA setup. Used to identify the current leader in logs and lease metadata.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--leader-election-lock-key</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"/rusternetes/scheduler/leader"</span></code></td>
+            <td>etcd key used for the leader election lease. All scheduler instances must use the same key to compete for the same lock.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--leader-election-lease-duration</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"15s"</span></code></td>
+            <td>Duration of the leader lease. If the leader fails to renew within this period, another instance can take over. Longer values reduce failover speed but tolerate more network jitter.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Controller manager leader election flags</h3>
+      <p>
+        The controller manager uses the same flags as the scheduler with different default values
+        for identity and lock key:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--enable-leader-election</span></code></td>
+            <td>bool</td>
+            <td><code><span class="value">false</span></code></td>
+            <td>Enable leader election for the controller manager.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--leader-election-identity</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"controller-manager-1"</span></code></td>
+            <td>Unique identity for this controller manager instance.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--leader-election-lock-key</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"/rusternetes/controller-manager/leader"</span></code></td>
+            <td>etcd key for the controller manager leader lease.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--leader-election-lease-duration</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"15s"</span></code></td>
+            <td>Leader lease duration.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Lock key format</h3>
+      <p>
+        Leader election lock keys follow the format:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">lock key format</span>
+        </div>
+        <code>
+/rusternetes/{component}/leader
+
+<span class="comment"># Examples:</span>
+/rusternetes/scheduler/leader
+/rusternetes/controller-manager/leader
+</code>
+      </pre>
+
+      <h3>Timing</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Lease duration</td>
+            <td>15 seconds</td>
+            <td>Time before a lease expires if not renewed. This is the maximum failover time.</td>
+          </tr>
+          <tr>
+            <td>Renew interval</td>
+            <td>5 seconds (lease/3)</td>
+            <td>How often the leader renews its lease. Calculated as lease-duration divided by 3.</td>
+          </tr>
+          <tr>
+            <td>Retry interval</td>
+            <td>2 seconds</td>
+            <td>How often standby instances attempt to acquire the lease after the leader's lease expires.</td>
+          </tr>
+          <tr>
+            <td>Worst-case failover</td>
+            <td>~17 seconds</td>
+            <td>Lease duration (15s) + retry interval (2s). In practice, failover is faster because standbys watch for lease expiry.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition tip">
+        <div class="admonition-title">TIP</div>
+        <p>
+          You can check which instance is the current leader by reading the lease key from etcd:
+          <code>etcdctl get /rusternetes/scheduler/leader</code>. The value contains the leader's
+          identity string and lease expiration timestamp.
+        </p>
+      </div>
+
+      <h3>Example: HA scheduler configuration</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.ha.yml (scheduler instances)</span>
+        </div>
+        <code>
+  scheduler-1:
+    image: rusternetes-scheduler
+    command:
+      - <span class="flag">--etcd-servers</span>=<span class="value">http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379</span>
+      - <span class="flag">--enable-leader-election</span>
+      - <span class="flag">--leader-election-identity</span>=<span class="value">scheduler-1</span>
+      - <span class="flag">--leader-election-lock-key</span>=<span class="value">/rusternetes/scheduler/leader</span>
+      - <span class="flag">--leader-election-lease-duration</span>=<span class="value">15s</span>
+    networks:
+      - rusternetes-net
+
+  scheduler-2:
+    image: rusternetes-scheduler
+    command:
+      - <span class="flag">--etcd-servers</span>=<span class="value">http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379</span>
+      - <span class="flag">--enable-leader-election</span>
+      - <span class="flag">--leader-election-identity</span>=<span class="value">scheduler-2</span>
+      - <span class="flag">--leader-election-lock-key</span>=<span class="value">/rusternetes/scheduler/leader</span>
+      - <span class="flag">--leader-election-lease-duration</span>=<span class="value">15s</span>
+    networks:
+      - rusternetes-net
+</code>
+      </pre>
+
+      <h2>Multi-Master API Server</h2>
+      <p>
+        Unlike the scheduler and controller manager, the API server is stateless and can run
+        multiple instances simultaneously without leader election. All instances connect to the
+        same etcd cluster and serve identical responses.
+      </p>
+
+      <h3>Load balancer setup</h3>
+      <p>
+        Place a load balancer (HAProxy, Nginx, or a cloud LB) in front of multiple API server
+        instances. The load balancer should:
+      </p>
+
+      <ul>
+        <li>Terminate TLS or pass through HTTPS to the API servers</li>
+        <li>Health-check each API server at <code>/healthz</code></li>
+        <li>Route traffic using round-robin or least-connections</li>
+        <li>Support HTTP/2 (required for watch streams and long-lived connections)</li>
+      </ul>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">haproxy.cfg</span>
+        </div>
+        <code>
+frontend kubernetes-api
+    bind *:6443 ssl crt /etc/haproxy/certs/server.pem alpn h2,http/1.1
+    default_backend api-servers
+
+backend api-servers
+    balance roundrobin
+    option httpchk GET /healthz
+    http-check expect status 200
+
+    server api-1 api-server-1:6443 check ssl verify none alpn h2
+    server api-2 api-server-2:6443 check ssl verify none alpn h2
+    server api-3 api-server-3:6443 check ssl verify none alpn h2
+</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">WARNING</div>
+        <p>
+          The load balancer must support HTTP/2 for watch API streams to work correctly.
+          Without HTTP/2, long-lived watch connections may time out or fail to deliver events.
+          Ensure ALPN negotiation includes <code>h2</code>.
+        </p>
+      </div>
+
+      <h3>API server compose config</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.ha.yml (API servers)</span>
+        </div>
+        <code>
+  api-server-1:
+    image: rusternetes-api-server
+    environment:
+      - ETCD_SERVERS=http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379
+    volumes:
+      - .rusternetes/certs:/certs:ro
+    networks:
+      - rusternetes-net
+
+  api-server-2:
+    image: rusternetes-api-server
+    environment:
+      - ETCD_SERVERS=http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379
+    volumes:
+      - .rusternetes/certs:/certs:ro
+    networks:
+      - rusternetes-net
+
+  api-server-3:
+    image: rusternetes-api-server
+    environment:
+      - ETCD_SERVERS=http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379
+    volumes:
+      - .rusternetes/certs:/certs:ro
+    networks:
+      - rusternetes-net
+</code>
+      </pre>
+
+      <h2>Failure Scenarios and Recovery</h2>
+
+      <h3>Single etcd node failure</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Quorum</td>
+            <td>Maintained (2/3 nodes). Cluster continues to accept reads and writes.</td>
+          </tr>
+          <tr>
+            <td>API server</td>
+            <td>No impact. The etcd client fails over to a healthy endpoint automatically.</td>
+          </tr>
+          <tr>
+            <td>Recovery</td>
+            <td>Restart the failed etcd node. It rejoins the cluster and replays the Raft log to catch up.</td>
+          </tr>
+          <tr>
+            <td>Data loss</td>
+            <td>None. Data is replicated across all 3 nodes before acknowledging writes.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Two etcd node failure (quorum lost)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Quorum</td>
+            <td>Lost (1/3 nodes). Cluster becomes read-only &mdash; no writes are accepted.</td>
+          </tr>
+          <tr>
+            <td>API server</td>
+            <td>Read requests succeed. Write requests (create, update, delete) fail.</td>
+          </tr>
+          <tr>
+            <td>Recovery</td>
+            <td>Restart at least one failed node to restore quorum (2/3). If data is corrupted, restore from snapshot.</td>
+          </tr>
+          <tr>
+            <td>Data loss</td>
+            <td>None if at least one node's data is intact. If all data is lost, restore from <code>etcdctl snapshot</code> backup.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Scheduler or controller manager leader failure</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Failover time</td>
+            <td>Up to 17 seconds (lease duration + retry interval).</td>
+          </tr>
+          <tr>
+            <td>During failover</td>
+            <td>New pods remain in Pending (scheduler) or controllers pause reconciliation (controller manager). No data loss.</td>
+          </tr>
+          <tr>
+            <td>Recovery</td>
+            <td>Automatic. The standby instance acquires the lease and resumes operations. No manual intervention needed.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>API server instance failure</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Failover time</td>
+            <td>Immediate. The load balancer detects the health check failure and stops routing to the failed instance.</td>
+          </tr>
+          <tr>
+            <td>Client impact</td>
+            <td>Active watch streams on the failed instance are disconnected. Clients reconnect automatically to another instance.</td>
+          </tr>
+          <tr>
+            <td>Recovery</td>
+            <td>Restart the failed API server. The load balancer adds it back when the health check passes.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Kubelet failure</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Node status</td>
+            <td>Node transitions to <code>NotReady</code> after the node controller's grace period (default 40 seconds).</td>
+          </tr>
+          <tr>
+            <td>Pod impact</td>
+            <td>Pods on the failed node are not evicted immediately. After the eviction timeout (default 5 minutes), pods are rescheduled to healthy nodes.</td>
+          </tr>
+          <tr>
+            <td>Recovery</td>
+            <td>Restart the kubelet. It re-registers with the API server and resumes managing its pods.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Monitoring HA Health</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Check etcd cluster health</span>
+docker compose -f docker-compose.ha.yml exec etcd-1 \
+  etcdctl <span class="flag">--endpoints</span>=<span class="value">http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379</span> \
+  endpoint health <span class="flag">--write-out</span>=<span class="value">table</span>
+
+<span class="comment"># Check etcd cluster member list</span>
+docker compose -f docker-compose.ha.yml exec etcd-1 \
+  etcdctl member list <span class="flag">--write-out</span>=<span class="value">table</span>
+
+<span class="comment"># Check current scheduler leader</span>
+docker compose -f docker-compose.ha.yml exec etcd-1 \
+  etcdctl get /rusternetes/scheduler/leader <span class="flag">--print-value-only</span>
+
+<span class="comment"># Check current controller manager leader</span>
+docker compose -f docker-compose.ha.yml exec etcd-1 \
+  etcdctl get /rusternetes/controller-manager/leader <span class="flag">--print-value-only</span>
+
+<span class="comment"># Watch leader election changes in real time</span>
+docker compose -f docker-compose.ha.yml exec etcd-1 \
+  etcdctl watch /rusternetes/ <span class="flag">--prefix</span>
+</code>
+      </pre>
+
+      <h2>Best Practices</h2>
+
+      <ul>
+        <li><strong>Separate etcd disks</strong> &mdash; Use dedicated SSDs for etcd data volumes. etcd is latency-sensitive and shared disks can cause leader election instability.</li>
+        <li><strong>Backup etcd regularly</strong> &mdash; Schedule <code>etcdctl snapshot save</code> at least every hour. Store backups off-cluster.</li>
+        <li><strong>Monitor etcd metrics</strong> &mdash; Watch for high apply latency (&gt;100ms), large database size (&gt;4 GB), and failed proposals.</li>
+        <li><strong>Use odd numbers of etcd nodes</strong> &mdash; 3 or 5 nodes. Even numbers (2, 4) provide no additional fault tolerance over one fewer node.</li>
+        <li><strong>Spread across failure domains</strong> &mdash; Place etcd nodes, API servers, and kubelets on different physical hosts or availability zones.</li>
+        <li><strong>Set appropriate lease durations</strong> &mdash; Shorter leases (10s) give faster failover but increase etcd write load. Longer leases (30s) reduce overhead but slow failover.</li>
+        <li><strong>Test failover regularly</strong> &mdash; Periodically stop a component and verify that failover works as expected.</li>
+      </ul>
+
+      <div class="admonition danger">
+        <div class="admonition-title">DANGER</div>
+        <p>
+          Never reduce a 3-node etcd cluster to 1 node in production. If the single remaining
+          node fails, all data is lost unless you have a snapshot backup. Always maintain at
+          least 2 healthy nodes.
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="sqlite-cluster.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Docker + SQLite
+        </a>
+        <a href="bootstrap.html" class="next">
+          <span class="pager-label">Next</span>
+          Bootstrap &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

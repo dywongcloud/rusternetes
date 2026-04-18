@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deployment Overview - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html" class="active">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Deployment Overview</h1>
+      <p class="lead">
+        Rusternetes supports three deployment modes: a full Docker Compose cluster with etcd,
+        a lighter Docker Compose cluster with SQLite (via Rhino), and a single all-in-one binary
+        that embeds every component in one process. Choose the mode that matches your needs.
+      </p>
+
+      <h2>Deployment Modes at a Glance</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Full Cluster (etcd)</th>
+            <th>SQLite Cluster (Rhino)</th>
+            <th>All-in-One Binary</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Orchestration</td>
+            <td><code>docker compose</code></td>
+            <td><code>docker compose</code></td>
+            <td>Single process</td>
+          </tr>
+          <tr>
+            <td>Storage backend</td>
+            <td>etcd (distributed KV)</td>
+            <td>SQLite via Rhino gRPC</td>
+            <td>Embedded SQLite</td>
+          </tr>
+          <tr>
+            <td>Node count</td>
+            <td>Multi-node (2+ kubelets)</td>
+            <td>Multi-node (2+ kubelets)</td>
+            <td>Single node</td>
+          </tr>
+          <tr>
+            <td>HA support</td>
+            <td>Yes (3-node etcd, leader election)</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>TLS</td>
+            <td>Yes (auto-generated certs)</td>
+            <td>Yes (auto-generated certs)</td>
+            <td>Optional (<code>--tls</code> flag)</td>
+          </tr>
+          <tr>
+            <td>Docker required</td>
+            <td>Yes (compose + container runtime)</td>
+            <td>Yes (compose + container runtime)</td>
+            <td>Only for pods (not the binary)</td>
+          </tr>
+          <tr>
+            <td>External dependencies</td>
+            <td>etcd, Docker</td>
+            <td>Rhino, Docker</td>
+            <td>Docker (for pod containers)</td>
+          </tr>
+          <tr>
+            <td>State persistence</td>
+            <td>etcd data volume</td>
+            <td>Single SQLite file</td>
+            <td>Single SQLite file</td>
+          </tr>
+          <tr>
+            <td>Conformance tested</td>
+            <td>Yes (90% pass rate)</td>
+            <td>Yes</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td>Production ready</td>
+            <td>Yes</td>
+            <td>Suitable for non-HA</td>
+            <td>Edge / dev / CI</td>
+          </tr>
+          <tr>
+            <td>Resource footprint</td>
+            <td>~1 GB RAM</td>
+            <td>~600 MB RAM</td>
+            <td>~200 MB RAM</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Architecture: Full Cluster (etcd)</h2>
+      <p>
+        The standard deployment runs each Kubernetes component as a separate Docker container,
+        communicating over an internal bridge network. etcd provides distributed, consistent
+        state storage with support for watches and transactions.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">full cluster architecture</span>
+        </div>
+        <code>
+<span class="comment"># Docker Compose: Full Cluster with etcd</span>
+
+  +-----------------------------------------------------+
+  |                rusternetes-net (bridge)              |
+  |                                                     |
+  |  +-----------+   +-----------+   +---------------+  |
+  |  |   etcd    |   |api-server |   | controller-   |  |
+  |  |  :2379    |   |  :6443    |   | manager       |  |
+  |  +-----------+   +-----------+   +---------------+  |
+  |                        |                            |
+  |              +---------+---------+                  |
+  |              |                   |                  |
+  |  +-----------+---+   +----------+----+              |
+  |  | scheduler     |   | kube-proxy   |              |
+  |  +---------------+   | (host net)   |              |
+  |                       +--------------+              |
+  |  +---------------+   +---------------+              |
+  |  | kubelet       |   | kubelet       |              |
+  |  | (node-1)      |   | (node-2)      |              |
+  |  +---------------+   +---------------+              |
+  +-----------------------------------------------------+
+</code>
+      </pre>
+
+      <h2>Architecture: SQLite Cluster (Rhino)</h2>
+      <p>
+        Replaces etcd with <a href="https://github.com/calfonso/rhino">Rhino</a>, an
+        etcd-compatible gRPC server backed by SQLite. The API server and all other components
+        connect to Rhino exactly as they would to etcd. The entire cluster state lives in a
+        single SQLite file.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">sqlite cluster architecture</span>
+        </div>
+        <code>
+<span class="comment"># Docker Compose: SQLite Cluster with Rhino</span>
+
+  +-----------------------------------------------------+
+  |                rusternetes-net (bridge)              |
+  |                                                     |
+  |  +-----------+   +-----------+   +---------------+  |
+  |  |  rhino    |   |api-server |   | controller-   |  |
+  |  |  :2379    |   |  :6443    |   | manager       |  |
+  |  | (sqlite)  |   +-----------+   +---------------+  |
+  |  +-----------+         |                            |
+  |              +---------+---------+                  |
+  |              |                   |                  |
+  |  +-----------+---+   +----------+----+              |
+  |  | scheduler     |   | kube-proxy   |              |
+  |  +---------------+   | (host net)   |              |
+  |                       +--------------+              |
+  |  +---------------+   +---------------+              |
+  |  | kubelet       |   | kubelet       |              |
+  |  | (node-1)      |   | (node-2)      |              |
+  |  +---------------+   +---------------+              |
+  +-----------------------------------------------------+
+</code>
+      </pre>
+
+      <h2>Architecture: All-in-One Binary</h2>
+      <p>
+        Every component runs as a concurrent tokio task inside a single Rust process. Storage
+        is an embedded SQLite database (no network hop). The binary still requires Docker for
+        running pod containers, but the Kubernetes control plane itself is entirely self-contained.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">all-in-one architecture</span>
+        </div>
+        <code>
+<span class="comment"># Single Process: All-in-One Binary</span>
+
+  +---------------------------------------------------+
+  |              rusternetes (single binary)           |
+  |                                                   |
+  |  +-------------+  +-----------+  +--------------+ |
+  |  | api-server  |  | scheduler |  | controller-  | |
+  |  | (axum)      |  | (task)    |  | manager      | |
+  |  +------+------+  +-----------+  | (31 ctrl)    | |
+  |         |                        +--------------+ |
+  |  +------+------+  +-----------+                   |
+  |  | kubelet     |  | kube-proxy|                   |
+  |  | (task)      |  | (task)    |                   |
+  |  +-------------+  +-----------+                   |
+  |         |                                         |
+  |  +------+------+                                  |
+  |  | SQLite      |  <span class="comment"># embedded, no network hop</span>       |
+  |  | (rhino)     |                                  |
+  |  +-------------+                                  |
+  +---------------------------------------------------+
+         |
+  +------+------+
+  | Docker API  |  <span class="comment"># only for running pod containers</span>
+  +-------------+
+</code>
+      </pre>
+
+      <h2>Decision Guide</h2>
+      <p>Use this flowchart to pick the right deployment mode for your use case.</p>
+
+      <h3>Choose the Full Cluster (etcd) when:</h3>
+      <ul>
+        <li>You need <strong>high availability</strong> with leader election and etcd replication</li>
+        <li>You are running a <strong>multi-node</strong> cluster with 2 or more kubelets</li>
+        <li>You need <strong>production-grade</strong> state storage with proven durability</li>
+        <li>You want the architecture closest to <strong>upstream Kubernetes</strong></li>
+        <li>You are running <strong>conformance tests</strong> against the full K8s e2e suite</li>
+      </ul>
+
+      <h3>Choose the SQLite Cluster (Rhino) when:</h3>
+      <ul>
+        <li>You want a <strong>multi-node</strong> cluster without the overhead of etcd</li>
+        <li>You want <strong>simpler operations</strong> &mdash; state is a single file you can backup with <code>cp</code></li>
+        <li>You are running in <strong>resource-constrained</strong> environments where etcd's memory footprint is too large</li>
+        <li>You don't need <strong>high availability</strong> (single point of failure is acceptable)</li>
+        <li>You want to <strong>inspect state directly</strong> with <code>sqlite3</code></li>
+      </ul>
+
+      <h3>Choose the All-in-One Binary when:</h3>
+      <ul>
+        <li>You want the <strong>simplest possible setup</strong> &mdash; one binary, one command</li>
+        <li>You are running on <strong>edge devices</strong>, IoT hardware, or air-gapped environments</li>
+        <li>You need a Kubernetes API for <strong>CI/CD pipelines</strong> or integration testing</li>
+        <li>You are building a <strong>sandbox</strong> environment (like OpenShell) that embeds Kubernetes</li>
+        <li>You want the <strong>smallest resource footprint</strong> (~200 MB RAM)</li>
+        <li>You are a <strong>developer</strong> who wants to hack on the codebase without Docker Compose</li>
+      </ul>
+
+      <div class="admonition tip">
+        <div class="admonition-title">TIP</div>
+        <p>
+          All three modes expose the same Kubernetes API. You can use <code>kubectl</code>,
+          client-go, or any Kubernetes client library with any deployment mode. Your workload
+          YAML files work identically across all modes.
+        </p>
+      </div>
+
+      <h2>Quick Comparison</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Concern</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Fastest to start</td>
+            <td><a href="all-in-one.html">All-in-One Binary</a> &mdash; <code>cargo run</code> or download the binary</td>
+          </tr>
+          <tr>
+            <td>Most production-like</td>
+            <td><a href="docker-cluster.html">Docker + etcd</a> &mdash; separate containers, TLS, multi-node</td>
+          </tr>
+          <tr>
+            <td>Easiest to operate</td>
+            <td><a href="sqlite-cluster.html">Docker + SQLite</a> &mdash; no etcd, state is one file</td>
+          </tr>
+          <tr>
+            <td>Highest availability</td>
+            <td><a href="high-availability.html">HA mode</a> &mdash; 3-node etcd, leader election</td>
+          </tr>
+          <tr>
+            <td>Lowest resource usage</td>
+            <td><a href="all-in-one.html">All-in-One Binary</a> &mdash; ~200 MB RAM for the full stack</td>
+          </tr>
+          <tr>
+            <td>Best for CI/CD</td>
+            <td><a href="all-in-one.html">All-in-One Binary</a> &mdash; no Docker Compose, instant startup</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="installation.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Installation
+        </a>
+        <a href="all-in-one.html" class="next">
+          <span class="pager-label">Next</span>
+          All-in-One Binary &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

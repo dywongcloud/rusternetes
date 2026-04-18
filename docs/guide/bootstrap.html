@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cluster Bootstrap - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html" class="active">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <p class="breadcrumb">Cluster Setup &rsaquo; Bootstrap</p>
+      <h1>Cluster Bootstrap</h1>
+      <p class="lead">
+        The bootstrap process creates the essential resources every Kubernetes cluster needs:
+        namespaces, the <code>kubernetes</code> service, PriorityClasses, CoreDNS, and ServiceAccount tokens.
+      </p>
+
+      <h2>What bootstrap-cluster.sh Does</h2>
+      <p>
+        The <code>scripts/bootstrap-cluster.sh</code> script automates the full bootstrap sequence.
+        Run it after your cluster components are up:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>bash scripts/bootstrap-cluster.sh</code>
+      </pre>
+
+      <p>The script performs these steps in order:</p>
+
+      <h3>1. Generate ServiceAccount Tokens</h3>
+      <p>
+        Calls <code>scripts/generate-default-serviceaccounts.sh</code> to create RS256 JWT tokens
+        for the <code>default</code> ServiceAccount in each namespace. These tokens are signed with
+        the SA private key at <code>.rusternetes/certs/sa.key</code>.
+      </p>
+
+      <h3>2. Apply ServiceAccounts and Secrets</h3>
+      <p>
+        Applies <code>.rusternetes/default-serviceaccounts.yaml</code>, which contains the
+        ServiceAccount objects and their associated token Secrets for <code>kube-system</code>
+        and <code>default</code> namespaces.
+      </p>
+
+      <h3>3. Clean Up Existing CoreDNS</h3>
+      <p>
+        Removes any existing CoreDNS container and etcd key to ensure a fresh deployment
+        with the latest ServiceAccount token mounted.
+      </p>
+
+      <h3>4. Apply Bootstrap Resources</h3>
+      <p>
+        Applies <code>bootstrap-cluster.yaml</code>, which creates:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Name</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Namespace</td>
+            <td><code>kube-system</code></td>
+            <td>System components namespace</td>
+          </tr>
+          <tr>
+            <td>Namespace</td>
+            <td><code>default</code></td>
+            <td>Default namespace for user workloads</td>
+          </tr>
+          <tr>
+            <td>Service</td>
+            <td><code>kubernetes</code></td>
+            <td>ClusterIP <code>10.96.0.1</code>, port 443 &rarr; 6443</td>
+          </tr>
+          <tr>
+            <td>PriorityClass</td>
+            <td><code>system-node-critical</code></td>
+            <td>Priority 2000001000 &mdash; node-level system pods</td>
+          </tr>
+          <tr>
+            <td>PriorityClass</td>
+            <td><code>system-cluster-critical</code></td>
+            <td>Priority 2000000000 &mdash; cluster-level system pods</td>
+          </tr>
+          <tr>
+            <td>Pod</td>
+            <td><code>coredns</code></td>
+            <td>CoreDNS 1.11.1 in <code>kube-system</code></td>
+          </tr>
+          <tr>
+            <td>Service</td>
+            <td><code>kube-dns</code></td>
+            <td>ClusterIP <code>10.96.0.10</code>, DNS ports 53 UDP/TCP</td>
+          </tr>
+          <tr>
+            <td>ConfigMap</td>
+            <td><code>coredns</code></td>
+            <td>Corefile configuration</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>5. Wait for CoreDNS</h3>
+      <p>
+        Polls the CoreDNS pod status for up to 30 seconds, waiting for it to reach
+        <code>Running</code> phase. Reports final cluster state.
+      </p>
+
+      <h2>CoreDNS Configuration</h2>
+      <p>
+        The CoreDNS Corefile is stored in a ConfigMap and mounted into the CoreDNS pod.
+        It configures cluster DNS resolution:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">Corefile</span>
+        </div>
+        <code>.:53 {
+    errors
+    health {
+      lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+      pods insecure
+      fallthrough in-addr.arpa ip6.arpa
+      ttl 30
+      endpoint <span class="value">https://api-server:6443</span>
+      tls "" "" /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    }
+    prometheus <span class="value">:9153</span>
+    forward . <span class="value">8.8.8.8</span> {
+      max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}</code>
+      </pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Plugin</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>kubernetes</code></td>
+            <td>Resolves <code>*.cluster.local</code> by querying the API server over TLS</td>
+          </tr>
+          <tr>
+            <td><code>forward</code></td>
+            <td>Forwards non-cluster queries to <code>8.8.8.8</code> (Google DNS)</td>
+          </tr>
+          <tr>
+            <td><code>prometheus</code></td>
+            <td>Exposes metrics on port 9153</td>
+          </tr>
+          <tr>
+            <td><code>cache</code></td>
+            <td>Caches responses for 30 seconds</td>
+          </tr>
+          <tr>
+            <td><code>health</code> / <code>ready</code></td>
+            <td>Health and readiness endpoints for probes</td>
+          </tr>
+          <tr>
+            <td><code>loop</code></td>
+            <td>Detects and breaks forwarding loops</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Certificate Generation</h2>
+      <p>
+        The <code>scripts/generate-certs.sh</code> script generates all TLS material
+        before the cluster starts. Certificates are persisted in <code>.rusternetes/certs/</code>
+        and reused across restarts.
+      </p>
+
+      <h3>ServiceAccount Signing Keys</h3>
+      <p>
+        An RSA 2048-bit key pair is generated for signing and verifying ServiceAccount JWT tokens (RS256):
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.rusternetes/certs/sa.key</code></td>
+            <td>RSA private key &mdash; used by the API server to sign JWTs</td>
+          </tr>
+          <tr>
+            <td><code>.rusternetes/certs/sa.pub</code></td>
+            <td>RSA public key &mdash; used to verify SA tokens</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>API Server TLS Certificate</h3>
+      <p>
+        A self-signed EC P-256 certificate valid for 10 years. The certificate includes
+        Subject Alternative Names (SANs) for all addresses the API server may be reached at:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">certificate SANs</span>
+        </div>
+        <code><span class="comment"># DNS SANs</span>
+DNS.1 = localhost
+DNS.2 = api-server
+DNS.3 = rusternetes-api-server
+DNS.4 = kubernetes
+DNS.5 = kubernetes.default
+DNS.6 = kubernetes.default.svc
+DNS.7 = kubernetes.default.svc.cluster.local
+
+<span class="comment"># IP SANs</span>
+IP.1 = 127.0.0.1
+IP.2 = 10.96.0.1          <span class="comment"># kubernetes ClusterIP</span>
+IP.3 = 172.18.0.2         <span class="comment"># Docker bridge IPs</span>
+IP.4 = 172.18.0.3
+IP.5 = 172.18.0.4
+IP.6 = 172.18.0.5</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">DOCKER BRIDGE IPS</div>
+        <p>
+          The Docker bridge IPs (172.18.0.2&ndash;5) must be included in the certificate SANs.
+          Without them, kubelet and other components connecting to the API server via the
+          Docker network will fail TLS verification. If your Docker network uses different
+          IPs, regenerate the certificates.
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Algorithm</td>
+            <td>EC P-256 (prime256v1)</td>
+          </tr>
+          <tr>
+            <td>Validity</td>
+            <td>10 years (3650 days)</td>
+          </tr>
+          <tr>
+            <td>Subject</td>
+            <td><code>CN=rusternetes-api, O=Rusternetes, C=US</code></td>
+          </tr>
+          <tr>
+            <td>Key Usage</td>
+            <td>digitalSignature, keyEncipherment, dataEncipherment, keyCertSign</td>
+          </tr>
+          <tr>
+            <td>Extended Key Usage</td>
+            <td>serverAuth, clientAuth</td>
+          </tr>
+          <tr>
+            <td>CA</td>
+            <td><code>TRUE</code> (self-signed root)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Generated Files</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">file layout</span>
+        </div>
+        <code>.rusternetes/certs/
+  api-server.crt       <span class="comment"># API server TLS certificate</span>
+  api-server.key       <span class="comment"># API server TLS private key</span>
+  ca.crt               <span class="comment"># CA certificate (copy of api-server.crt)</span>
+  sa.key               <span class="comment"># ServiceAccount signing key (RSA 2048)</span>
+  sa.pub               <span class="comment"># ServiceAccount verification key</span></code>
+      </pre>
+
+      <h2>KUBECONFIG Generation</h2>
+      <p>
+        The bootstrap process generates a kubeconfig file at <code>~/.kube/rusternetes-config</code>
+        that points to the local API server:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Set KUBECONFIG to use the rusternetes cluster</span>
+export KUBECONFIG=~/.kube/rusternetes-config
+
+<span class="comment"># Verify connectivity</span>
+kubectl <span class="flag">--insecure-skip-tls-verify</span> get nodes</code>
+      </pre>
+
+      <h2>Manual Bootstrap Steps</h2>
+      <p>
+        If you prefer to bootstrap manually or need to customize the process:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># 1. Generate certificates (if not already present)</span>
+bash scripts/generate-certs.sh
+
+<span class="comment"># 2. Start the cluster</span>
+docker compose up -d
+
+<span class="comment"># 3. Wait for the API server to be ready</span>
+until kubectl <span class="flag">--insecure-skip-tls-verify</span> get <span class="flag">--raw</span> /healthz 2>/dev/null; do
+  sleep 2
+done
+
+<span class="comment"># 4. Generate ServiceAccount tokens</span>
+bash scripts/generate-default-serviceaccounts.sh
+
+<span class="comment"># 5. Apply ServiceAccounts</span>
+kubectl <span class="flag">--insecure-skip-tls-verify</span> apply -f .rusternetes/default-serviceaccounts.yaml
+
+<span class="comment"># 6. Apply bootstrap resources</span>
+kubectl <span class="flag">--insecure-skip-tls-verify</span> apply -f bootstrap-cluster.yaml
+
+<span class="comment"># 7. Verify</span>
+kubectl <span class="flag">--insecure-skip-tls-verify</span> get pods -A
+kubectl <span class="flag">--insecure-skip-tls-verify</span> get services -A</code>
+      </pre>
+
+      <div class="admonition tip">
+        <div class="admonition-title">REGENERATING CERTIFICATES</div>
+        <p>
+          To regenerate certificates, delete the existing files and re-run the script:
+          <code>rm .rusternetes/certs/api-server.crt .rusternetes/certs/api-server.key && bash scripts/generate-certs.sh</code>
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="high-availability.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; High Availability
+        </a>
+        <a href="api-server-config.html" class="next">
+          <span class="pager-label">Next</span>
+          API Server Config &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Container Runtime - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html" class="active">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Container Runtime</h1>
+      <p class="lead">
+        The Rusternetes kubelet manages containers via the Docker API (through the bollard
+        Rust library). This page covers the container lifecycle, pause containers, probes,
+        lifecycle hooks, init and sidecar containers, resource limits, image pulling, logging,
+        exec, attach, and port forwarding.
+      </p>
+
+      <!-- ───────────────────── Lifecycle ───────────────────── -->
+      <h2 id="lifecycle">Container Lifecycle</h2>
+      <p>
+        Each container in a pod goes through a well-defined lifecycle managed by the kubelet:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">container lifecycle</span>
+        </div>
+        <code>create &rarr; start &rarr; [postStart hook] &rarr; running &rarr; [preStop hook] &rarr; SIGTERM &rarr; [grace period] &rarr; SIGKILL &rarr; terminated
+
+<span class="comment">Container States (reported in pod status):</span>
+  Waiting     &mdash; Container is not yet running (pulling image, etc.)
+  Running     &mdash; Container is executing
+  Terminated  &mdash; Container has stopped (exit code, reason, signal)</code>
+      </pre>
+
+      <h3>Container Restarts</h3>
+      <p>
+        The kubelet restarts individual containers, not entire pods. Restart behavior depends
+        on the pod's <code>restartPolicy</code>:
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>restartPolicy</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Always</code></td><td>Restart the container regardless of exit code. Used for Deployments.</td></tr>
+          <tr><td><code>OnFailure</code></td><td>Restart only if the container exits with a non-zero exit code. Used for Jobs.</td></tr>
+          <tr><td><code>Never</code></td><td>Never restart. Let the pod transition to Failed or Succeeded.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">Individual container restarts</div>
+        <p>
+          The kubelet tracks <code>restartCount</code> per container across sync cycles.
+          When a container needs restarting, only that container is recreated &mdash; other
+          containers in the pod continue running. The pod's overall status reflects the
+          aggregate state of all containers.
+        </p>
+      </div>
+
+      <!-- ───────────────────── Pause Container ───────────────────── -->
+      <h2 id="pause">Pause Container</h2>
+      <p>
+        Every pod starts with a "pause" container (also called the sandbox or infra container).
+        This container:
+      </p>
+      <ul>
+        <li>Creates the pod's network namespace.</li>
+        <li>Holds the namespace open even if all app containers restart.</li>
+        <li>All other containers in the pod join the pause container's network namespace, sharing the same IP address and port space.</li>
+        <li>Is created first and must reach running state before app containers start.</li>
+      </ul>
+
+      <div class="admonition note">
+        <div class="admonition-title">CRI sandbox semantics</div>
+        <p>
+          The <code>start_pause_container</code> function blocks until the container reaches
+          a running state. This ensures the network namespace is fully established before
+          application containers attempt to join it.
+        </p>
+      </div>
+
+      <!-- ───────────────────── Probes ───────────────────── -->
+      <h2 id="probes">Probes</h2>
+      <p>
+        Probes periodically check the health of containers. Three types of probes serve
+        different purposes:
+      </p>
+
+      <h3>Probe Types</h3>
+      <table>
+        <thead>
+          <tr><th>Probe</th><th>Purpose</th><th>On Failure</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>livenessProbe</code></td>
+            <td>Detect deadlocked containers</td>
+            <td>Container is killed and restarted (subject to restartPolicy)</td>
+          </tr>
+          <tr>
+            <td><code>readinessProbe</code></td>
+            <td>Detect containers not ready to serve</td>
+            <td>Container is removed from Service endpoints (traffic stops flowing)</td>
+          </tr>
+          <tr>
+            <td><code>startupProbe</code></td>
+            <td>Detect slow-starting containers</td>
+            <td>Container is killed. While startup probe is active, liveness and readiness probes are disabled.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Probe Handlers</h3>
+      <table>
+        <thead>
+          <tr><th>Handler</th><th>Description</th><th>Success Criteria</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>httpGet</code></td>
+            <td>HTTP GET request to the container</td>
+            <td>Status code 200&ndash;399</td>
+          </tr>
+          <tr>
+            <td><code>tcpSocket</code></td>
+            <td>TCP connection to the container port</td>
+            <td>Connection established</td>
+          </tr>
+          <tr>
+            <td><code>exec</code></td>
+            <td>Run a command inside the container</td>
+            <td>Exit code 0</td>
+          </tr>
+          <tr>
+            <td><code>grpc</code></td>
+            <td>gRPC health check (grpc.health.v1.Health)</td>
+            <td>SERVING response</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Probe Configuration</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>initialDelaySeconds</code></td><td>0</td><td>Seconds to wait after container start before first probe.</td></tr>
+          <tr><td><code>periodSeconds</code></td><td>10</td><td>How often to perform the probe.</td></tr>
+          <tr><td><code>timeoutSeconds</code></td><td>1</td><td>Timeout for a single probe attempt.</td></tr>
+          <tr><td><code>successThreshold</code></td><td>1</td><td>Consecutive successes required to mark as healthy.</td></tr>
+          <tr><td><code>failureThreshold</code></td><td>3</td><td>Consecutive failures required to mark as unhealthy.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">probes.yaml</span>
+        </div>
+        <code>containers:
+  - name: app
+    image: myapp:v1
+    ports:
+      - containerPort: 8080
+    startupProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      failureThreshold: 30
+      periodSeconds: 10
+      <span class="comment"># Allow up to 5 min for startup (30 * 10s)</span>
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+        scheme: HTTP
+        httpHeaders:
+          - name: X-Custom-Header
+            value: Probe
+      initialDelaySeconds: 0
+      periodSeconds: 15
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readinessProbe:
+      tcpSocket:
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      successThreshold: 1</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">exec-probe.yaml</span>
+        </div>
+        <code>livenessProbe:
+  exec:
+    command:
+      - /bin/sh
+      - -c
+      - "pg_isready -U postgres"
+  periodSeconds: 30
+  failureThreshold: 3</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">grpc-probe.yaml</span>
+        </div>
+        <code>readinessProbe:
+  grpc:
+    port: 50051
+    service: my.custom.Service   <span class="comment"># Optional, defaults to ""</span>
+  periodSeconds: 10</code>
+      </pre>
+
+      <!-- ───────────────────── Lifecycle Hooks ───────────────────── -->
+      <h2 id="hooks">Lifecycle Hooks</h2>
+      <p>
+        Containers can define hooks that run at specific points in their lifecycle.
+      </p>
+
+      <h3>Hook Types</h3>
+      <table>
+        <thead>
+          <tr><th>Hook</th><th>When</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>postStart</code></td>
+            <td>Immediately after container creation</td>
+            <td>Runs concurrently with the container's entrypoint. Blocks the container from becoming Ready until it completes. If it fails, the container is killed.</td>
+          </tr>
+          <tr>
+            <td><code>preStop</code></td>
+            <td>Before SIGTERM is sent</td>
+            <td>Runs before the container is terminated. The grace period starts when preStop begins. After preStop completes (or times out), SIGTERM is sent.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition warning">
+        <div class="admonition-title">postStart failure kills the container</div>
+        <p>
+          If a <code>postStart</code> hook fails, Kubernetes kills the container. The container
+          will be restarted according to the pod's <code>restartPolicy</code>. This is often
+          overlooked &mdash; do not use postStart for non-essential tasks.
+        </p>
+      </div>
+
+      <h3>Hook Handlers</h3>
+      <table>
+        <thead>
+          <tr><th>Handler</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>exec</code></td><td>Run a command inside the container.</td></tr>
+          <tr><td><code>httpGet</code></td><td>Send an HTTP GET request to the container.</td></tr>
+          <tr><td><code>tcpSocket</code></td><td>Open a TCP connection to the container port.</td></tr>
+          <tr><td><code>sleep</code></td><td>Wait for a specified duration (seconds).</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">hooks.yaml</span>
+        </div>
+        <code>containers:
+  - name: app
+    image: myapp:v1
+    lifecycle:
+      postStart:
+        exec:
+          command: ["/bin/sh", "-c", "echo 'App started' >> /var/log/app.log"]
+      preStop:
+        httpGet:
+          path: /shutdown
+          port: 8080
+    <span class="comment"># OR use sleep for a simple delay:</span>
+    <span class="comment"># preStop:</span>
+    <span class="comment">#   sleep:</span>
+    <span class="comment">#     seconds: 10</span>
+    stopSignal: SIGTERM         <span class="comment"># Custom stop signal (default SIGTERM)</span></code>
+      </pre>
+
+      <!-- ───────────────────── Init Containers ───────────────────── -->
+      <h2 id="init">Init Containers</h2>
+      <p>
+        Init containers run before app containers start. They run sequentially &mdash; each must
+        complete successfully (exit code 0) before the next begins. If an init container fails,
+        the pod is restarted according to its <code>restartPolicy</code>.
+      </p>
+
+      <h3>Use Cases</h3>
+      <ul>
+        <li>Wait for a database or service to become available.</li>
+        <li>Download configuration or data from an external source.</li>
+        <li>Set file permissions or generate configs before the main app starts.</li>
+        <li>Run database migrations.</li>
+      </ul>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">init-containers.yaml</span>
+        </div>
+        <code>spec:
+  initContainers:
+    - name: wait-for-db
+      image: busybox:1.36
+      command: ['sh', '-c', 'until nc -z db-svc 5432; do sleep 2; done']
+    - name: migrate
+      image: myapp:migrate
+      command: ['./migrate', '--up']
+  containers:
+    - name: app
+      image: myapp:v1</code>
+      </pre>
+
+      <!-- ───────────────────── Sidecar Containers ───────────────────── -->
+      <h2 id="sidecar">Sidecar Containers</h2>
+      <p>
+        Sidecar containers are init containers with <code>restartPolicy: Always</code>. They
+        start before the main containers (as part of the init sequence) but continue running
+        alongside them for the pod's lifetime.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">sidecar.yaml</span>
+        </div>
+        <code>spec:
+  initContainers:
+    - name: log-shipper
+      image: fluentd:v1.16
+      restartPolicy: Always     <span class="comment"># Makes this a sidecar</span>
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+  containers:
+    - name: app
+      image: myapp:v1
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+  volumes:
+    - name: logs
+      emptyDir: {}</code>
+      </pre>
+
+      <!-- ───────────────────── Resource Limits ───────────────────── -->
+      <h2 id="resources">Resource Limits</h2>
+      <p>
+        The kubelet passes CPU and memory limits to Docker when creating containers. Docker
+        enforces these via Linux cgroups.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Resource</th><th>Docker Parameter</th><th>Enforcement</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>CPU requests</td><td><code>CpuShares</code></td><td>Proportional CPU time in contention.</td></tr>
+          <tr><td>CPU limits</td><td><code>NanoCpus</code></td><td>Hard CPU cap. Container is throttled.</td></tr>
+          <tr><td>Memory limits</td><td><code>Memory</code></td><td>Hard memory cap. Container is OOMKilled if exceeded.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ───────────────────── Image Pulling ───────────────────── -->
+      <h2 id="images">Image Pulling</h2>
+      <p>
+        The kubelet pulls container images through the Docker daemon. The <code>imagePullPolicy</code>
+        field controls when images are pulled.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Policy</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Always</code></td><td>Pull the image every time the container starts. Default for <code>:latest</code> tag.</td></tr>
+          <tr><td><code>IfNotPresent</code></td><td>Pull only if the image is not already present locally. Default for tagged images.</td></tr>
+          <tr><td><code>Never</code></td><td>Never pull. Container fails if image is not present locally.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ───────────────────── Logs ───────────────────── -->
+      <h2 id="logs">Container Logs</h2>
+      <p>
+        Container stdout and stderr are captured by Docker and accessible via the kubelet's
+        logs endpoint.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># View logs from a pod</span>
+kubectl logs <span class="value">my-pod</span>
+
+<span class="comment"># Follow logs in real time</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--follow</span>
+
+<span class="comment"># Last N lines</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--tail=</span><span class="value">100</span>
+
+<span class="comment"># Logs since a duration</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--since=</span><span class="value">1h</span>
+
+<span class="comment"># Logs with timestamps</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--timestamps</span>
+
+<span class="comment"># Logs from a specific container in a multi-container pod</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--container=</span><span class="value">sidecar</span>
+
+<span class="comment"># Logs from all containers</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--all-containers</span>
+
+<span class="comment"># Logs from the previous container instance (after restart)</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--previous</span></code>
+      </pre>
+
+      <!-- ───────────────────── Exec ───────────────────── -->
+      <h2 id="exec">Exec</h2>
+      <p>
+        Execute a command inside a running container. Uses WebSocket-based streaming for
+        stdin/stdout/stderr with optional TTY support.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run a command</span>
+kubectl exec <span class="value">my-pod</span> <span class="flag">--</span> ls /app
+
+<span class="comment"># Interactive shell</span>
+kubectl exec <span class="flag">-it</span> <span class="value">my-pod</span> <span class="flag">--</span> /bin/sh
+
+<span class="comment"># Exec in a specific container</span>
+kubectl exec <span class="flag">-it</span> <span class="value">my-pod</span> <span class="flag">--container=</span><span class="value">app</span> <span class="flag">--</span> /bin/bash
+
+<span class="comment"># Run a command and capture output</span>
+kubectl exec <span class="value">my-pod</span> <span class="flag">--</span> cat /etc/hostname</code>
+      </pre>
+
+      <!-- ───────────────────── Attach ───────────────────── -->
+      <h2 id="attach">Attach</h2>
+      <p>
+        Attach to a running container's stdin/stdout. Unlike exec, attach connects to the
+        container's main process rather than starting a new one.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Attach to a container (stdout only)</span>
+kubectl attach <span class="value">my-pod</span>
+
+<span class="comment"># Attach with stdin and TTY</span>
+kubectl attach <span class="flag">-it</span> <span class="value">my-pod</span>
+
+<span class="comment"># Attach to a specific container</span>
+kubectl attach <span class="flag">-it</span> <span class="value">my-pod</span> <span class="flag">--container=</span><span class="value">app</span></code>
+      </pre>
+
+      <!-- ───────────────────── Port Forwarding ───────────────────── -->
+      <h2 id="port-forward">Port Forwarding</h2>
+      <p>
+        Forward local ports to a pod's ports. Useful for accessing services that are not
+        exposed externally.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Forward local port 8080 to pod port 80</span>
+kubectl port-forward <span class="value">my-pod</span> <span class="value">8080:80</span>
+
+<span class="comment"># Forward multiple ports</span>
+kubectl port-forward <span class="value">my-pod</span> <span class="value">8080:80</span> <span class="value">9090:9090</span>
+
+<span class="comment"># Forward to a service instead of a pod</span>
+kubectl port-forward svc/<span class="value">web</span> <span class="value">8080:80</span>
+
+<span class="comment"># Listen on all interfaces</span>
+kubectl port-forward <span class="flag">--address=</span><span class="value">0.0.0.0</span> <span class="value">my-pod</span> <span class="value">8080:80</span></code>
+      </pre>
+
+      <!-- ───────────────────── Debug ───────────────────── -->
+      <h2 id="debug">Debugging Containers</h2>
+      <p>
+        <code>kubectl debug</code> creates ephemeral debug containers in a running pod or
+        copies a pod with modified settings for troubleshooting.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Add an ephemeral debug container to a running pod</span>
+kubectl debug <span class="value">my-pod</span> <span class="flag">-it</span> <span class="flag">--image=</span><span class="value">busybox</span>
+
+<span class="comment"># Share the process namespace with a target container</span>
+kubectl debug <span class="value">my-pod</span> <span class="flag">-it</span> <span class="flag">--image=</span><span class="value">busybox</span> <span class="flag">--target=</span><span class="value">app</span>
+
+<span class="comment"># Copy a pod and change the command (for distroless images)</span>
+kubectl debug <span class="value">my-pod</span> <span class="flag">-it</span> <span class="flag">--copy-to=</span><span class="value">my-pod-debug</span> <span class="flag">--image=</span><span class="value">ubuntu</span> <span class="flag">--</span> /bin/bash
+
+<span class="comment"># Debug a node</span>
+kubectl debug node/<span class="value">node-1</span> <span class="flag">-it</span> <span class="flag">--image=</span><span class="value">ubuntu</span></code>
+      </pre>
+
+      <!-- ───────────────────── hostPort ───────────────────── -->
+      <h2 id="hostport">hostPort</h2>
+      <p>
+        Containers can bind directly to a port on the host node. The scheduler's HostPort
+        admission plugin rejects pods with conflicting host port allocations (setting the pod's
+        phase to <code>Failed</code>).
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">hostport.yaml</span>
+        </div>
+        <code>containers:
+  - name: nginx
+    image: nginx:1.27
+    ports:
+      - containerPort: 80
+        hostPort: 80           <span class="comment"># Bind to node port 80</span>
+        protocol: TCP</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">hostPort limitations</div>
+        <p>
+          Only one pod per node can use a given hostPort. If two pods request the same hostPort
+          on the same node, the second pod is rejected with phase <code>Failed</code>.
+          Prefer Services with NodePort for most use cases.
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="scheduling.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Scheduling
+        </a>
+        <a href="kubectl.html" class="next">
+          <span class="pager-label">Next</span>
+          kubectl &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kube-Proxy Configuration - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html" class="active">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <p class="breadcrumb">Configuration &rsaquo; Kube-Proxy</p>
+      <h1>Kube-Proxy Configuration</h1>
+      <p class="lead">
+        Kube-proxy implements service networking through iptables rules. It runs in host
+        network mode and requires elevated capabilities to manage the host's NAT tables.
+      </p>
+
+      <h2>CLI Flags</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--node-name</code></td>
+            <td>String</td>
+            <td><em>required</em></td>
+            <td>Name of this node</td>
+          </tr>
+          <tr>
+            <td><code>--etcd-servers</code></td>
+            <td>String</td>
+            <td><code>http://localhost:2379</code></td>
+            <td>Comma-separated list of etcd endpoints</td>
+          </tr>
+          <tr>
+            <td><code>--storage-backend</code></td>
+            <td>String</td>
+            <td><code>etcd</code></td>
+            <td>Storage backend: <code>etcd</code> or <code>sqlite</code></td>
+          </tr>
+          <tr>
+            <td><code>--data-dir</code></td>
+            <td>String</td>
+            <td><code>./data/rusternetes.db</code></td>
+            <td>SQLite database path (only with <code>--storage-backend=sqlite</code>)</td>
+          </tr>
+          <tr>
+            <td><code>--log-level</code></td>
+            <td>String</td>
+            <td><code>info</code></td>
+            <td>Log level: <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td>
+          </tr>
+          <tr>
+            <td><code>--sync-interval</code></td>
+            <td>u64</td>
+            <td><code>1</code></td>
+            <td>Sync interval in seconds for the primary watch-triggered loop</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Required Capabilities</h2>
+      <p>
+        Kube-proxy must run with elevated privileges to manage iptables rules on the host:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Requirement</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>CAP_NET_ADMIN</code></td>
+            <td>Required for iptables rule manipulation</td>
+          </tr>
+          <tr>
+            <td><code>CAP_NET_RAW</code></td>
+            <td>Required for raw socket operations</td>
+          </tr>
+          <tr>
+            <td><code>CAP_SYS_ADMIN</code></td>
+            <td>Required for network namespace operations</td>
+          </tr>
+          <tr>
+            <td>Host network mode</td>
+            <td>Must share the host's network namespace to manage host iptables</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.yml</span>
+        </div>
+        <code>kube-proxy:
+  network_mode: host
+  cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    - SYS_ADMIN</code>
+      </pre>
+
+      <h2>iptables Mode</h2>
+      <p>
+        Kube-proxy uses <strong>iptables mode</strong> exclusively (the only mode implemented).
+        It manages four chains in the NAT table:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Chain</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>KUBE-SERVICES</code></td>
+            <td>Entry point. Matches traffic destined for ClusterIPs and dispatches to per-service chains.</td>
+          </tr>
+          <tr>
+            <td><code>KUBE-SVC-*</code></td>
+            <td>Per-service chain. Load-balances across backend endpoints using probability-based rules.</td>
+          </tr>
+          <tr>
+            <td><code>KUBE-SEP-*</code></td>
+            <td>Per-endpoint chain. DNATs traffic to the actual pod IP and port.</td>
+          </tr>
+          <tr>
+            <td><code>KUBE-FORWARD</code></td>
+            <td>Filter table chain. Accepts RELATED,ESTABLISHED return traffic and forwarded packets.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">iptables flow</span>
+        </div>
+        <code><span class="comment"># NAT table (PREROUTING + OUTPUT)</span>
+Packet --&gt; KUBE-SERVICES --&gt; KUBE-SVC-XXXX --&gt; KUBE-SEP-YYYY --&gt; DNAT to pod
+
+<span class="comment"># Filter table (FORWARD)</span>
+Packet --&gt; KUBE-FORWARD --&gt; ACCEPT (RELATED,ESTABLISHED)
+                         --&gt; ACCEPT (forwarded traffic)</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">RELATED,ESTABLISHED</div>
+        <p>
+          The <code>KUBE-FORWARD</code> chain must accept <code>RELATED,ESTABLISHED</code>
+          return traffic in the filter table. Without this, response packets from backend
+          pods are dropped, causing "Connection refused" errors. The OUTPUT chain also
+          needs a jump to <code>KUBE-FORWARD</code> for locally-originated traffic.
+        </p>
+      </div>
+
+      <h2>Service Types</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>iptables Rules</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ClusterIP</code></td>
+            <td>DNAT rules for the virtual ClusterIP to backend pod IPs</td>
+          </tr>
+          <tr>
+            <td><code>NodePort</code></td>
+            <td>ClusterIP rules plus additional rules matching traffic on the NodePort across all interfaces</td>
+          </tr>
+          <tr>
+            <td><code>LoadBalancer</code></td>
+            <td>ClusterIP + NodePort rules plus rules for the external LoadBalancer IP</td>
+          </tr>
+          <tr>
+            <td><code>ExternalName</code></td>
+            <td>No iptables rules (DNS-only, skipped by kube-proxy)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Session Affinity</h2>
+      <p>
+        When a service has <code>spec.sessionAffinity: ClientIP</code>, kube-proxy adds
+        iptables <code>--recent</code> rules to route subsequent connections from the same
+        client IP to the same backend. The timeout defaults to 10800 seconds (3 hours),
+        configurable via <code>spec.sessionAffinityConfig.clientIP.timeoutSeconds</code>.
+      </p>
+
+      <h2>State Hashing</h2>
+      <p>
+        To avoid unnecessary iptables rebuilds, kube-proxy computes a hash of the current
+        service/endpoint state and compares it to the previous sync. If the hash is unchanged,
+        the sync is skipped entirely.
+      </p>
+
+      <div class="admonition note">
+        <div class="admonition-title">ORDER-INDEPENDENT HASHING</div>
+        <p>
+          The state hash uses <strong>XOR of per-item hashes</strong> to be order-independent.
+          etcd returns items in arbitrary order, so a naive ordered hash would trigger
+          unnecessary iptables flush+rebuild on every sync cycle even when nothing changed.
+        </p>
+      </div>
+
+      <h2>Atomic Updates</h2>
+      <p>
+        Kube-proxy attempts to apply NAT rules atomically via <code>iptables-restore --noflush</code>.
+        This avoids the "Connection refused" window that occurs when flushing all rules
+        and rebuilding them one by one. If the atomic restore fails, it falls back to
+        flush+rebuild as a safety measure.
+      </p>
+
+      <h2>Resync Safety Net</h2>
+      <p>
+        In addition to the watch-triggered sync loop, kube-proxy runs a periodic resync
+        every <strong>15 seconds</strong> as a safety net. This catches any changes that
+        might have been missed due to watch stream interruptions or network issues.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">sync triggers</span>
+        </div>
+        <code><span class="comment"># Primary: watch-triggered (immediate)</span>
+Service watch event    --&gt;  sync
+Endpoints watch event  --&gt;  sync
+
+<span class="comment"># Secondary: periodic safety net</span>
+Every 15 seconds       --&gt;  sync (skipped if hash unchanged)</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="controller-manager-config.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Controller Manager Config
+        </a>
+        <a href="storage-config.html" class="next">
+          <span class="pager-label">Next</span>
+          Storage Backends &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

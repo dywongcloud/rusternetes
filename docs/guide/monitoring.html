@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring & Observability - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html" class="active">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Monitoring &amp; Observability</h1>
+      <p class="lead">
+        Health checks, Prometheus metrics, structured logging, and tracing for every Rusternetes component.
+      </p>
+
+      <h2>Health Endpoints</h2>
+      <p>
+        The API server exposes three health endpoints that return <code>200 OK</code> when the component
+        is healthy, matching the standard Kubernetes health check contract.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Purpose</th>
+            <th>Response</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/healthz</code></td>
+            <td>General health check (legacy)</td>
+            <td><code>200 OK</code> with body <code>ok</code></td>
+          </tr>
+          <tr>
+            <td><code>/livez</code></td>
+            <td>Liveness probe &mdash; is the process alive?</td>
+            <td><code>200 OK</code> with body <code>ok</code></td>
+          </tr>
+          <tr>
+            <td><code>/readyz</code></td>
+            <td>Readiness probe &mdash; is the process ready to serve?</td>
+            <td><code>200 OK</code> with body <code>ok</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check API server health</span>
+curl <span class="flag">-k</span> https://localhost:6443/healthz
+<span class="comment"># ok</span>
+
+curl <span class="flag">-k</span> https://localhost:6443/livez
+<span class="comment"># ok</span>
+
+curl <span class="flag">-k</span> https://localhost:6443/readyz
+<span class="comment"># ok</span></code>
+      </pre>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Docker health checks</div>
+        <p>
+          The <code>docker-compose.yml</code> uses these endpoints for container health checks.
+          Run <code>docker compose ps</code> to see the health status of each service.
+        </p>
+      </div>
+
+      <h2>Prometheus Metrics</h2>
+      <p>
+        Each component exposes a <code>/metrics</code> endpoint in Prometheus exposition format.
+        These endpoints return counters, gauges, and histograms for request latency, queue depth,
+        reconciliation cycles, and more.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Port</th>
+            <th>Metrics Endpoint</th>
+            <th>Additional Endpoints</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>API Server</td>
+            <td>6443 (main port)</td>
+            <td><code>/metrics</code></td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>Kubelet</td>
+            <td>10250 (configurable)</td>
+            <td><code>/metrics</code></td>
+            <td><code>/configz</code></td>
+          </tr>
+          <tr>
+            <td>Scheduler</td>
+            <td>8081</td>
+            <td><code>/metrics</code></td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>Controller Manager</td>
+            <td>8080</td>
+            <td><code>/metrics</code></td>
+            <td>&mdash;</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Scrape API server metrics</span>
+curl <span class="flag">-k</span> https://localhost:6443/metrics
+
+<span class="comment"># Scrape kubelet metrics</span>
+curl <span class="flag">-k</span> https://localhost:10250/metrics
+
+<span class="comment"># Scrape kubelet config</span>
+curl <span class="flag">-k</span> https://localhost:10250/configz
+
+<span class="comment"># Scrape scheduler metrics</span>
+curl http://localhost:8081/metrics</code>
+      </pre>
+
+      <div class="admonition note">
+        <div class="admonition-title">Kubelet port</div>
+        <p>
+          The kubelet metrics port defaults to <code>10250</code> but can be changed with the
+          <code>--port</code> flag or <code>KUBELET_PORT</code> environment variable.
+        </p>
+      </div>
+
+      <h2>Tracing</h2>
+      <p>
+        Rusternetes uses the <code>tracing</code> and <code>tracing-subscriber</code> crates for
+        structured logging and distributed tracing. OpenTelemetry integration is available via
+        <code>tracing-opentelemetry</code> for exporting spans to Jaeger, Zipkin, or any
+        OTLP-compatible collector.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Enable OpenTelemetry export to a local collector</span>
+export OTEL_EXPORTER_OTLP_ENDPOINT=<span class="value">http://localhost:4317</span>
+export OTEL_SERVICE_NAME=<span class="value">rusternetes-api-server</span></code>
+      </pre>
+
+      <h2>Logging</h2>
+      <p>
+        All Rusternetes components use Rust's <code>tracing</code> framework for structured logging.
+        Log levels and component-specific filtering are controlled via the <code>RUST_LOG</code>
+        environment variable or the <code>--log-level</code> CLI flag.
+      </p>
+
+      <h3>Log levels</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Level</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>error</code></td>
+            <td>Fatal or critical failures only</td>
+          </tr>
+          <tr>
+            <td><code>warn</code></td>
+            <td>Warnings and unexpected conditions</td>
+          </tr>
+          <tr>
+            <td><code>info</code></td>
+            <td>Normal operational messages (default)</td>
+          </tr>
+          <tr>
+            <td><code>debug</code></td>
+            <td>Detailed diagnostic information</td>
+          </tr>
+          <tr>
+            <td><code>trace</code></td>
+            <td>Very verbose, per-request/per-field logging</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Setting log levels</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Global log level</span>
+export RUST_LOG=<span class="value">debug</span>
+
+<span class="comment"># Component-specific logging</span>
+export RUST_LOG=<span class="value">rusternetes_api_server=debug</span>
+
+<span class="comment"># Multiple components at different levels</span>
+export RUST_LOG=<span class="value">rusternetes_api_server=debug,rusternetes_scheduler=info,rusternetes_kubelet=trace</span>
+
+<span class="comment"># Via CLI flag</span>
+./rusternetes-api-server <span class="flag">--log-level</span> <span class="value">debug</span></code>
+      </pre>
+
+      <div class="admonition note">
+        <div class="admonition-title">RUST_LOG syntax</div>
+        <p>
+          The <code>RUST_LOG</code> variable uses the <code>tracing-subscriber</code> filter syntax.
+          Crate names use underscores (e.g., <code>rusternetes_api_server</code>), not hyphens.
+          You can also filter by module path: <code>rusternetes_api_server::handlers=trace</code>.
+        </p>
+      </div>
+
+      <h3>Viewing logs in Docker Compose</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Follow logs from all services</span>
+docker compose logs <span class="flag">-f</span>
+
+<span class="comment"># Follow logs from a single component</span>
+docker compose logs <span class="flag">-f</span> api-server
+docker compose logs <span class="flag">-f</span> kubelet
+docker compose logs <span class="flag">-f</span> scheduler
+docker compose logs <span class="flag">-f</span> controller-manager
+docker compose logs <span class="flag">-f</span> kube-proxy
+
+<span class="comment"># Show last 100 lines from the API server</span>
+docker compose logs <span class="flag">--tail</span> <span class="value">100</span> api-server
+
+<span class="comment"># Show logs with timestamps</span>
+docker compose logs <span class="flag">-f</span> <span class="flag">-t</span> api-server</code>
+      </pre>
+
+      <h3>Enabling debug logging in Docker Compose</h3>
+      <p>
+        To enable debug-level logging for a specific service, set the <code>RUST_LOG</code>
+        environment variable in <code>docker-compose.yml</code> or via an override:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.override.yml</span>
+        </div>
+        <code>services:
+  api-server:
+    environment:
+      - RUST_LOG=<span class="value">rusternetes_api_server=debug</span>
+  scheduler:
+    environment:
+      - RUST_LOG=<span class="value">rusternetes_scheduler=debug</span></code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">Performance impact</div>
+        <p>
+          Running with <code>trace</code> or <code>debug</code> log levels in production generates
+          significant output and can impact performance. Use <code>info</code> or <code>warn</code>
+          for production clusters, and only enable debug logging temporarily for troubleshooting.
+        </p>
+      </div>
+
+      <h2>Monitoring Checklist</h2>
+      <ul>
+        <li>Verify all services are healthy: <code>docker compose ps</code></li>
+        <li>Check API server readiness: <code>curl -k https://localhost:6443/readyz</code></li>
+        <li>Verify nodes are reporting: <code>kubectl get nodes</code></li>
+        <li>Check pod scheduling: <code>kubectl get pods -A</code></li>
+        <li>Monitor component logs: <code>docker compose logs -f</code></li>
+        <li>Scrape Prometheus metrics for dashboards and alerting</li>
+      </ul>
+
+      <div class="doc-pager">
+        <a href="kubectl.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; kubectl
+        </a>
+        <a href="troubleshooting.html" class="next">
+          <span class="pager-label">Next</span>
+          Troubleshooting &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

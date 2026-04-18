@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>All-in-One Binary - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html" class="active">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>All-in-One Binary</h1>
+      <p class="lead">
+        Run the entire Kubernetes control plane &mdash; API server, scheduler, controller manager,
+        kubelet, and kube-proxy &mdash; in a single Rust process with embedded SQLite storage.
+        No Docker Compose, no etcd, no external dependencies beyond Docker for running pod containers.
+      </p>
+
+      <div class="admonition note">
+        <div class="admonition-title">NOTE</div>
+        <p>
+          The all-in-one binary still requires Docker to be running on the host machine.
+          The binary itself does not run in Docker, but it uses the Docker API (via bollard)
+          to create and manage pod containers.
+        </p>
+      </div>
+
+      <h2>Quick Start</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Build and run with defaults (SQLite, no TLS, port 6443)</span>
+cargo run --release --bin rusternetes
+
+<span class="comment"># Or if you have the binary already built:</span>
+./target/release/rusternetes
+</code>
+      </pre>
+
+      <p>
+        That's it. The API server is now listening on <code>0.0.0.0:6443</code>. You can
+        immediately use <code>kubectl</code> to interact with it:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Point kubectl at the local API server (no TLS)</span>
+kubectl <span class="flag">--server</span>=<span class="value">http://localhost:6443</span> get nodes
+
+<span class="comment"># Or set up a kubeconfig</span>
+kubectl config set-cluster rusternetes <span class="flag">--server</span>=<span class="value">http://localhost:6443</span>
+kubectl config set-context rusternetes <span class="flag">--cluster</span>=<span class="value">rusternetes</span>
+kubectl config use-context rusternetes
+</code>
+      </pre>
+
+      <h2>CLI Flags Reference</h2>
+      <p>
+        Every flag has a sensible default. The binary runs with zero flags for the simplest
+        development experience.
+      </p>
+
+      <h3>Storage</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--storage-backend</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"sqlite"</span></code></td>
+            <td>Storage backend to use. Accepts <code>sqlite</code> (embedded, no dependencies) or <code>etcd</code> (requires a running etcd server).</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--data-dir</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"./data/rusternetes.db"</span></code></td>
+            <td>Path to the SQLite database file. The directory is created automatically if it does not exist. Only used when <code>--storage-backend=sqlite</code>.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--etcd-servers</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"http://localhost:2379"</span></code></td>
+            <td>Comma-separated list of etcd endpoints. Only used when <code>--storage-backend=etcd</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Networking</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--bind-address</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"0.0.0.0:6443"</span></code></td>
+            <td>Address and port for the API server to listen on. Use <code>127.0.0.1:6443</code> to restrict to localhost only.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--cluster-dns</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"10.96.0.10"</span></code></td>
+            <td>ClusterIP address for the DNS service. Injected into pod <code>/etc/resolv.conf</code> by the kubelet.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--network</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"rusternetes-network"</span></code></td>
+            <td>Docker network name for pod containers. Created automatically if it does not exist.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>TLS</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--tls</span></code></td>
+            <td>bool</td>
+            <td><code><span class="value">false</span></code></td>
+            <td>Enable TLS on the API server. When enabled, <code>--tls-cert-file</code> and <code>--tls-key-file</code> must be provided.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--tls-cert-file</span></code></td>
+            <td>Option&lt;String&gt;</td>
+            <td><code><span class="value">None</span></code></td>
+            <td>Path to the PEM-encoded TLS certificate file. Required when <code>--tls</code> is enabled.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--tls-key-file</span></code></td>
+            <td>Option&lt;String&gt;</td>
+            <td><code><span class="value">None</span></code></td>
+            <td>Path to the PEM-encoded TLS private key file. Required when <code>--tls</code> is enabled.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--tls-san</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"localhost,127.0.0.1"</span></code></td>
+            <td>Comma-separated Subject Alternative Names for the TLS certificate. Add hostnames and IPs that clients will use to connect.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Node</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--node-name</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"node-1"</span></code></td>
+            <td>Name for the embedded kubelet's node registration. Appears in <code>kubectl get nodes</code>.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--volume-dir</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"./data/volumes"</span></code></td>
+            <td>Directory where pod volumes (emptyDir, hostPath, etc.) are stored on the host filesystem.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Component Intervals</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--sync-interval</span></code></td>
+            <td>u64</td>
+            <td><code><span class="value">5</span></code></td>
+            <td>Controller manager reconciliation interval in seconds. Each of the 31 controllers runs a reconcile loop at this interval.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--scheduler-interval</span></code></td>
+            <td>u64</td>
+            <td><code><span class="value">2</span></code></td>
+            <td>Scheduler check interval in seconds. How often the scheduler looks for unscheduled pods.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--kubelet-sync-interval</span></code></td>
+            <td>u64</td>
+            <td><code><span class="value">3</span></code></td>
+            <td>Kubelet sync interval in seconds. How often the kubelet reconciles desired vs. actual pod state.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--proxy-sync-interval</span></code></td>
+            <td>u64</td>
+            <td><code><span class="value">1</span></code></td>
+            <td>Kube-proxy sync interval in seconds. How often iptables rules are regenerated from Services and Endpoints.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Auth &amp; Proxy</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code><span class="flag">--skip-auth</span></code></td>
+            <td>bool</td>
+            <td><code><span class="value">true</span></code></td>
+            <td>Skip RBAC authentication and authorization. Default is <code>true</code> for development convenience. Set to <code>false</code> for production use with ServiceAccount tokens.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--disable-proxy</span></code></td>
+            <td>bool</td>
+            <td><code><span class="value">false</span></code></td>
+            <td>Disable the embedded kube-proxy. Useful when running without <code>CAP_NET_ADMIN</code> or when iptables is not available on the host.</td>
+          </tr>
+          <tr>
+            <td><code><span class="flag">--log-level</span></code></td>
+            <td>String</td>
+            <td><code><span class="value">"info"</span></code></td>
+            <td>Log verbosity level. Accepts <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, or <code>error</code>. Uses the <code>RUST_LOG</code> env var format internally.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Usage Examples</h2>
+
+      <h3>Basic (defaults)</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Simplest invocation: SQLite, no TLS, port 6443, auth disabled</span>
+./rusternetes
+</code>
+      </pre>
+
+      <h3>With TLS</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Generate certs first (or bring your own)</span>
+bash scripts/generate-certs.sh
+
+<span class="comment"># Run with TLS enabled</span>
+./rusternetes \
+  <span class="flag">--tls</span> \
+  <span class="flag">--tls-cert-file</span>=<span class="value">.rusternetes/certs/server.crt</span> \
+  <span class="flag">--tls-key-file</span>=<span class="value">.rusternetes/certs/server.key</span>
+</code>
+      </pre>
+
+      <h3>With custom SANs</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Add extra SANs for remote access</span>
+./rusternetes \
+  <span class="flag">--tls</span> \
+  <span class="flag">--tls-cert-file</span>=<span class="value">certs/server.crt</span> \
+  <span class="flag">--tls-key-file</span>=<span class="value">certs/server.key</span> \
+  <span class="flag">--tls-san</span>=<span class="value">"localhost,127.0.0.1,192.168.1.100,k8s.example.com"</span>
+</code>
+      </pre>
+
+      <h3>With etcd instead of SQLite</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Start etcd first</span>
+etcd <span class="flag">--listen-client-urls</span>=<span class="value">http://0.0.0.0:2379</span> \
+     <span class="flag">--advertise-client-urls</span>=<span class="value">http://localhost:2379</span>
+
+<span class="comment"># Point the binary at etcd</span>
+./rusternetes \
+  <span class="flag">--storage-backend</span>=<span class="value">etcd</span> \
+  <span class="flag">--etcd-servers</span>=<span class="value">http://localhost:2379</span>
+</code>
+      </pre>
+
+      <h3>Full production example</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+./rusternetes \
+  <span class="flag">--storage-backend</span>=<span class="value">sqlite</span> \
+  <span class="flag">--data-dir</span>=<span class="value">/var/lib/rusternetes/state.db</span> \
+  <span class="flag">--volume-dir</span>=<span class="value">/var/lib/rusternetes/volumes</span> \
+  <span class="flag">--bind-address</span>=<span class="value">0.0.0.0:6443</span> \
+  <span class="flag">--node-name</span>=<span class="value">edge-node-01</span> \
+  <span class="flag">--tls</span> \
+  <span class="flag">--tls-cert-file</span>=<span class="value">/etc/rusternetes/tls/server.crt</span> \
+  <span class="flag">--tls-key-file</span>=<span class="value">/etc/rusternetes/tls/server.key</span> \
+  <span class="flag">--tls-san</span>=<span class="value">"edge-node-01.example.com,10.0.0.50"</span> \
+  <span class="flag">--skip-auth</span>=<span class="value">false</span> \
+  <span class="flag">--log-level</span>=<span class="value">info</span> \
+  <span class="flag">--sync-interval</span>=<span class="value">10</span> \
+  <span class="flag">--scheduler-interval</span>=<span class="value">5</span> \
+  <span class="flag">--kubelet-sync-interval</span>=<span class="value">5</span> \
+  <span class="flag">--proxy-sync-interval</span>=<span class="value">2</span>
+</code>
+      </pre>
+
+      <h2>Backing Up &amp; Inspecting State</h2>
+      <p>
+        When using the SQLite backend, all cluster state &mdash; pods, deployments, services,
+        secrets, configmaps, and everything else &mdash; lives in a single database file.
+        This makes backup and inspection trivial.
+      </p>
+
+      <h3>Backup</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Hot backup: SQLite supports concurrent reads</span>
+cp ./data/rusternetes.db ./backups/rusternetes-$(date +%Y%m%d-%H%M%S).db
+
+<span class="comment"># Or use sqlite3's .backup for a consistent snapshot</span>
+sqlite3 ./data/rusternetes.db ".backup ./backups/rusternetes-backup.db"
+</code>
+      </pre>
+
+      <h3>Inspect state</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Open the database</span>
+sqlite3 ./data/rusternetes.db
+
+<span class="comment"># List all stored keys (resource paths)</span>
+SELECT key FROM kv ORDER BY key;
+
+<span class="comment"># View a specific resource</span>
+SELECT value FROM kv WHERE key = '/registry/pods/default/nginx';
+
+<span class="comment"># Count resources by type</span>
+SELECT
+  substr(key, 1, instr(substr(key, 11), '/') + 10) AS resource_type,
+  count(*) AS count
+FROM kv
+WHERE key LIKE '/registry/%'
+GROUP BY resource_type
+ORDER BY count DESC;
+
+<span class="comment"># Check database size</span>
+SELECT page_count * page_size AS size_bytes FROM pragma_page_count(), pragma_page_size();
+</code>
+      </pre>
+
+      <h3>Restore from backup</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Stop the binary first</span>
+kill $(pgrep rusternetes)
+
+<span class="comment"># Replace the database file</span>
+cp ./backups/rusternetes-backup.db ./data/rusternetes.db
+
+<span class="comment"># Restart</span>
+./rusternetes
+</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">WARNING</div>
+        <p>
+          Do not replace the database file while the binary is running. SQLite uses file-level
+          locking, and replacing the file mid-operation can corrupt state. Always stop the
+          process first.
+        </p>
+      </div>
+
+      <h2>Use Cases</h2>
+
+      <h3>Edge Computing</h3>
+      <p>
+        Deploy the all-in-one binary on edge nodes with limited resources. A single ARM64 or x86
+        device with 512 MB RAM and Docker can run a full Kubernetes API with pod scheduling.
+        State persists across reboots in the SQLite file.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Edge deployment with minimal intervals</span>
+./rusternetes \
+  <span class="flag">--node-name</span>=<span class="value">edge-gateway</span> \
+  <span class="flag">--data-dir</span>=<span class="value">/opt/rusternetes/state.db</span> \
+  <span class="flag">--volume-dir</span>=<span class="value">/opt/rusternetes/volumes</span> \
+  <span class="flag">--sync-interval</span>=<span class="value">30</span> \
+  <span class="flag">--scheduler-interval</span>=<span class="value">10</span> \
+  <span class="flag">--disable-proxy</span>
+</code>
+      </pre>
+
+      <h3>CI/CD Pipelines</h3>
+      <p>
+        Spin up a Kubernetes API in your CI pipeline to test Helm charts, operators, or
+        client-go code without needing kind, minikube, or a cloud cluster. The binary starts
+        in under a second.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">ci-pipeline.yaml</span>
+        </div>
+        <code>
+steps:
+  - name: Start Kubernetes
+    run: |
+      ./rusternetes <span class="flag">--log-level</span>=<span class="value">warn</span> &amp;
+      sleep 2
+      kubectl <span class="flag">--server</span>=<span class="value">http://localhost:6443</span> cluster-info
+
+  - name: Run integration tests
+    run: |
+      helm install my-app ./charts/my-app \
+        <span class="flag">--set</span> <span class="value">image.tag=$CI_SHA</span>
+      kubectl wait <span class="flag">--for</span>=<span class="value">condition=available</span> deployment/my-app
+      go test ./integration/...
+</code>
+      </pre>
+
+      <h3>IoT &amp; Air-Gapped Environments</h3>
+      <p>
+        In air-gapped or disconnected environments, the binary plus pre-pulled container
+        images are all you need. No internet access is required at runtime.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># On a connected machine: save images</span>
+docker save nginx:alpine busybox:latest | gzip > images.tar.gz
+
+<span class="comment"># On the air-gapped device: load images</span>
+docker load < images.tar.gz
+
+<span class="comment"># Run rusternetes (no internet needed)</span>
+./rusternetes <span class="flag">--node-name</span>=<span class="value">iot-hub</span>
+</code>
+      </pre>
+
+      <h3>Developer Sandbox</h3>
+      <p>
+        Run the binary during development to get a local Kubernetes API without Docker Compose
+        setup. Changes to the codebase can be tested with <code>cargo run</code> immediately.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Development workflow</span>
+cargo run <span class="flag">--bin</span> rusternetes <span class="flag">--</span> <span class="flag">--log-level</span>=<span class="value">debug</span>
+
+<span class="comment"># In another terminal</span>
+kubectl apply -f my-deployment.yaml
+kubectl get pods -w
+</code>
+      </pre>
+
+      <h3>Embedded Sandbox (OpenShell)</h3>
+      <p>
+        Embed rusternetes as a library or spawn it as a subprocess inside a larger application.
+        This is how OpenShell provides each user session with an isolated Kubernetes environment.
+        Each instance gets its own SQLite file, providing complete tenant isolation.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>
+<span class="comment"># Per-session Kubernetes sandbox</span>
+./rusternetes \
+  <span class="flag">--data-dir</span>=<span class="value">/tmp/sessions/user-abc123/state.db</span> \
+  <span class="flag">--volume-dir</span>=<span class="value">/tmp/sessions/user-abc123/volumes</span> \
+  <span class="flag">--bind-address</span>=<span class="value">127.0.0.1:0</span> \
+  <span class="flag">--node-name</span>=<span class="value">sandbox-abc123</span> \
+  <span class="flag">--disable-proxy</span>
+</code>
+      </pre>
+
+      <h2>How It Works</h2>
+      <p>
+        The <code>rusternetes</code> binary (in <code>crates/rusternetes/</code>) creates a shared
+        <code>StorageBackend</code> and spawns each component as a concurrent tokio task:
+      </p>
+
+      <ol>
+        <li><strong>Storage</strong> &mdash; Creates a <code>StorageBackend::Sqlite</code> or <code>StorageBackend::Etcd</code> based on <code>--storage-backend</code>.</li>
+        <li><strong>API Server</strong> &mdash; Builds the Axum router with all 76 handlers and starts listening on <code>--bind-address</code>.</li>
+        <li><strong>Controller Manager</strong> &mdash; Spawns all 31 controllers as concurrent tasks, sharing the same storage <code>Arc</code>.</li>
+        <li><strong>Scheduler</strong> &mdash; Watches for unscheduled pods and assigns them to the node.</li>
+        <li><strong>Kubelet</strong> &mdash; Manages pod containers via the Docker API (bollard).</li>
+        <li><strong>Kube-Proxy</strong> &mdash; (unless <code>--disable-proxy</code>) Syncs iptables rules for Service routing.</li>
+      </ol>
+
+      <p>
+        All components share the same in-process storage instance. There is zero network
+        overhead for storage operations &mdash; reads and writes go directly to SQLite.
+      </p>
+
+      <div class="admonition tip">
+        <div class="admonition-title">TIP</div>
+        <p>
+          Because all components share one process, you get a fully consistent view of state
+          with no replication lag. Watch events are delivered in-process, which makes the
+          all-in-one binary the fastest deployment mode for watch-heavy workloads.
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="deployment.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Deployment Overview
+        </a>
+        <a href="docker-cluster.html" class="next">
+          <span class="pager-label">Next</span>
+          Docker + etcd &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

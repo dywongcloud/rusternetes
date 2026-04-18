@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Start - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html" class="active">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Quick Start</h1>
+      <p class="lead">
+        Get a fully functional Rusternetes cluster running in 5 minutes using Docker Compose.
+        No Rust toolchain required.
+      </p>
+
+      <h2>Prerequisites</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Requirement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>macOS</td>
+            <td><a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> (recommended) or Podman Desktop</td>
+          </tr>
+          <tr>
+            <td>Linux</td>
+            <td><a href="https://docs.docker.com/engine/install/">Docker Engine</a> 24+ or rootful Podman 4+</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        You also need <code>kubectl</code> installed on your host machine. Any recent version works &mdash;
+        Rusternetes is compatible with the standard Kubernetes CLI.
+      </p>
+
+      <div class="admonition tip">
+        <div class="admonition-title">Rust is optional</div>
+        <p>
+          The Docker Compose setup builds everything inside containers. You only need Rust installed
+          if you want to <a href="installation.html">build from source</a> outside of Docker.
+        </p>
+      </div>
+
+      <h2>Step-by-Step Setup</h2>
+
+      <h3>1. Clone the repository</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>git clone https://github.com/calfonso/rusternetes.git
+cd rusternetes</code>
+      </pre>
+
+      <h3>2. Set the volumes path</h3>
+      <p>
+        The kubelet needs a shared directory to mount ConfigMaps, Secrets, and other volumes into
+        pod containers. This path must be absolute and accessible to both Docker and the kubelet container.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+mkdir -p $KUBELET_VOLUMES_PATH</code>
+      </pre>
+
+      <div class="admonition warning">
+        <div class="admonition-title">Podman on macOS</div>
+        <p>
+          If using Podman Machine on macOS, <code>/tmp</code> is not shared between host and VM.
+          Use a path under your home directory (which is automatically mounted).
+          The <code>$(pwd)/.rusternetes/volumes</code> path works correctly.
+        </p>
+      </div>
+
+      <h3>3. Build the container images</h3>
+      <p>
+        This compiles each Rusternetes component inside a Docker build stage. The first build takes
+        10&ndash;15 minutes; subsequent builds use the Docker layer cache and are much faster.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>docker compose build</code>
+      </pre>
+
+      <h3>4. Start the cluster</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>docker compose up -d</code>
+      </pre>
+
+      <p>
+        This starts all seven services. The API server waits for etcd to be healthy before accepting
+        connections.
+      </p>
+
+      <h3>5. Bootstrap the cluster</h3>
+      <p>
+        The bootstrap script generates TLS certificates, creates system namespaces
+        (<code>kube-system</code>, <code>kube-public</code>, <code>default</code>),
+        deploys CoreDNS, creates ServiceAccounts, and sets up the <code>kubernetes</code> service.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>bash scripts/bootstrap-cluster.sh</code>
+      </pre>
+
+      <h3>6. Configure kubectl</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>export KUBECONFIG=~/.kube/rusternetes-config</code>
+      </pre>
+
+      <p>
+        The bootstrap script writes this kubeconfig file automatically. It points to
+        <code>https://localhost:6443</code> with the generated TLS credentials.
+      </p>
+
+      <h3>7. Verify the cluster</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl get nodes</code>
+      </pre>
+
+      <p>You should see two nodes in <code>Ready</code> status:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">output</span>
+        </div>
+        <code>NAME     STATUS   ROLES    AGE   VERSION
+node-1   Ready    &lt;none&gt;   30s   v1.35.0-rusternetes
+node-2   Ready    &lt;none&gt;   30s   v1.35.0-rusternetes</code>
+      </pre>
+
+      <p>Try deploying a workload:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl create deployment nginx --image=nginx
+kubectl get pods -w</code>
+      </pre>
+
+      <h2>What You Get</h2>
+      <p>
+        The Docker Compose cluster runs seven services that mirror a real Kubernetes cluster:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Container</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>etcd</code></td>
+            <td><code>rusternetes-etcd</code></td>
+            <td>Distributed key-value store for all cluster state</td>
+          </tr>
+          <tr>
+            <td><code>api-server</code></td>
+            <td><code>rusternetes-api-server</code></td>
+            <td>HTTPS REST API on port 6443 (TLS)</td>
+          </tr>
+          <tr>
+            <td><code>scheduler</code></td>
+            <td><code>rusternetes-scheduler</code></td>
+            <td>Assigns pods to nodes using filter/score plugins</td>
+          </tr>
+          <tr>
+            <td><code>controller-manager</code></td>
+            <td><code>rusternetes-controller-manager</code></td>
+            <td>Runs 31 reconciliation controllers</td>
+          </tr>
+          <tr>
+            <td><code>kubelet</code></td>
+            <td><code>rusternetes-kubelet</code></td>
+            <td>Node agent on node-1, manages containers via Docker</td>
+          </tr>
+          <tr>
+            <td><code>kubelet2</code></td>
+            <td><code>rusternetes-kubelet2</code></td>
+            <td>Node agent on node-2, same as above</td>
+          </tr>
+          <tr>
+            <td><code>kube-proxy</code></td>
+            <td><code>rusternetes-kube-proxy</code></td>
+            <td>iptables-based service routing (host network mode)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        After bootstrapping, the cluster also runs <strong>CoreDNS</strong> as a pod in the
+        <code>kube-system</code> namespace, providing in-cluster DNS resolution at
+        <code>10.96.0.10</code>.
+      </p>
+
+      <h2>Common Operations</h2>
+
+      <h3>View logs</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># All services</span>
+docker compose logs -f
+
+<span class="comment"># Single service</span>
+docker compose logs -f api-server
+docker compose logs -f kubelet
+docker compose logs -f scheduler</code>
+      </pre>
+
+      <h3>Rebuild after code changes</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Rebuild and restart a single service</span>
+docker compose build api-server
+docker compose up -d api-server
+
+<span class="comment"># Rebuild everything</span>
+docker compose build
+docker compose up -d</code>
+      </pre>
+
+      <h3>Stop the cluster</h3>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Stop containers (preserves data)</span>
+docker compose down
+
+<span class="comment"># Stop and delete all data (clean restart)</span>
+docker compose down -v</code>
+      </pre>
+
+      <h3>Clean restart</h3>
+      <p>
+        If you need to wipe the cluster completely and start fresh:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Remove containers, volumes, and orphan pod containers</span>
+docker compose down -v
+docker rm -f $(docker ps -aq --filter "label=rusternetes") 2>/dev/null || true
+
+<span class="comment"># Start fresh</span>
+docker compose up -d
+bash scripts/bootstrap-cluster.sh</code>
+      </pre>
+
+      <h2>Troubleshooting</h2>
+
+      <h3>Port 6443 already in use</h3>
+      <p>
+        Another process (often a real Kubernetes or minikube) is listening on port 6443.
+        Stop it or change the port mapping in <code>docker-compose.yml</code>:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">docker-compose.yml</span>
+        </div>
+        <code><span class="comment"># Change the host port (left side) to any free port</span>
+ports:
+  - <span class="value">"7443:6443"</span></code>
+      </pre>
+
+      <p>Then update your kubeconfig to use the new port:</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl config set-cluster rusternetes --server=https://localhost:7443</code>
+      </pre>
+
+      <h3>Cannot connect to API server</h3>
+      <p>
+        If <code>kubectl get nodes</code> returns a connection error:
+      </p>
+      <ul>
+        <li>Check that the API server is running: <code>docker compose ps</code></li>
+        <li>Check the API server logs: <code>docker compose logs api-server</code></li>
+        <li>Verify etcd is healthy: <code>docker compose logs etcd</code></li>
+        <li>Make sure <code>KUBECONFIG</code> is set: <code>echo $KUBECONFIG</code></li>
+        <li>Confirm the kubeconfig file exists: <code>cat ~/.kube/rusternetes-config</code></li>
+      </ul>
+
+      <h3>First build is slow</h3>
+      <p>
+        The initial <code>docker compose build</code> compiles the entire Rust workspace from scratch,
+        which takes 10&ndash;15 minutes depending on your hardware. Subsequent builds use the Docker
+        layer cache and only recompile changed crates. To speed things up:
+      </p>
+      <ul>
+        <li>Allocate more CPUs and memory to Docker Desktop (Settings &rarr; Resources)</li>
+        <li>Rebuild only the service you changed: <code>docker compose build api-server</code></li>
+        <li>Consider building from source natively for faster iteration (see <a href="installation.html">Installation</a>)</li>
+      </ul>
+
+      <h3>Podman: permission denied</h3>
+      <p>
+        On macOS with Podman, you may see permission errors for volume mounts. Ensure:
+      </p>
+      <ul>
+        <li>Podman Machine is running in rootful mode: <code>podman machine set --rootful</code></li>
+        <li>The volumes path is under your home directory, not <code>/tmp</code></li>
+        <li>The Podman socket is accessible: <code>podman info</code></li>
+      </ul>
+
+      <h3>Pods stuck in Pending</h3>
+      <p>
+        If pods stay in <code>Pending</code> after deployment:
+      </p>
+      <ul>
+        <li>Check the scheduler is running: <code>docker compose ps scheduler</code></li>
+        <li>Check scheduler logs: <code>docker compose logs scheduler</code></li>
+        <li>Verify nodes are Ready: <code>kubectl get nodes</code></li>
+        <li>Describe the pod for events: <code>kubectl describe pod &lt;name&gt;</code></li>
+      </ul>
+
+      <h2>Next Steps</h2>
+      <ul>
+        <li><a href="installation.html">Installation</a> &mdash; build from source, feature flags, and platform details</li>
+        <li><a href="deployment.html">Deployment Overview</a> &mdash; compare all-in-one, Docker+etcd, and Docker+SQLite modes</li>
+        <li><a href="workloads.html">Workloads</a> &mdash; deploy Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs</li>
+        <li><a href="bootstrap.html">Bootstrap</a> &mdash; understand what the bootstrap script creates</li>
+      </ul>
+
+      <div class="doc-pager">
+        <a href="index.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Docs Home
+        </a>
+        <a href="installation.html" class="next">
+          <span class="pager-label">Next</span>
+          Installation &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

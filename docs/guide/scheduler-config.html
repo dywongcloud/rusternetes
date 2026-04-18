@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scheduler Configuration - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html" class="active">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <p class="breadcrumb">Configuration &rsaquo; Scheduler</p>
+      <h1>Scheduler Configuration</h1>
+      <p class="lead">
+        The scheduler assigns unscheduled pods to nodes using a filter/score plugin framework.
+        It supports leader election for high-availability deployments.
+      </p>
+
+      <h2>CLI Flags</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--etcd-servers</code></td>
+            <td>String</td>
+            <td><code>http://localhost:2379</code></td>
+            <td>Comma-separated list of etcd endpoints</td>
+          </tr>
+          <tr>
+            <td><code>--storage-backend</code></td>
+            <td>String</td>
+            <td><code>etcd</code></td>
+            <td>Storage backend: <code>etcd</code> or <code>sqlite</code></td>
+          </tr>
+          <tr>
+            <td><code>--data-dir</code></td>
+            <td>String</td>
+            <td><code>./data/rusternetes.db</code></td>
+            <td>SQLite database path (only with <code>--storage-backend=sqlite</code>)</td>
+          </tr>
+          <tr>
+            <td><code>--log-level</code></td>
+            <td>String</td>
+            <td><code>info</code></td>
+            <td>Log level: <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td>
+          </tr>
+          <tr>
+            <td><code>--interval</code></td>
+            <td>u64</td>
+            <td><code>2</code></td>
+            <td>Scheduling loop interval in seconds</td>
+          </tr>
+          <tr>
+            <td><code>--metrics-port</code></td>
+            <td>u16</td>
+            <td><code>8081</code></td>
+            <td>Prometheus metrics server port</td>
+          </tr>
+          <tr>
+            <td><code>--enable-leader-election</code></td>
+            <td>bool</td>
+            <td><code>false</code></td>
+            <td>Enable leader election for HA</td>
+          </tr>
+          <tr>
+            <td><code>--leader-election-identity</code></td>
+            <td>String</td>
+            <td><em>auto-generated UUID</em></td>
+            <td>Unique identity for this scheduler instance</td>
+          </tr>
+          <tr>
+            <td><code>--leader-election-lock-key</code></td>
+            <td>String</td>
+            <td><code>/rusternetes/scheduler/leader</code></td>
+            <td>etcd key used for the leader election lock</td>
+          </tr>
+          <tr>
+            <td><code>--leader-election-lease-duration</code></td>
+            <td>u64</td>
+            <td><code>15</code></td>
+            <td>Leader election lease duration in seconds. Renew interval is lease/3.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Usage Examples</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Single instance (no leader election)</span>
+rusternetes-scheduler \
+  <span class="flag">--etcd-servers</span> <span class="value">http://etcd:2379</span> \
+  <span class="flag">--interval</span> <span class="value">2</span>
+
+<span class="comment"># HA with leader election</span>
+rusternetes-scheduler \
+  <span class="flag">--etcd-servers</span> <span class="value">http://etcd:2379</span> \
+  <span class="flag">--enable-leader-election</span> \
+  <span class="flag">--leader-election-identity</span> <span class="value">scheduler-1</span> \
+  <span class="flag">--leader-election-lease-duration</span> <span class="value">15</span></code>
+      </pre>
+
+      <h2>Built-in Plugins</h2>
+      <p>
+        The scheduler uses a two-phase approach: <strong>filter</strong> plugins eliminate
+        ineligible nodes, then <strong>score</strong> plugins rank the remaining candidates.
+      </p>
+
+      <h3>Filter Plugins</h3>
+      <p>
+        Filter plugins return pass/fail for each node. A node must pass all filters
+        to be considered schedulable.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Plugin</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>NodeUnschedulable</code></td>
+            <td>Filters out nodes marked as unschedulable (<code>spec.unschedulable: true</code>)</td>
+          </tr>
+          <tr>
+            <td><code>TaintToleration</code></td>
+            <td>Filters nodes with taints that the pod does not tolerate</td>
+          </tr>
+          <tr>
+            <td><code>NodeSelector</code></td>
+            <td>Filters nodes that do not match the pod's <code>nodeSelector</code> labels</td>
+          </tr>
+          <tr>
+            <td><code>NodeAffinity</code></td>
+            <td>Filters nodes based on <code>requiredDuringSchedulingIgnoredDuringExecution</code> node affinity rules</td>
+          </tr>
+          <tr>
+            <td><code>PodAffinity</code></td>
+            <td>Filters nodes based on pod affinity <code>requiredDuringScheduling</code> rules</td>
+          </tr>
+          <tr>
+            <td><code>PodAntiAffinity</code></td>
+            <td>Filters nodes based on pod anti-affinity <code>requiredDuringScheduling</code> rules</td>
+          </tr>
+          <tr>
+            <td><code>TopologySpreadConstraints</code></td>
+            <td>Filters nodes that would violate topology spread constraints with <code>DoNotSchedule</code> policy</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Score Plugins</h3>
+      <p>
+        Score plugins assign a numeric score to each eligible node. The node with the
+        highest total weighted score is selected.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Plugin</th>
+            <th>Weight</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>NodeResourcesFit</code></td>
+            <td>25</td>
+            <td>Scores nodes based on available CPU and memory resources (least-requested)</td>
+          </tr>
+          <tr>
+            <td><code>NodeAffinity</code></td>
+            <td>default</td>
+            <td>Scores nodes matching <code>preferredDuringScheduling</code> node affinity rules</td>
+          </tr>
+          <tr>
+            <td><code>PodAffinity</code></td>
+            <td>default</td>
+            <td>Scores nodes matching <code>preferredDuringScheduling</code> pod affinity rules</td>
+          </tr>
+          <tr>
+            <td><code>PodAntiAffinity</code></td>
+            <td>default</td>
+            <td>Scores nodes matching <code>preferredDuringScheduling</code> pod anti-affinity rules</td>
+          </tr>
+          <tr>
+            <td><code>TopologySpreadConstraints</code></td>
+            <td>default</td>
+            <td>Scores nodes based on topology spread balance for <code>ScheduleAnyway</code> constraints</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Scheduling Flow</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">scheduling pipeline</span>
+        </div>
+        <code><span class="comment"># 1. List unscheduled pods (spec.nodeName is empty, phase=Pending)</span>
+<span class="comment"># 2. Sort by priority (highest first)</span>
+<span class="comment"># 3. For each pod:</span>
+   Filter phase     <span class="comment"># Run all filter plugins, eliminate ineligible nodes</span>
+   Score phase      <span class="comment"># Run all score plugins, weight and sum scores</span>
+   Select node      <span class="comment"># Pick the highest-scoring node</span>
+   Bind             <span class="comment"># Set pod.spec.nodeName and update storage</span>
+
+<span class="comment"># 4. If no node passes filters:</span>
+   Preemption       <span class="comment"># Try to evict lower-priority pods to make room</span></code>
+      </pre>
+
+      <h2>Preemption</h2>
+      <p>
+        When no node passes all filter plugins for a pending pod, the scheduler attempts
+        preemption. It evaluates whether evicting lower-priority pods from any node would
+        make the pod schedulable:
+      </p>
+
+      <ul>
+        <li>Only pods with <em>lower</em> priority than the pending pod are candidates for eviction</li>
+        <li>The scheduler picks the node that requires the fewest evictions</li>
+        <li>Evicted pods are deleted and their owners (ReplicaSet, etc.) recreate them</li>
+        <li>PodDisruptionBudgets are respected during preemption</li>
+      </ul>
+
+      <div class="admonition note">
+        <div class="admonition-title">LEADER ELECTION</div>
+        <p>
+          When leader election is enabled, the scheduler starts in follower mode and waits
+          to acquire the lease before scheduling. If it loses the lease, it stops scheduling
+          and waits to re-acquire. The lease is renewed every <code>lease_duration / 3</code> seconds
+          (default: 5s).
+        </p>
+      </div>
+
+      <div class="doc-pager">
+        <a href="kubelet-config.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Kubelet Config
+        </a>
+        <a href="controller-manager-config.html" class="next">
+          <span class="pager-label">Next</span>
+          Controller Manager Config &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>kubectl Reference - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html" class="active">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>kubectl Reference</h1>
+      <p class="lead">
+        Comprehensive reference for all kubectl commands supported by Rusternetes. Grouped by
+        category with key flags and examples.
+      </p>
+
+      <!-- ───────────────────── Global Flags ───────────────────── -->
+      <h2 id="global-flags">Global Flags</h2>
+      <p>These flags work with any kubectl command:</p>
+      <table>
+        <thead>
+          <tr><th>Flag</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>--kubeconfig</code></td><td>Path to kubeconfig file. Default <code>~/.kube/config</code>. For Rusternetes: <code>~/.kube/rusternetes-config</code>.</td></tr>
+          <tr><td><code>--context</code></td><td>Kubeconfig context to use.</td></tr>
+          <tr><td><code>--server</code> / <code>-s</code></td><td>API server URL (overrides kubeconfig).</td></tr>
+          <tr><td><code>--token</code></td><td>Bearer token for authentication.</td></tr>
+          <tr><td><code>--insecure-skip-tls-verify</code></td><td>Skip TLS certificate verification.</td></tr>
+          <tr><td><code>--namespace</code> / <code>-n</code></td><td>Namespace scope for the request.</td></tr>
+          <tr><td><code>--all-namespaces</code> / <code>-A</code></td><td>List across all namespaces.</td></tr>
+          <tr><td><code>-o</code> / <code>--output</code></td><td>Output format: <code>json</code>, <code>yaml</code>, <code>wide</code>, <code>name</code>, <code>custom-columns=...</code>, <code>jsonpath=...</code>.</td></tr>
+          <tr><td><code>--dry-run</code></td><td><code>none</code> (default), <code>client</code>, or <code>server</code>. Preview without persisting.</td></tr>
+          <tr><td><code>-v</code> / <code>--v</code></td><td>Verbosity level (0-9). <code>-v6</code> shows HTTP requests. <code>-v8</code> shows request/response bodies.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                   RESOURCE MANAGEMENT                      -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="resource-management">Resource Management</h2>
+
+      <!-- get -->
+      <h3 id="get">get</h3>
+      <p>List one or more resources.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List pods in current namespace</span>
+kubectl get pods
+
+<span class="comment"># Wide output with node and IP info</span>
+kubectl get pods <span class="flag">-o</span> <span class="value">wide</span>
+
+<span class="comment"># Watch for changes in real time</span>
+kubectl get pods <span class="flag">--watch</span>
+
+<span class="comment"># Filter by label</span>
+kubectl get pods <span class="flag">--selector=</span><span class="value">app=web</span>
+kubectl get pods <span class="flag">-l</span> <span class="value">app=web,tier=frontend</span>
+
+<span class="comment"># JSON output</span>
+kubectl get pod <span class="value">my-pod</span> <span class="flag">-o</span> <span class="value">json</span>
+
+<span class="comment"># YAML output</span>
+kubectl get pod <span class="value">my-pod</span> <span class="flag">-o</span> <span class="value">yaml</span>
+
+<span class="comment"># Custom columns</span>
+kubectl get pods <span class="flag">-o</span> <span class="value">custom-columns=NAME:.metadata.name,STATUS:.status.phase,NODE:.spec.nodeName</span>
+
+<span class="comment"># JSONPath</span>
+kubectl get pod <span class="value">my-pod</span> <span class="flag">-o</span> <span class="value">jsonpath='{.status.podIP}'</span>
+
+<span class="comment"># All namespaces</span>
+kubectl get pods <span class="flag">-A</span>
+
+<span class="comment"># Multiple resource types</span>
+kubectl get pods,services,deployments
+
+<span class="comment"># Show labels</span>
+kubectl get pods <span class="flag">--show-labels</span>
+
+<span class="comment"># Sort by a field</span>
+kubectl get pods <span class="flag">--sort-by=</span><span class="value">.metadata.creationTimestamp</span></code>
+      </pre>
+
+      <!-- create -->
+      <h3 id="create">create</h3>
+      <p>Create resources from files or via subcommands.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create from file</span>
+kubectl create <span class="flag">-f</span> <span class="value">resource.yaml</span>
+
+<span class="comment"># Create with dry-run (preview)</span>
+kubectl create <span class="flag">-f</span> <span class="value">resource.yaml</span> <span class="flag">--dry-run=</span><span class="value">server</span></code>
+      </pre>
+
+      <h4>create subcommands</h4>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Workloads</span>
+kubectl create deployment <span class="value">web</span> <span class="flag">--image=</span><span class="value">nginx</span> <span class="flag">--replicas=</span><span class="value">3</span>
+kubectl create job <span class="value">batch</span> <span class="flag">--image=</span><span class="value">busybox</span> <span class="flag">--</span> echo "done"
+kubectl create cronjob <span class="value">cleanup</span> <span class="flag">--image=</span><span class="value">busybox</span> <span class="flag">--schedule=</span><span class="value">"0 * * * *"</span> <span class="flag">--</span> cleanup.sh
+
+<span class="comment"># Services</span>
+kubectl create service clusterip <span class="value">web</span> <span class="flag">--tcp=</span><span class="value">80:8080</span>
+kubectl create service nodeport <span class="value">web</span> <span class="flag">--tcp=</span><span class="value">80:8080</span> <span class="flag">--node-port=</span><span class="value">30080</span>
+kubectl create service loadbalancer <span class="value">web</span> <span class="flag">--tcp=</span><span class="value">80:8080</span>
+kubectl create service externalname <span class="value">ext</span> <span class="flag">--external-name=</span><span class="value">db.example.com</span>
+
+<span class="comment"># Config</span>
+kubectl create configmap <span class="value">app-config</span> <span class="flag">--from-literal=</span><span class="value">key=value</span> <span class="flag">--from-file=</span><span class="value">config.yaml</span>
+kubectl create secret generic <span class="value">db-creds</span> <span class="flag">--from-literal=</span><span class="value">password=secret</span>
+kubectl create secret tls <span class="value">app-tls</span> <span class="flag">--cert=</span><span class="value">cert.pem</span> <span class="flag">--key=</span><span class="value">key.pem</span>
+kubectl create secret docker-registry <span class="value">regcred</span> <span class="flag">--docker-server=</span><span class="value">reg.io</span> <span class="flag">--docker-username=</span><span class="value">user</span> <span class="flag">--docker-password=</span><span class="value">pass</span>
+
+<span class="comment"># Namespaces</span>
+kubectl create namespace <span class="value">staging</span>
+
+<span class="comment"># RBAC</span>
+kubectl create role <span class="value">pod-reader</span> <span class="flag">--verb=</span><span class="value">get,list,watch</span> <span class="flag">--resource=</span><span class="value">pods</span>
+kubectl create clusterrole <span class="value">node-reader</span> <span class="flag">--verb=</span><span class="value">get,list</span> <span class="flag">--resource=</span><span class="value">nodes</span>
+kubectl create rolebinding <span class="value">read-pods</span> <span class="flag">--role=</span><span class="value">pod-reader</span> <span class="flag">--user=</span><span class="value">jane</span>
+kubectl create clusterrolebinding <span class="value">read-nodes</span> <span class="flag">--clusterrole=</span><span class="value">node-reader</span> <span class="flag">--group=</span><span class="value">devs</span>
+
+<span class="comment"># Other</span>
+kubectl create serviceaccount <span class="value">my-app</span>
+kubectl create token <span class="value">my-app</span> <span class="flag">--duration=</span><span class="value">1h</span>
+kubectl create ingress <span class="value">web</span> <span class="flag">--rule=</span><span class="value">"app.example.com/=web:80"</span> <span class="flag">--class=</span><span class="value">nginx</span>
+kubectl create quota <span class="value">compute</span> <span class="flag">--hard=</span><span class="value">cpu=4,memory=8Gi,pods=20</span>
+kubectl create pdb <span class="value">web-pdb</span> <span class="flag">--selector=</span><span class="value">app=web</span> <span class="flag">--max-unavailable=</span><span class="value">1</span>
+kubectl create priorityclass <span class="value">high</span> <span class="flag">--value=</span><span class="value">1000000</span></code>
+      </pre>
+
+      <!-- apply -->
+      <h3 id="apply">apply</h3>
+      <p>Apply a configuration to a resource. Creates the resource if it does not exist.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Apply from file</span>
+kubectl apply <span class="flag">-f</span> <span class="value">deployment.yaml</span>
+
+<span class="comment"># Apply from directory</span>
+kubectl apply <span class="flag">-f</span> <span class="value">./manifests/</span>
+
+<span class="comment"># Server-side apply (uses field ownership)</span>
+kubectl apply <span class="flag">--server-side</span> <span class="flag">-f</span> <span class="value">deployment.yaml</span>
+
+<span class="comment"># Server-side apply with custom field manager</span>
+kubectl apply <span class="flag">--server-side</span> <span class="flag">--field-manager=</span><span class="value">my-controller</span> <span class="flag">-f</span> <span class="value">deployment.yaml</span>
+
+<span class="comment"># Dry-run (server-side validation without persisting)</span>
+kubectl apply <span class="flag">-f</span> <span class="value">deployment.yaml</span> <span class="flag">--dry-run=</span><span class="value">server</span>
+
+<span class="comment"># Force conflicts in server-side apply</span>
+kubectl apply <span class="flag">--server-side</span> <span class="flag">--force-conflicts</span> <span class="flag">-f</span> <span class="value">deployment.yaml</span></code>
+      </pre>
+
+      <!-- delete -->
+      <h3 id="delete">delete</h3>
+      <p>Delete resources.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Delete by name</span>
+kubectl delete pod <span class="value">my-pod</span>
+
+<span class="comment"># Delete from file</span>
+kubectl delete <span class="flag">-f</span> <span class="value">deployment.yaml</span>
+
+<span class="comment"># Delete by label</span>
+kubectl delete pods <span class="flag">-l</span> <span class="value">app=old</span>
+
+<span class="comment"># Force delete (skip grace period)</span>
+kubectl delete pod <span class="value">my-pod</span> <span class="flag">--force</span> <span class="flag">--grace-period=</span><span class="value">0</span>
+
+<span class="comment"># Cascade options</span>
+kubectl delete deployment <span class="value">web</span> <span class="flag">--cascade=</span><span class="value">foreground</span>   <span class="comment"># Wait for children to delete</span>
+kubectl delete deployment <span class="value">web</span> <span class="flag">--cascade=</span><span class="value">background</span>  <span class="comment"># Delete parent first</span>
+kubectl delete deployment <span class="value">web</span> <span class="flag">--cascade=</span><span class="value">orphan</span>      <span class="comment"># Leave children running</span>
+
+<span class="comment"># Delete all pods in a namespace</span>
+kubectl delete pods <span class="flag">--all</span> <span class="flag">-n</span> <span class="value">staging</span></code>
+      </pre>
+
+      <!-- replace, patch, edit -->
+      <h3 id="replace">replace</h3>
+      <p>Replace a resource from a complete file (must include resourceVersion).</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl replace <span class="flag">-f</span> <span class="value">deployment.yaml</span>
+kubectl replace <span class="flag">--force</span> <span class="flag">-f</span> <span class="value">deployment.yaml</span>  <span class="comment"># Delete and recreate</span></code>
+      </pre>
+
+      <h3 id="patch">patch</h3>
+      <p>Update specific fields without replacing the whole resource.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Strategic merge patch (default)</span>
+kubectl patch deployment <span class="value">web</span> <span class="flag">-p</span> <span class="value">'{"spec":{"replicas":5}}'</span>
+
+<span class="comment"># JSON merge patch</span>
+kubectl patch deployment <span class="value">web</span> <span class="flag">--type=</span><span class="value">merge</span> <span class="flag">-p</span> <span class="value">'{"spec":{"replicas":5}}'</span>
+
+<span class="comment"># JSON patch (RFC 6902)</span>
+kubectl patch deployment <span class="value">web</span> <span class="flag">--type=</span><span class="value">json</span> \
+  <span class="flag">-p</span> <span class="value">'[{"op":"replace","path":"/spec/replicas","value":5}]'</span>
+
+<span class="comment"># Patch a subresource</span>
+kubectl patch deployment <span class="value">web</span> <span class="flag">--subresource=</span><span class="value">status</span> <span class="flag">--type=</span><span class="value">merge</span> \
+  <span class="flag">-p</span> <span class="value">'{"status":{"availableReplicas":3}}'</span></code>
+      </pre>
+
+      <h3 id="edit">edit</h3>
+      <p>Open a resource in your default editor.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl edit deployment <span class="value">web</span>
+kubectl edit svc <span class="value">web</span> <span class="flag">-o</span> <span class="value">json</span>  <span class="comment"># Edit as JSON</span>
+KUBE_EDITOR=nano kubectl edit deployment <span class="value">web</span></code>
+      </pre>
+
+      <!-- label, annotate -->
+      <h3 id="label">label</h3>
+      <p>Add, update, or remove labels.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Add/update labels</span>
+kubectl label pods <span class="value">my-pod</span> <span class="value">env=production</span>
+kubectl label pods <span class="value">my-pod</span> <span class="value">env=staging</span> <span class="flag">--overwrite</span>
+
+<span class="comment"># Remove a label</span>
+kubectl label pods <span class="value">my-pod</span> <span class="value">env-</span>
+
+<span class="comment"># Label all pods matching a selector</span>
+kubectl label pods <span class="flag">-l</span> <span class="value">app=web</span> <span class="value">version=v2</span></code>
+      </pre>
+
+      <h3 id="annotate">annotate</h3>
+      <p>Add, update, or remove annotations.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl annotate pods <span class="value">my-pod</span> <span class="value">description="Main web server"</span>
+kubectl annotate pods <span class="value">my-pod</span> <span class="value">description-</span>  <span class="comment"># Remove</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                    POD OPERATIONS                          -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="pod-operations">Pod Operations</h2>
+
+      <h3 id="run">run</h3>
+      <p>Create and run a pod (optionally interactive).</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Run a simple pod</span>
+kubectl run <span class="value">nginx</span> <span class="flag">--image=</span><span class="value">nginx:1.27</span>
+
+<span class="comment"># Run with environment variables</span>
+kubectl run <span class="value">myapp</span> <span class="flag">--image=</span><span class="value">myapp:v1</span> <span class="flag">--env=</span><span class="value">DB_HOST=db-svc</span> <span class="flag">--env=</span><span class="value">DB_PORT=5432</span>
+
+<span class="comment"># Run with labels</span>
+kubectl run <span class="value">myapp</span> <span class="flag">--image=</span><span class="value">myapp:v1</span> <span class="flag">--labels=</span><span class="value">app=web,tier=frontend</span>
+
+<span class="comment"># Interactive pod with shell</span>
+kubectl run <span class="value">debug</span> <span class="flag">--image=</span><span class="value">busybox</span> <span class="flag">-it</span> <span class="flag">--rm</span> <span class="flag">--</span> sh
+
+<span class="comment"># Run with specific command</span>
+kubectl run <span class="value">pi</span> <span class="flag">--image=</span><span class="value">perl</span> <span class="flag">--restart=</span><span class="value">Never</span> <span class="flag">--</span> perl -Mbignum=bpi -wle "print bpi(2000)"</code>
+      </pre>
+
+      <h3 id="logs">logs</h3>
+      <p>View container logs.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl logs <span class="value">my-pod</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--follow</span>             <span class="comment"># Stream logs</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--tail=</span><span class="value">50</span>             <span class="comment"># Last 50 lines</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--since=</span><span class="value">30m</span>           <span class="comment"># Last 30 minutes</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--timestamps</span>          <span class="comment"># Include timestamps</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--container=</span><span class="value">sidecar</span>  <span class="comment"># Specific container</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--previous</span>            <span class="comment"># Previous container instance</span>
+kubectl logs <span class="value">my-pod</span> <span class="flag">--all-containers</span>     <span class="comment"># All containers</span>
+kubectl logs <span class="flag">-l</span> <span class="value">app=web</span>                 <span class="comment"># All pods matching label</span>
+kubectl logs job/<span class="value">batch</span>                   <span class="comment"># Logs from a job's pod</span></code>
+      </pre>
+
+      <h3 id="exec">exec</h3>
+      <p>Execute a command in a container.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl exec <span class="value">my-pod</span> <span class="flag">--</span> ls /app
+kubectl exec <span class="flag">-it</span> <span class="value">my-pod</span> <span class="flag">--</span> /bin/sh
+kubectl exec <span class="flag">-it</span> <span class="value">my-pod</span> <span class="flag">--container=</span><span class="value">app</span> <span class="flag">--</span> /bin/bash</code>
+      </pre>
+
+      <h3 id="attach">attach</h3>
+      <p>Attach to a running container's process.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl attach <span class="value">my-pod</span>
+kubectl attach <span class="flag">-it</span> <span class="value">my-pod</span></code>
+      </pre>
+
+      <h3 id="cp">cp</h3>
+      <p>Copy files between host and containers.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Copy to pod</span>
+kubectl cp <span class="value">local-file.txt</span> <span class="value">my-pod:/tmp/remote-file.txt</span>
+
+<span class="comment"># Copy from pod</span>
+kubectl cp <span class="value">my-pod:/var/log/app.log</span> <span class="value">./app.log</span>
+
+<span class="comment"># Copy from a specific container</span>
+kubectl cp <span class="value">my-pod:/data</span> <span class="value">./backup/</span> <span class="flag">--container=</span><span class="value">app</span></code>
+      </pre>
+
+      <h3 id="port-forward">port-forward</h3>
+      <p>Forward local ports to a pod or service.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl port-forward <span class="value">my-pod</span> <span class="value">8080:80</span>
+kubectl port-forward svc/<span class="value">web</span> <span class="value">8080:80</span>
+kubectl port-forward <span class="value">my-pod</span> <span class="value">8080:80</span> <span class="value">9090:9090</span>
+kubectl port-forward <span class="flag">--address=</span><span class="value">0.0.0.0</span> <span class="value">my-pod</span> <span class="value">8080:80</span></code>
+      </pre>
+
+      <h3 id="debug">debug</h3>
+      <p>Create debug containers for troubleshooting.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl debug <span class="value">my-pod</span> <span class="flag">-it</span> <span class="flag">--image=</span><span class="value">busybox</span>
+kubectl debug <span class="value">my-pod</span> <span class="flag">-it</span> <span class="flag">--image=</span><span class="value">busybox</span> <span class="flag">--target=</span><span class="value">app</span>
+kubectl debug <span class="value">my-pod</span> <span class="flag">-it</span> <span class="flag">--copy-to=</span><span class="value">debug-pod</span> <span class="flag">--image=</span><span class="value">ubuntu</span>
+kubectl debug node/<span class="value">node-1</span> <span class="flag">-it</span> <span class="flag">--image=</span><span class="value">ubuntu</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                   CLUSTER OPERATIONS                       -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="cluster-operations">Cluster Operations</h2>
+
+      <h3 id="top">top</h3>
+      <p>Show resource usage (CPU/memory) for nodes and pods.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl top nodes
+kubectl top pods
+kubectl top pods <span class="flag">--containers</span>        <span class="comment"># Show per-container usage</span>
+kubectl top pods <span class="flag">-A</span> <span class="flag">--sort-by=</span><span class="value">cpu</span>  <span class="comment"># All namespaces, sorted by CPU</span></code>
+      </pre>
+
+      <h3 id="drain">drain</h3>
+      <p>Prepare a node for maintenance by evicting pods.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl drain <span class="value">node-1</span> <span class="flag">--ignore-daemonsets</span> <span class="flag">--delete-emptydir-data</span>
+kubectl drain <span class="value">node-1</span> <span class="flag">--force</span>  <span class="comment"># Include unmanaged pods</span></code>
+      </pre>
+
+      <h3 id="cordon">cordon / uncordon</h3>
+      <p>Mark a node as unschedulable or re-enable scheduling.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl cordon <span class="value">node-1</span>    <span class="comment"># Mark unschedulable</span>
+kubectl uncordon <span class="value">node-1</span>  <span class="comment"># Mark schedulable</span></code>
+      </pre>
+
+      <h3 id="taint">taint</h3>
+      <p>Add or remove taints on nodes.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Add a taint</span>
+kubectl taint nodes <span class="value">node-1</span> <span class="value">dedicated=gpu:NoSchedule</span>
+
+<span class="comment"># Remove a taint</span>
+kubectl taint nodes <span class="value">node-1</span> <span class="value">dedicated=gpu:NoSchedule-</span>
+
+<span class="comment"># Overwrite</span>
+kubectl taint nodes <span class="value">node-1</span> <span class="value">key=value:NoExecute</span> <span class="flag">--overwrite</span></code>
+      </pre>
+
+      <h3 id="events">events</h3>
+      <p>View cluster events.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl events
+kubectl events <span class="flag">--watch</span>
+kubectl events <span class="flag">--types=</span><span class="value">Warning</span>
+kubectl events <span class="flag">-A</span>  <span class="comment"># All namespaces</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                   DEPLOYMENT MANAGEMENT                    -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="deployment-management">Deployment Management</h2>
+
+      <h3 id="rollout">rollout</h3>
+      <p>Manage rollouts for Deployments, DaemonSets, and StatefulSets.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Check rollout status</span>
+kubectl rollout status deployment/<span class="value">web</span>
+
+<span class="comment"># View rollout history</span>
+kubectl rollout history deployment/<span class="value">web</span>
+kubectl rollout history deployment/<span class="value">web</span> <span class="flag">--revision=</span><span class="value">3</span>
+
+<span class="comment"># Undo (rollback)</span>
+kubectl rollout undo deployment/<span class="value">web</span>
+kubectl rollout undo deployment/<span class="value">web</span> <span class="flag">--to-revision=</span><span class="value">2</span>
+
+<span class="comment"># Restart (triggers new rollout)</span>
+kubectl rollout restart deployment/<span class="value">web</span>
+
+<span class="comment"># Pause / resume</span>
+kubectl rollout pause deployment/<span class="value">web</span>
+kubectl rollout resume deployment/<span class="value">web</span></code>
+      </pre>
+
+      <h3 id="scale">scale</h3>
+      <p>Change the replica count.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl scale deployment/<span class="value">web</span> <span class="flag">--replicas=</span><span class="value">5</span>
+kubectl scale statefulset/<span class="value">db</span> <span class="flag">--replicas=</span><span class="value">3</span>
+kubectl scale rs/<span class="value">web-abc123</span> <span class="flag">--replicas=</span><span class="value">0</span></code>
+      </pre>
+
+      <h3 id="expose">expose</h3>
+      <p>Create a Service for a resource.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl expose deployment <span class="value">web</span> <span class="flag">--port=</span><span class="value">80</span> <span class="flag">--target-port=</span><span class="value">8080</span>
+kubectl expose deployment <span class="value">web</span> <span class="flag">--port=</span><span class="value">80</span> <span class="flag">--type=</span><span class="value">NodePort</span>
+kubectl expose deployment <span class="value">web</span> <span class="flag">--port=</span><span class="value">80</span> <span class="flag">--type=</span><span class="value">LoadBalancer</span></code>
+      </pre>
+
+      <h3 id="autoscale">autoscale</h3>
+      <p>Create an HPA for a resource.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl autoscale deployment <span class="value">web</span> <span class="flag">--min=</span><span class="value">2</span> <span class="flag">--max=</span><span class="value">20</span> <span class="flag">--cpu-percent=</span><span class="value">70</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                         AUTH                               -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="auth">Auth</h2>
+
+      <h3 id="auth-can-i">auth can-i</h3>
+      <p>Check whether an action is allowed.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Can I do this?</span>
+kubectl auth can-i <span class="value">get</span> <span class="value">pods</span>
+kubectl auth can-i <span class="value">create</span> <span class="value">deployments</span> <span class="flag">--namespace=</span><span class="value">production</span>
+kubectl auth can-i <span class="value">"*"</span> <span class="value">"*"</span>                 <span class="comment"># Full admin check</span>
+kubectl auth can-i <span class="value">list</span> <span class="value">pods</span> <span class="flag">--all-namespaces</span>
+
+<span class="comment"># Check as another user</span>
+kubectl auth can-i <span class="value">get</span> <span class="value">secrets</span> <span class="flag">--as=</span><span class="value">jane</span>
+kubectl auth can-i <span class="value">get</span> <span class="value">secrets</span> <span class="flag">--as=</span><span class="value">system:serviceaccount:default:my-app</span></code>
+      </pre>
+
+      <h3 id="auth-whoami">auth whoami</h3>
+      <p>Show the current authenticated identity.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl auth whoami</code>
+      </pre>
+
+      <h3 id="auth-reconcile">auth reconcile</h3>
+      <p>Reconcile RBAC resources from a file.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl auth reconcile <span class="flag">-f</span> <span class="value">rbac.yaml</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                          INFO                              -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="info">Info &amp; Discovery</h2>
+
+      <h3 id="explain">explain</h3>
+      <p>Show documentation for a resource or field.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl explain pods
+kubectl explain pods.spec.containers
+kubectl explain deployment.spec.strategy
+kubectl explain pods <span class="flag">--recursive</span>  <span class="comment"># Show all fields</span></code>
+      </pre>
+
+      <h3 id="api-resources">api-resources</h3>
+      <p>List all available resource types.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl api-resources
+kubectl api-resources <span class="flag">--namespaced</span>                  <span class="comment"># Namespaced only</span>
+kubectl api-resources <span class="flag">--namespaced=</span><span class="value">false</span>            <span class="comment"># Cluster-scoped only</span>
+kubectl api-resources <span class="flag">--verbs=</span><span class="value">list,get</span>              <span class="comment"># With specific verbs</span>
+kubectl api-resources <span class="flag">--api-group=</span><span class="value">apps</span>             <span class="comment"># From specific API group</span></code>
+      </pre>
+
+      <h3 id="api-versions">api-versions</h3>
+      <p>List all available API versions.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl api-versions</code>
+      </pre>
+
+      <h3 id="cluster-info">cluster-info</h3>
+      <p>Show cluster endpoint information.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl cluster-info
+kubectl cluster-info dump  <span class="comment"># Full cluster state for debugging</span></code>
+      </pre>
+
+      <h3 id="version">version</h3>
+      <p>Show client and server versions.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl version
+kubectl version <span class="flag">--client</span>  <span class="comment"># Client only (no server connection needed)</span></code>
+      </pre>
+
+      <h3 id="describe">describe</h3>
+      <p>Show detailed resource information including events.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl describe pod <span class="value">my-pod</span>
+kubectl describe node <span class="value">node-1</span>
+kubectl describe svc <span class="value">web</span>
+kubectl describe deployment <span class="value">web</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                        CONFIG                              -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="config">Config</h2>
+      <p>Manage kubeconfig files, contexts, and clusters.</p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># View config</span>
+kubectl config view
+kubectl config view <span class="flag">--minify</span>   <span class="comment"># Only current context</span>
+kubectl config view <span class="flag">--flatten</span>  <span class="comment"># Inline certificate data</span>
+
+<span class="comment"># Contexts</span>
+kubectl config current-context
+kubectl config get-contexts
+kubectl config use-context <span class="value">rusternetes</span>
+
+<span class="comment"># Set values</span>
+kubectl config set <span class="value">current-context</span> <span class="value">rusternetes</span>
+kubectl config set-cluster <span class="value">rusternetes</span> <span class="flag">--server=</span><span class="value">https://localhost:6443</span>
+kubectl config set-credentials <span class="value">admin</span> <span class="flag">--token=</span><span class="value">mytoken</span>
+
+<span class="comment"># Unset values</span>
+kubectl config unset <span class="value">users.admin</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                         OTHER                              -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="other">Other Commands</h2>
+
+      <h3 id="diff">diff</h3>
+      <p>Show differences between the live state and a local file.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl diff <span class="flag">-f</span> <span class="value">deployment.yaml</span></code>
+      </pre>
+
+      <h3 id="wait">wait</h3>
+      <p>Wait for a specific condition on a resource.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Wait for pod to be ready</span>
+kubectl wait <span class="flag">--for=</span><span class="value">condition=Ready</span> pod/<span class="value">my-pod</span> <span class="flag">--timeout=</span><span class="value">120s</span>
+
+<span class="comment"># Wait for deployment to be available</span>
+kubectl wait <span class="flag">--for=</span><span class="value">condition=Available</span> deployment/<span class="value">web</span>
+
+<span class="comment"># Wait for deletion</span>
+kubectl wait <span class="flag">--for=</span><span class="value">delete</span> pod/<span class="value">my-pod</span>
+
+<span class="comment"># Wait for a specific JSON path value</span>
+kubectl wait <span class="flag">--for=</span><span class="value">jsonpath='{.status.phase}'=Running</span> pod/<span class="value">my-pod</span></code>
+      </pre>
+
+      <h3 id="certificate">certificate</h3>
+      <p>Manage certificate signing requests.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl certificate approve <span class="value">my-csr</span>
+kubectl certificate deny <span class="value">my-csr</span></code>
+      </pre>
+
+      <h3 id="completion">completion</h3>
+      <p>Generate shell completion scripts.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Bash</span>
+source &lt;(kubectl completion bash)
+
+<span class="comment"># Zsh</span>
+source &lt;(kubectl completion zsh)
+
+<span class="comment"># Fish</span>
+kubectl completion fish | source</code>
+      </pre>
+
+      <h3 id="kustomize">kustomize</h3>
+      <p>Process kustomization files.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl kustomize <span class="value">./overlays/production/</span>
+kubectl apply <span class="flag">-k</span> <span class="value">./overlays/production/</span></code>
+      </pre>
+
+      <h3 id="proxy">proxy</h3>
+      <p>Run a local proxy to the API server.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl proxy
+kubectl proxy <span class="flag">--port=</span><span class="value">8001</span>
+<span class="comment"># Then access: http://localhost:8001/api/v1/namespaces/default/pods</span></code>
+      </pre>
+
+      <h3 id="plugin">plugin list</h3>
+      <p>List installed kubectl plugins.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code>kubectl plugin list</code>
+      </pre>
+
+      <h3 id="set">set</h3>
+      <p>Update specific fields on resources.</p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Update container image</span>
+kubectl set image deployment/<span class="value">web</span> nginx=<span class="value">nginx:1.28</span>
+
+<span class="comment"># Set environment variables</span>
+kubectl set env deployment/<span class="value">web</span> <span class="value">DB_HOST=db-svc</span>
+
+<span class="comment"># Set resource requests/limits</span>
+kubectl set resources deployment/<span class="value">web</span> <span class="flag">-c=</span><span class="value">nginx</span> <span class="flag">--requests=</span><span class="value">cpu=100m,memory=128Mi</span>
+
+<span class="comment"># Set a service account</span>
+kubectl set serviceaccount deployment/<span class="value">web</span> <span class="value">my-sa</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                    OUTPUT FORMATS                          -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="output-formats">Output Formats</h2>
+      <table>
+        <thead>
+          <tr><th>Format</th><th>Flag</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Table</td><td>(default)</td><td>Human-readable table with key columns.</td></tr>
+          <tr><td>Wide</td><td><code>-o wide</code></td><td>Table with additional columns (IP, node, etc.).</td></tr>
+          <tr><td>JSON</td><td><code>-o json</code></td><td>Full JSON representation.</td></tr>
+          <tr><td>YAML</td><td><code>-o yaml</code></td><td>Full YAML representation.</td></tr>
+          <tr><td>Name</td><td><code>-o name</code></td><td>Just <code>resource/name</code> (e.g., <code>pod/my-pod</code>).</td></tr>
+          <tr><td>Custom Columns</td><td><code>-o custom-columns=...</code></td><td>Custom table with JSONPath columns.</td></tr>
+          <tr><td>JSONPath</td><td><code>-o jsonpath='{...}'</code></td><td>Extract specific fields with JSONPath expressions.</td></tr>
+          <tr><td>Go Template</td><td><code>-o go-template='...'</code></td><td>Format output with Go templates.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>JSONPath Examples</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Get pod IP</span>
+kubectl get pod <span class="value">my-pod</span> <span class="flag">-o</span> <span class="value">jsonpath='{.status.podIP}'</span>
+
+<span class="comment"># Get all pod names</span>
+kubectl get pods <span class="flag">-o</span> <span class="value">jsonpath='{.items[*].metadata.name}'</span>
+
+<span class="comment"># Get container images</span>
+kubectl get pods <span class="flag">-o</span> <span class="value">jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].image}{"\n"}{end}'</span>
+
+<span class="comment"># Get node IPs</span>
+kubectl get nodes <span class="flag">-o</span> <span class="value">jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'</span></code>
+      </pre>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!--                  QUICK REFERENCE TABLE                     -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <h2 id="quick-reference">Quick Reference</h2>
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Command</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Resource</td><td><code>get</code></td><td>List resources</td></tr>
+          <tr><td>Resource</td><td><code>describe</code></td><td>Show detailed info</td></tr>
+          <tr><td>Resource</td><td><code>create</code></td><td>Create from file or subcommand</td></tr>
+          <tr><td>Resource</td><td><code>apply</code></td><td>Create or update from file</td></tr>
+          <tr><td>Resource</td><td><code>delete</code></td><td>Delete resources</td></tr>
+          <tr><td>Resource</td><td><code>replace</code></td><td>Replace from complete file</td></tr>
+          <tr><td>Resource</td><td><code>patch</code></td><td>Update specific fields</td></tr>
+          <tr><td>Resource</td><td><code>edit</code></td><td>Edit in default editor</td></tr>
+          <tr><td>Resource</td><td><code>label</code></td><td>Add/update/remove labels</td></tr>
+          <tr><td>Resource</td><td><code>annotate</code></td><td>Add/update/remove annotations</td></tr>
+          <tr><td>Pod</td><td><code>run</code></td><td>Create and run a pod</td></tr>
+          <tr><td>Pod</td><td><code>logs</code></td><td>View container logs</td></tr>
+          <tr><td>Pod</td><td><code>exec</code></td><td>Execute command in container</td></tr>
+          <tr><td>Pod</td><td><code>attach</code></td><td>Attach to running container</td></tr>
+          <tr><td>Pod</td><td><code>cp</code></td><td>Copy files to/from containers</td></tr>
+          <tr><td>Pod</td><td><code>port-forward</code></td><td>Forward local ports to pod</td></tr>
+          <tr><td>Pod</td><td><code>debug</code></td><td>Create debug containers</td></tr>
+          <tr><td>Cluster</td><td><code>top</code></td><td>Show resource usage</td></tr>
+          <tr><td>Cluster</td><td><code>drain</code></td><td>Drain a node</td></tr>
+          <tr><td>Cluster</td><td><code>cordon</code></td><td>Mark node unschedulable</td></tr>
+          <tr><td>Cluster</td><td><code>uncordon</code></td><td>Mark node schedulable</td></tr>
+          <tr><td>Cluster</td><td><code>taint</code></td><td>Add/remove node taints</td></tr>
+          <tr><td>Cluster</td><td><code>events</code></td><td>View cluster events</td></tr>
+          <tr><td>Deploy</td><td><code>rollout</code></td><td>Manage rollouts</td></tr>
+          <tr><td>Deploy</td><td><code>scale</code></td><td>Change replica count</td></tr>
+          <tr><td>Deploy</td><td><code>expose</code></td><td>Create a Service</td></tr>
+          <tr><td>Deploy</td><td><code>autoscale</code></td><td>Create an HPA</td></tr>
+          <tr><td>Deploy</td><td><code>set</code></td><td>Update images, env, resources</td></tr>
+          <tr><td>Auth</td><td><code>auth can-i</code></td><td>Check permissions</td></tr>
+          <tr><td>Auth</td><td><code>auth whoami</code></td><td>Show current identity</td></tr>
+          <tr><td>Auth</td><td><code>auth reconcile</code></td><td>Reconcile RBAC from file</td></tr>
+          <tr><td>Info</td><td><code>explain</code></td><td>Show field docs</td></tr>
+          <tr><td>Info</td><td><code>api-resources</code></td><td>List resource types</td></tr>
+          <tr><td>Info</td><td><code>api-versions</code></td><td>List API versions</td></tr>
+          <tr><td>Info</td><td><code>cluster-info</code></td><td>Show cluster endpoints</td></tr>
+          <tr><td>Info</td><td><code>version</code></td><td>Show client/server version</td></tr>
+          <tr><td>Config</td><td><code>config view</code></td><td>View kubeconfig</td></tr>
+          <tr><td>Config</td><td><code>config use-context</code></td><td>Switch context</td></tr>
+          <tr><td>Config</td><td><code>config get-contexts</code></td><td>List contexts</td></tr>
+          <tr><td>Other</td><td><code>diff</code></td><td>Show live vs local diff</td></tr>
+          <tr><td>Other</td><td><code>wait</code></td><td>Wait for condition</td></tr>
+          <tr><td>Other</td><td><code>certificate</code></td><td>Approve/deny CSRs</td></tr>
+          <tr><td>Other</td><td><code>completion</code></td><td>Shell completion</td></tr>
+          <tr><td>Other</td><td><code>kustomize</code></td><td>Process kustomization</td></tr>
+          <tr><td>Other</td><td><code>proxy</code></td><td>Local API proxy</td></tr>
+          <tr><td>Other</td><td><code>plugin list</code></td><td>List plugins</td></tr>
+        </tbody>
+      </table>
+
+      <div class="doc-pager">
+        <a href="containers.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Container Runtime
+        </a>
+        <a href="monitoring.html" class="next">
+          <span class="pager-label">Next</span>
+          Monitoring &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

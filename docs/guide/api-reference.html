@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Reference - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html" class="active">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>API Reference</h1>
+      <p class="lead">
+        Complete listing of every API group, resource type, and endpoint supported by the
+        Rusternetes API server. 80+ resource types across 18 API groups.
+      </p>
+
+      <h2>Core API (v1)</h2>
+      <p>
+        The core API group contains the fundamental Kubernetes resource types. These are accessed
+        at <code>/api/v1</code> (not <code>/apis/core/v1</code>).
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Pod</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>Service</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>Endpoints</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>Namespace</code></td>
+            <td><code>v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>Node</code></td>
+            <td><code>v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ConfigMap</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>Secret</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>ServiceAccount</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>PersistentVolume</code></td>
+            <td><code>v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>PersistentVolumeClaim</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>Event</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ResourceQuota</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>LimitRange</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>PodTemplate</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ReplicationController</code></td>
+            <td><code>v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ComponentStatus</code></td>
+            <td><code>v1</code></td>
+            <td>Cluster</td>
+            <td>get, list</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>apps/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Deployment</code></td>
+            <td><code>apps/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>StatefulSet</code></td>
+            <td><code>apps/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>DaemonSet</code></td>
+            <td><code>apps/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>ReplicaSet</code></td>
+            <td><code>apps/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>ControllerRevision</code></td>
+            <td><code>apps/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>batch/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Job</code></td>
+            <td><code>batch/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+          <tr>
+            <td><code>CronJob</code></td>
+            <td><code>batch/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, deletecollection, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>autoscaling/v1 + autoscaling/v2</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>HorizontalPodAutoscaler</code></td>
+            <td><code>autoscaling/v1</code>, <code>autoscaling/v2</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>autoscaling.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>VerticalPodAutoscaler</code></td>
+            <td><code>autoscaling.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>storage.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>StorageClass</code></td>
+            <td><code>storage.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>VolumeAttachment</code></td>
+            <td><code>storage.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>CSIDriver</code></td>
+            <td><code>storage.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>CSINode</code></td>
+            <td><code>storage.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>CSIStorageCapacity</code></td>
+            <td><code>storage.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>snapshot.storage.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>VolumeSnapshot</code></td>
+            <td><code>snapshot.storage.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>VolumeSnapshotClass</code></td>
+            <td><code>snapshot.storage.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>VolumeSnapshotContent</code></td>
+            <td><code>snapshot.storage.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>networking.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Ingress</code></td>
+            <td><code>networking.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>IngressClass</code></td>
+            <td><code>networking.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>NetworkPolicy</code></td>
+            <td><code>networking.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>networking.k8s.io/v1alpha1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ServiceCIDR</code></td>
+            <td><code>networking.k8s.io/v1alpha1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>IPAddress</code></td>
+            <td><code>networking.k8s.io/v1alpha1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>rbac.authorization.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Role</code></td>
+            <td><code>rbac.authorization.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ClusterRole</code></td>
+            <td><code>rbac.authorization.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>RoleBinding</code></td>
+            <td><code>rbac.authorization.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ClusterRoleBinding</code></td>
+            <td><code>rbac.authorization.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>apiextensions.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>CustomResourceDefinition</code></td>
+            <td><code>apiextensions.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">Dynamic custom resources</div>
+        <p>
+          Once a CRD is created, the API server dynamically registers endpoints for the custom
+          resource type. Custom resources support full CRUD, watch, status and scale subresources,
+          and OpenAPI v3 schema validation.
+        </p>
+      </div>
+
+      <h2>certificates.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>CertificateSigningRequest</code></td>
+            <td><code>certificates.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>coordination.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Lease</code></td>
+            <td><code>coordination.k8s.io/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>policy/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>PodDisruptionBudget</code></td>
+            <td><code>policy/v1</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>scheduling.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>PriorityClass</code></td>
+            <td><code>scheduling.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>node.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RuntimeClass</code></td>
+            <td><code>node.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>admissionregistration.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ValidatingWebhookConfiguration</code></td>
+            <td><code>admissionregistration.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>MutatingWebhookConfiguration</code></td>
+            <td><code>admissionregistration.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ValidatingAdmissionPolicy</code></td>
+            <td><code>admissionregistration.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>resource.k8s.io/v1alpha2</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DeviceClass</code></td>
+            <td><code>resource.k8s.io/v1alpha2</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ResourceClaim</code></td>
+            <td><code>resource.k8s.io/v1alpha2</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ResourceClaimTemplate</code></td>
+            <td><code>resource.k8s.io/v1alpha2</code></td>
+            <td>Namespaced</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>ResourceSlice</code></td>
+            <td><code>resource.k8s.io/v1alpha2</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>flowcontrol.apiserver.k8s.io/v1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>FlowSchema</code></td>
+            <td><code>flowcontrol.apiserver.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+          <tr>
+            <td><code>PriorityLevelConfiguration</code></td>
+            <td><code>flowcontrol.apiserver.k8s.io/v1</code></td>
+            <td>Cluster</td>
+            <td>create, get, list, update, patch, delete, watch</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>metrics.k8s.io/v1beta1</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>API Version</th>
+            <th>Scope</th>
+            <th>Supported Verbs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>PodMetrics</code></td>
+            <td><code>metrics.k8s.io/v1beta1</code></td>
+            <td>Namespaced</td>
+            <td>get, list</td>
+          </tr>
+          <tr>
+            <td><code>NodeMetrics</code></td>
+            <td><code>metrics.k8s.io/v1beta1</code></td>
+            <td>Cluster</td>
+            <td>get, list</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Discovery Endpoints</h2>
+      <p>
+        The API server provides discovery endpoints that allow clients to enumerate
+        available API groups, versions, and resources:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/api</code></td>
+            <td>Lists core API versions</td>
+          </tr>
+          <tr>
+            <td><code>/api/v1</code></td>
+            <td>Lists all core v1 resource types</td>
+          </tr>
+          <tr>
+            <td><code>/apis</code></td>
+            <td>Lists all API groups</td>
+          </tr>
+          <tr>
+            <td><code>/apis/{group}/{version}</code></td>
+            <td>Lists resources in a specific API group version</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># List API groups</span>
+kubectl api-versions
+
+<span class="comment"># List all resource types</span>
+kubectl api-resources
+
+<span class="comment"># List resources in a specific group</span>
+kubectl api-resources <span class="flag">--api-group</span>=<span class="value">apps</span></code>
+      </pre>
+
+      <h2>Health &amp; Status Endpoints</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/healthz</code></td>
+            <td>General health check (legacy)</td>
+          </tr>
+          <tr>
+            <td><code>/livez</code></td>
+            <td>Liveness probe</td>
+          </tr>
+          <tr>
+            <td><code>/readyz</code></td>
+            <td>Readiness probe</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>OpenAPI Endpoints</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/openapi/v2</code></td>
+            <td>OpenAPI v2 (Swagger) specification</td>
+          </tr>
+          <tr>
+            <td><code>/openapi/v3</code></td>
+            <td>OpenAPI v3 specification index</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Subresource Patterns</h2>
+      <p>
+        Many resource types support subresources that are accessed as nested paths beneath
+        the parent resource:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Subresource</th>
+            <th>Pattern</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/status</code></td>
+            <td><code>/{resource}/{name}/status</code></td>
+            <td>Read/update the status subresource independently</td>
+          </tr>
+          <tr>
+            <td><code>/scale</code></td>
+            <td><code>/{resource}/{name}/scale</code></td>
+            <td>Read/update replica count (Deployments, ReplicaSets, StatefulSets)</td>
+          </tr>
+          <tr>
+            <td><code>/log</code></td>
+            <td><code>/pods/{name}/log</code></td>
+            <td>Stream container logs</td>
+          </tr>
+          <tr>
+            <td><code>/exec</code></td>
+            <td><code>/pods/{name}/exec</code></td>
+            <td>Execute a command in a container</td>
+          </tr>
+          <tr>
+            <td><code>/attach</code></td>
+            <td><code>/pods/{name}/attach</code></td>
+            <td>Attach to a running container</td>
+          </tr>
+          <tr>
+            <td><code>/portforward</code></td>
+            <td><code>/pods/{name}/portforward</code></td>
+            <td>Forward ports to a pod</td>
+          </tr>
+          <tr>
+            <td><code>/proxy</code></td>
+            <td><code>/pods/{name}/proxy</code></td>
+            <td>Proxy HTTP requests to a pod</td>
+          </tr>
+          <tr>
+            <td><code>/token</code></td>
+            <td><code>/serviceaccounts/{name}/token</code></td>
+            <td>Create a bound ServiceAccount token (RS256 JWT)</td>
+          </tr>
+          <tr>
+            <td><code>/binding</code></td>
+            <td><code>/pods/{name}/binding</code></td>
+            <td>Bind a pod to a node (used by the scheduler)</td>
+          </tr>
+          <tr>
+            <td><code>/eviction</code></td>
+            <td><code>/pods/{name}/eviction</code></td>
+            <td>Evict a pod (respects PodDisruptionBudgets)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>URL Structure</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">patterns</span>
+        </div>
+        <code><span class="comment"># Core API (v1) - namespaced</span>
+/api/v1/namespaces/{namespace}/{resource}
+/api/v1/namespaces/{namespace}/{resource}/{name}
+/api/v1/namespaces/{namespace}/{resource}/{name}/{subresource}
+
+<span class="comment"># Core API (v1) - cluster-scoped</span>
+/api/v1/{resource}
+/api/v1/{resource}/{name}
+
+<span class="comment"># Named API groups - namespaced</span>
+/apis/{group}/{version}/namespaces/{namespace}/{resource}
+/apis/{group}/{version}/namespaces/{namespace}/{resource}/{name}
+
+<span class="comment"># Named API groups - cluster-scoped</span>
+/apis/{group}/{version}/{resource}
+/apis/{group}/{version}/{resource}/{name}
+
+<span class="comment"># List across all namespaces</span>
+/api/v1/{resource}
+/apis/{group}/{version}/{resource}</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="cloud-providers.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Cloud Providers
+        </a>
+        <a href="conformance.html" class="next">
+          <span class="pager-label">Next</span>
+          Conformance &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controller Manager Configuration - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html" class="active">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage & Volumes</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <p class="breadcrumb">Configuration &rsaquo; Controller Manager</p>
+      <h1>Controller Manager Configuration</h1>
+      <p class="lead">
+        The controller manager runs 31 reconciliation controllers as concurrent tokio tasks.
+        Each controller watches resources in storage and drives them toward their desired state.
+      </p>
+
+      <h2>CLI Flags</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--etcd-servers</code></td>
+            <td>String</td>
+            <td><code>http://localhost:2379</code></td>
+            <td>Comma-separated list of etcd endpoints</td>
+          </tr>
+          <tr>
+            <td><code>--storage-backend</code></td>
+            <td>String</td>
+            <td><code>etcd</code></td>
+            <td>Storage backend: <code>etcd</code> or <code>sqlite</code></td>
+          </tr>
+          <tr>
+            <td><code>--data-dir</code></td>
+            <td>String</td>
+            <td><code>./data/rusternetes.db</code></td>
+            <td>SQLite database path (only with <code>--storage-backend=sqlite</code>)</td>
+          </tr>
+          <tr>
+            <td><code>--log-level</code></td>
+            <td>String</td>
+            <td><code>info</code></td>
+            <td>Log level: <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td>
+          </tr>
+          <tr>
+            <td><code>--sync-interval</code></td>
+            <td>u64</td>
+            <td><code>5</code></td>
+            <td>Controller sync interval in seconds</td>
+          </tr>
+          <tr>
+            <td><code>--cloud-provider</code></td>
+            <td>String</td>
+            <td><em>auto-detected</em></td>
+            <td>Cloud provider: <code>aws</code>, <code>gcp</code>, <code>azure</code>, or <code>none</code></td>
+          </tr>
+          <tr>
+            <td><code>--cluster-name</code></td>
+            <td>String</td>
+            <td><code>rusternetes</code></td>
+            <td>Cluster name for cloud provider resources</td>
+          </tr>
+          <tr>
+            <td><code>--cloud-region</code></td>
+            <td>String</td>
+            <td>&mdash;</td>
+            <td>Cloud provider region</td>
+          </tr>
+          <tr>
+            <td><code>--enable-leader-election</code></td>
+            <td>bool</td>
+            <td><code>false</code></td>
+            <td>Enable leader election for HA</td>
+          </tr>
+          <tr>
+            <td><code>--leader-election-identity</code></td>
+            <td>String</td>
+            <td><em>auto-generated UUID</em></td>
+            <td>Unique identity for this instance</td>
+          </tr>
+          <tr>
+            <td><code>--leader-election-lock-key</code></td>
+            <td>String</td>
+            <td><code>/rusternetes/controller-manager/leader</code></td>
+            <td>etcd key used for the leader election lock</td>
+          </tr>
+          <tr>
+            <td><code>--leader-election-lease-duration</code></td>
+            <td>u64</td>
+            <td><code>15</code></td>
+            <td>Leader election lease duration in seconds</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Usage Examples</h2>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Standard deployment with etcd</span>
+rusternetes-controller-manager \
+  <span class="flag">--etcd-servers</span> <span class="value">http://etcd:2379</span> \
+  <span class="flag">--sync-interval</span> <span class="value">5</span>
+
+<span class="comment"># With cloud provider</span>
+rusternetes-controller-manager \
+  <span class="flag">--etcd-servers</span> <span class="value">http://etcd:2379</span> \
+  <span class="flag">--cloud-provider</span> <span class="value">aws</span> \
+  <span class="flag">--cloud-region</span> <span class="value">us-east-1</span>
+
+<span class="comment"># HA with leader election</span>
+rusternetes-controller-manager \
+  <span class="flag">--etcd-servers</span> <span class="value">http://etcd:2379</span> \
+  <span class="flag">--enable-leader-election</span> \
+  <span class="flag">--leader-election-identity</span> <span class="value">cm-1</span></code>
+      </pre>
+
+      <h2>All 31 Controllers</h2>
+      <p>
+        Each controller runs as an independent tokio task. Some use watch-based reconciliation
+        for immediate response to changes; others use periodic polling.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Controller</th>
+            <th>Reconciles</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td><code>Deployment</code></td>
+            <td>Creates/updates ReplicaSets, manages rollouts and rollbacks</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td><code>ReplicaSet</code></td>
+            <td>Ensures the correct number of pod replicas exist</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td><code>ReplicationController</code></td>
+            <td>Legacy replication controller (v1 API)</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td><code>StatefulSet</code></td>
+            <td>Ordered pod creation/deletion with stable network identities</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td><code>DaemonSet</code></td>
+            <td>Ensures a pod runs on every (or selected) node</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td><code>Job</code></td>
+            <td>Runs pods to completion, tracks completions and failures</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td><code>CronJob</code></td>
+            <td>Creates Jobs on a cron schedule</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td><code>Endpoints</code></td>
+            <td>Populates Endpoints objects from Service selectors and pod IPs (watch-based)</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td><code>EndpointSlice</code></td>
+            <td>Populates EndpointSlice objects for services (watch-based)</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td><code>Service</code></td>
+            <td>Manages service lifecycle and status updates (watch-based)</td>
+          </tr>
+          <tr>
+            <td>11</td>
+            <td><code>ServiceAccount</code></td>
+            <td>Creates default ServiceAccount in new namespaces (watch-based)</td>
+          </tr>
+          <tr>
+            <td>12</td>
+            <td><code>Namespace</code></td>
+            <td>Handles namespace deletion, cleans up contained resources (watch-based)</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td><code>Node</code></td>
+            <td>Manages node lifecycle, heartbeats, and conditions (watch-based)</td>
+          </tr>
+          <tr>
+            <td>14</td>
+            <td><code>PV Binder</code></td>
+            <td>Binds PersistentVolumeClaims to PersistentVolumes</td>
+          </tr>
+          <tr>
+            <td>15</td>
+            <td><code>Dynamic Provisioner</code></td>
+            <td>Dynamically provisions PersistentVolumes for unbound PVCs</td>
+          </tr>
+          <tr>
+            <td>16</td>
+            <td><code>Volume Snapshot</code></td>
+            <td>Manages VolumeSnapshot lifecycle and binding</td>
+          </tr>
+          <tr>
+            <td>17</td>
+            <td><code>Volume Expansion</code></td>
+            <td>Handles PVC resize operations</td>
+          </tr>
+          <tr>
+            <td>18</td>
+            <td><code>ResourceQuota</code></td>
+            <td>Tracks resource usage against quota limits (cpu, memory, ephemeral-storage)</td>
+          </tr>
+          <tr>
+            <td>19</td>
+            <td><code>ResourceClaim</code></td>
+            <td>Manages dynamic resource allocation claims</td>
+          </tr>
+          <tr>
+            <td>20</td>
+            <td><code>HPA</code></td>
+            <td>Horizontal Pod Autoscaler &mdash; scales based on CPU/memory/custom metrics</td>
+          </tr>
+          <tr>
+            <td>21</td>
+            <td><code>VPA</code></td>
+            <td>Vertical Pod Autoscaler &mdash; recommends resource requests</td>
+          </tr>
+          <tr>
+            <td>22</td>
+            <td><code>PodDisruptionBudget</code></td>
+            <td>Tracks disruption budget status for voluntary disruptions</td>
+          </tr>
+          <tr>
+            <td>23</td>
+            <td><code>LoadBalancer</code></td>
+            <td>Provisions external load balancers via cloud provider</td>
+          </tr>
+          <tr>
+            <td>24</td>
+            <td><code>Ingress</code></td>
+            <td>Manages Ingress resources and updates status</td>
+          </tr>
+          <tr>
+            <td>25</td>
+            <td><code>NetworkPolicy</code></td>
+            <td>Manages network policy lifecycle and status</td>
+          </tr>
+          <tr>
+            <td>26</td>
+            <td><code>CRD</code></td>
+            <td>Manages CustomResourceDefinition lifecycle, sets status conditions</td>
+          </tr>
+          <tr>
+            <td>27</td>
+            <td><code>CertificateSigningRequest</code></td>
+            <td>Auto-approves and signs CSRs</td>
+          </tr>
+          <tr>
+            <td>28</td>
+            <td><code>Garbage Collector</code></td>
+            <td>Deletes orphaned resources based on ownerReferences</td>
+          </tr>
+          <tr>
+            <td>29</td>
+            <td><code>TTL</code></td>
+            <td>Deletes finished Jobs/Pods after <code>ttlSecondsAfterFinished</code></td>
+          </tr>
+          <tr>
+            <td>30</td>
+            <td><code>Taint Eviction</code></td>
+            <td>Evicts pods from nodes with NoExecute taints (watch-based)</td>
+          </tr>
+          <tr>
+            <td>31</td>
+            <td><code>Events</code></td>
+            <td>Manages event lifecycle and garbage collection</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="admonition note">
+        <div class="admonition-title">WATCH-BASED CONTROLLERS</div>
+        <p>
+          Controllers marked as "watch-based" use storage watch streams for immediate
+          reactivity instead of periodic polling. They respond to changes within milliseconds
+          rather than waiting for the next sync interval.
+        </p>
+      </div>
+
+      <h2>Leader Election</h2>
+      <p>
+        When leader election is enabled, all 31 controllers wait in follower mode until
+        the instance acquires the etcd lease. If leadership is lost, controllers stop
+        and wait to re-acquire. This prevents split-brain scenarios in HA deployments.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">leader election flow</span>
+        </div>
+        <code><span class="comment"># Instance starts in follower mode</span>
+Follower  ---[acquire lease]---&gt;  Leader  ---[run controllers]---&gt;  Active
+
+<span class="comment"># If lease is lost</span>
+Active    ---[lose lease]---&gt;  Follower  ---[wait]---&gt;  ...
+
+<span class="comment"># Lease timing</span>
+Lease duration:    <span class="value">15s</span>  (--leader-election-lease-duration)
+Renew interval:    <span class="value">5s</span>   (lease_duration / 3)
+Retry interval:    <span class="value">2s</span>   (fixed)</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="scheduler-config.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Scheduler Config
+        </a>
+        <a href="kube-proxy-config.html" class="next">
+          <span class="pager-label">Next</span>
+          Kube-Proxy Config &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>

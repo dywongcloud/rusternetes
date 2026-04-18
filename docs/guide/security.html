@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security - Rusternetes</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="../index.html" class="nav-logo">
+        <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
+      </a>
+      <div class="nav-links">
+        <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
+        <a href="https://github.com/calfonso/rusternetes" class="nav-gh">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="doc-layout">
+    <aside class="doc-sidebar">
+      <div class="doc-search">
+        <input type="text" class="doc-search-input" placeholder="Search docs... ( / )">
+      </div>
+      <div class="doc-search-results"></div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Getting Started</div>
+        <ul class="sidebar-links">
+          <li><a href="quickstart.html">Quick Start</a></li>
+          <li><a href="installation.html">Installation</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Deployment</div>
+        <ul class="sidebar-links">
+          <li><a href="deployment.html">Overview</a></li>
+          <li><a href="all-in-one.html">All-in-One Binary</a></li>
+          <li><a href="docker-cluster.html">Docker + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="high-availability.html">High Availability</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Cluster Setup</div>
+        <ul class="sidebar-links">
+          <li><a href="bootstrap.html">Bootstrap</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Configuration</div>
+        <ul class="sidebar-links">
+          <li><a href="api-server-config.html">API Server</a></li>
+          <li><a href="kubelet-config.html">Kubelet</a></li>
+          <li><a href="scheduler-config.html">Scheduler</a></li>
+          <li><a href="controller-manager-config.html">Controller Manager</a></li>
+          <li><a href="kube-proxy-config.html">Kube-Proxy</a></li>
+          <li><a href="storage-config.html">Storage Backends</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Features</div>
+        <ul class="sidebar-links">
+          <li><a href="workloads.html">Workloads</a></li>
+          <li><a href="networking.html">Networking</a></li>
+          <li><a href="storage-volumes.html">Storage &amp; Volumes</a></li>
+          <li><a href="security.html" class="active">Security</a></li>
+          <li><a href="crds.html">Custom Resources</a></li>
+          <li><a href="scheduling.html">Scheduling</a></li>
+          <li><a href="containers.html">Container Runtime</a></li>
+          <li><a href="kubectl.html">kubectl</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Operations</div>
+        <ul class="sidebar-links">
+          <li><a href="monitoring.html">Monitoring</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting</a></li>
+          <li><a href="cloud-providers.html">Cloud Providers</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Reference</div>
+        <ul class="sidebar-links">
+          <li><a href="api-reference.html">API Reference</a></li>
+          <li><a href="conformance.html">Conformance</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="doc-overlay"></div>
+
+    <main class="doc-content">
+      <h1>Security</h1>
+      <p class="lead">
+        Rusternetes implements Kubernetes security features including TLS/mTLS, RBAC authorization,
+        ServiceAccount tokens (RS256 JWT), admission webhooks, ValidatingAdmissionPolicy with CEL,
+        ResourceQuota, LimitRange, SecurityContext, and Secret management.
+      </p>
+
+      <!-- ───────────────────── TLS ───────────────────── -->
+      <h2 id="tls">TLS / mTLS</h2>
+      <p>
+        The API server requires TLS for all connections. The bootstrap script generates self-signed
+        certificates with 10-year validity. Certificates are stored in <code>.rusternetes/certs/</code>.
+      </p>
+
+      <h3>Certificate Requirements</h3>
+      <table>
+        <thead>
+          <tr><th>Requirement</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>SANs</td><td>Must include <code>localhost</code>, <code>127.0.0.1</code>, <code>kubernetes</code>, <code>kubernetes.default</code>, <code>kubernetes.default.svc</code>, <code>kubernetes.default.svc.cluster.local</code>, and Docker bridge IPs (172.18.0.2-5).</td></tr>
+          <tr><td>ALPN</td><td>TLS ServerConfig must set <code>alpn_protocols = [b"h2", b"http/1.1"]</code>. Without ALPN, Go's client-go cannot negotiate HTTP/2 and watches fail with "context canceled".</td></tr>
+          <tr><td>Validity</td><td>10-year validity for self-signed certs. Customize with <code>--cert-validity-days</code>.</td></tr>
+          <tr><td>Key type</td><td>RSA 2048-bit or ECDSA P-256.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="admonition warning">
+        <div class="admonition-title">HTTP/2 ALPN is required</div>
+        <p>
+          Go's <code>client-go</code> library requires ALPN negotiation to select HTTP/2. If the
+          TLS config does not advertise <code>h2</code>, watches will fail with "context canceled"
+          errors because the client falls back to HTTP/1.1 without proper framing.
+        </p>
+      </div>
+
+      <h3>Generating Custom Certificates</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Generate certs (done automatically by bootstrap)</span>
+bash scripts/generate-certs.sh
+
+<span class="comment"># Custom SANs for non-standard deployments</span>
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout server.key -out server.crt \
+  -days 3650 \
+  -subj "/CN=kube-apiserver" \
+  -addext "subjectAltName=DNS:kubernetes,DNS:kubernetes.default,\
+DNS:kubernetes.default.svc,DNS:kubernetes.default.svc.cluster.local,\
+IP:127.0.0.1,IP:10.96.0.1,IP:172.18.0.2,IP:172.18.0.3"</code>
+      </pre>
+
+      <h3>Using Custom Certificates</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># API server flags</span>
+rusternetes-api-server \
+  <span class="flag">--tls-cert-file=</span><span class="value">/path/to/server.crt</span> \
+  <span class="flag">--tls-private-key-file=</span><span class="value">/path/to/server.key</span> \
+  <span class="flag">--client-ca-file=</span><span class="value">/path/to/ca.crt</span></code>
+      </pre>
+
+      <!-- ───────────────────── RBAC ───────────────────── -->
+      <h2 id="rbac">RBAC Authorization</h2>
+      <p>
+        Role-Based Access Control (RBAC) grants permissions to users, groups, and service accounts.
+        RBAC uses four resource types: Role, ClusterRole, RoleBinding, and ClusterRoleBinding.
+      </p>
+
+      <h3>Role &amp; ClusterRole</h3>
+      <p>
+        A <code>Role</code> grants permissions within a single namespace. A <code>ClusterRole</code>
+        grants cluster-wide permissions or can be bound to a namespace via RoleBinding.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Rule Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>apiGroups</code></td><td>API groups (<code>""</code> = core, <code>"apps"</code>, <code>"batch"</code>, etc.).</td></tr>
+          <tr><td><code>resources</code></td><td>Resource types (<code>"pods"</code>, <code>"deployments"</code>, <code>"secrets"</code>, etc.).</td></tr>
+          <tr><td><code>verbs</code></td><td>Allowed operations: <code>get</code>, <code>list</code>, <code>watch</code>, <code>create</code>, <code>update</code>, <code>patch</code>, <code>delete</code>, <code>deletecollection</code>.</td></tr>
+          <tr><td><code>resourceNames</code></td><td>Optional. Restrict to specific resource instances by name.</td></tr>
+          <tr><td><code>nonResourceURLs</code></td><td>ClusterRole only. Non-resource URLs like <code>/healthz</code>, <code>/api</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">role.yaml</span>
+        </div>
+        <code><span class="comment"># Namespace-scoped Role</span>
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+<span class="comment"># Cluster-scoped ClusterRole</span>
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: secret-reader
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/healthz", "/readyz"]
+    verbs: ["get"]</code>
+      </pre>
+
+      <h3>AggregationRule</h3>
+      <p>
+        ClusterRoles can aggregate rules from other ClusterRoles using label selectors:
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">aggregated-clusterrole.yaml</span>
+        </div>
+        <code>apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: monitoring-view
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        rbac.example.com/aggregate-to-monitoring: "true"
+rules: []  <span class="comment"># Rules are auto-filled by the controller</span></code>
+      </pre>
+
+      <h3>RoleBinding &amp; ClusterRoleBinding</h3>
+      <p>
+        Bindings grant the permissions defined in a Role or ClusterRole to subjects (users,
+        groups, or ServiceAccounts).
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Subject Kind</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>User</code></td><td>Username from the authentication layer (e.g., client certificate CN).</td></tr>
+          <tr><td><code>Group</code></td><td>Group name (e.g., <code>system:masters</code>, <code>system:authenticated</code>).</td></tr>
+          <tr><td><code>ServiceAccount</code></td><td>ServiceAccount in a specific namespace. Format: <code>system:serviceaccount:{ns}:{name}</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">bindings.yaml</span>
+        </div>
+        <code><span class="comment"># RoleBinding - grants Role in a namespace</span>
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: read-pods
+  namespace: default
+subjects:
+  - kind: User
+    name: jane
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: my-app
+    namespace: default
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+<span class="comment"># ClusterRoleBinding - grants ClusterRole cluster-wide</span>
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-binding
+subjects:
+  - kind: Group
+    name: system:masters
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io</code>
+      </pre>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create RBAC resources via kubectl</span>
+kubectl create role <span class="value">pod-reader</span> <span class="flag">--verb=</span><span class="value">get,list,watch</span> <span class="flag">--resource=</span><span class="value">pods</span>
+kubectl create rolebinding <span class="value">read-pods</span> <span class="flag">--role=</span><span class="value">pod-reader</span> <span class="flag">--user=</span><span class="value">jane</span>
+kubectl create clusterrole <span class="value">node-reader</span> <span class="flag">--verb=</span><span class="value">get,list</span> <span class="flag">--resource=</span><span class="value">nodes</span>
+kubectl create clusterrolebinding <span class="value">read-nodes</span> <span class="flag">--clusterrole=</span><span class="value">node-reader</span> <span class="flag">--group=</span><span class="value">developers</span>
+
+<span class="comment"># Check permissions</span>
+kubectl auth can-i <span class="value">get</span> <span class="value">pods</span> <span class="flag">--namespace=</span><span class="value">default</span>
+kubectl auth can-i <span class="value">create</span> <span class="value">deployments</span> <span class="flag">--all-namespaces</span>
+kubectl auth can-i <span class="value">"*"</span> <span class="value">"*"</span>  <span class="comment"># Am I cluster admin?</span>
+
+<span class="comment"># Who am I?</span>
+kubectl auth whoami</code>
+      </pre>
+
+      <!-- ───────────────────── ServiceAccount Tokens ───────────────────── -->
+      <h2 id="sa-tokens">ServiceAccount Tokens</h2>
+      <p>
+        Rusternetes uses RS256 (RSA) JWT tokens for ServiceAccount authentication, compatible
+        with OIDC discovery. Tokens are automatically projected into pods via the projected
+        volume mechanism.
+      </p>
+
+      <h3>Token Details</h3>
+      <table>
+        <thead>
+          <tr><th>Property</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Algorithm</td><td>RS256 (RSA with SHA-256). Not HS256 (HMAC).</td></tr>
+          <tr><td>Signing key</td><td><code>/etc/kubernetes/pki/sa.key</code> (private key)</td></tr>
+          <tr><td>Verification key</td><td><code>/etc/kubernetes/pki/sa.pub</code> (public key)</td></tr>
+          <tr><td>Issuer</td><td><code>https://kubernetes.default.svc.cluster.local</code></td></tr>
+          <tr><td>Audience</td><td><code>https://kubernetes.default.svc</code></td></tr>
+          <tr><td>Expiry</td><td>3607 seconds (default, configurable)</td></tr>
+          <tr><td>OIDC discovery</td><td><code>/.well-known/openid-configuration</code> and <code>/openid/v1/jwks</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Auto-injected Files</h3>
+      <p>
+        Every pod automatically gets a projected volume mounted at
+        <code>/var/run/secrets/kubernetes.io/serviceaccount/</code> containing:
+      </p>
+      <table>
+        <thead>
+          <tr><th>File</th><th>Content</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>token</code></td><td>JWT token for the pod's ServiceAccount.</td></tr>
+          <tr><td><code>ca.crt</code></td><td>CA certificate for verifying the API server's TLS cert.</td></tr>
+          <tr><td><code>namespace</code></td><td>The pod's namespace.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create a ServiceAccount</span>
+kubectl create serviceaccount <span class="value">my-app</span>
+
+<span class="comment"># Create a token manually</span>
+kubectl create token <span class="value">my-app</span> <span class="flag">--duration=</span><span class="value">1h</span>
+
+<span class="comment"># Verify auto-injected token from inside a pod</span>
+kubectl exec <span class="value">my-pod</span> <span class="flag">--</span> cat /var/run/secrets/kubernetes.io/serviceaccount/token</code>
+      </pre>
+
+      <!-- ───────────────────── Admission Webhooks ───────────────────── -->
+      <h2 id="webhooks">Admission Webhooks</h2>
+      <p>
+        Admission webhooks intercept API requests after authentication and authorization but before
+        persistence. Validating webhooks can accept or reject requests. Mutating webhooks can also
+        modify the object.
+      </p>
+
+      <h3>ValidatingWebhookConfiguration</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">validating-webhook.yaml</span>
+        </div>
+        <code>apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: pod-policy
+webhooks:
+  - name: pod-policy.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail          <span class="comment"># Fail or Ignore</span>
+    timeoutSeconds: 30
+    clientConfig:
+      service:
+        name: webhook-service
+        namespace: kube-system
+        path: /validate
+        port: 443
+      caBundle: &lt;base64-encoded-CA&gt;
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+    namespaceSelector:
+      matchExpressions:
+        - key: environment
+          operator: In
+          values: ["production"]</code>
+      </pre>
+
+      <h3>MutatingWebhookConfiguration</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">mutating-webhook.yaml</span>
+        </div>
+        <code>apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: sidecar-injector
+webhooks:
+  - name: sidecar.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore
+    reinvocationPolicy: IfNeeded
+    clientConfig:
+      service:
+        name: sidecar-injector
+        namespace: kube-system
+        path: /mutate
+      caBundle: &lt;base64-encoded-CA&gt;
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE"]</code>
+      </pre>
+
+      <h3>AdmissionReview</h3>
+      <p>
+        Webhooks receive an <code>AdmissionReview</code> v1 request and must return an
+        <code>AdmissionReview</code> response. For mutations, the response includes a
+        JSON Patch (RFC 6902) in the <code>patchType: JSONPatch</code> field.
+      </p>
+
+      <div class="admonition note">
+        <div class="admonition-title">Webhook denial messages</div>
+        <p>
+          When a webhook denies a request, the API server uses <code>status.reason</code> from
+          the webhook response. If <code>message</code> is empty, the API server falls back to
+          the <code>reason</code> field for the user-facing error message.
+        </p>
+      </div>
+
+      <!-- ───────────────────── ValidatingAdmissionPolicy ───────────────────── -->
+      <h2 id="vap">ValidatingAdmissionPolicy (CEL)</h2>
+      <p>
+        ValidatingAdmissionPolicy provides declarative, in-process validation using CEL (Common
+        Expression Language) &mdash; no webhook server needed.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">vap.yaml</span>
+        </div>
+        <code><span class="comment"># Policy definition</span>
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-labels
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+  validations:
+    - expression: "has(object.metadata.labels) && 'team' in object.metadata.labels"
+      message: "All deployments must have a 'team' label."
+    - expression: "object.spec.replicas <= 10"
+      message: "Replica count must not exceed 10."
+---
+<span class="comment"># Binding (activates the policy)</span>
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-labels-binding
+spec:
+  policyName: require-labels
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        env: production</code>
+      </pre>
+
+      <!-- ───────────────────── Built-in Admission ───────────────────── -->
+      <h2 id="builtin-admission">Built-in Admission Controllers</h2>
+
+      <h3>ResourceQuota</h3>
+      <p>
+        Enforces aggregate resource limits per namespace. Tracks CPU, memory, ephemeral-storage,
+        pod count, and other resource totals.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>Scope</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Terminating</code></td><td>Pods with <code>activeDeadlineSeconds</code> set.</td></tr>
+          <tr><td><code>NotTerminating</code></td><td>Pods without <code>activeDeadlineSeconds</code>.</td></tr>
+          <tr><td><code>BestEffort</code></td><td>Pods with no resource requests or limits.</td></tr>
+          <tr><td><code>NotBestEffort</code></td><td>Pods with at least one resource request or limit.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">resourcequota.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute-quota
+  namespace: default
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    requests.ephemeral-storage: 50Gi
+    limits.ephemeral-storage: 100Gi
+    pods: "20"
+    services: "10"
+    secrets: "50"
+    configmaps: "50"
+    persistentvolumeclaims: "10"</code>
+      </pre>
+
+      <h3>LimitRange</h3>
+      <p>
+        Sets default, min, and max resource limits for containers in a namespace.
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">limitrange.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: default
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      min:
+        cpu: 50m
+        memory: 64Mi
+      max:
+        cpu: "2"
+        memory: 2Gi
+    - type: Pod
+      max:
+        cpu: "4"
+        memory: 4Gi
+    - type: PersistentVolumeClaim
+      min:
+        storage: 1Gi
+      max:
+        storage: 100Gi</code>
+      </pre>
+
+      <h3>ServiceAccount Injection</h3>
+      <p>
+        The ServiceAccount admission controller automatically adds a projected volume with the
+        ServiceAccount token, CA certificate, and namespace to every pod that specifies a
+        <code>serviceAccountName</code> (or uses the default).
+      </p>
+
+      <!-- ───────────────────── SecurityContext ───────────────────── -->
+      <h2 id="securitycontext">SecurityContext</h2>
+      <p>
+        Security settings can be specified at both the pod level and the individual container level.
+        Container-level settings override pod-level settings.
+      </p>
+
+      <h3>Pod-level SecurityContext</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>runAsUser</code></td><td>UID to run all containers as.</td></tr>
+          <tr><td><code>runAsGroup</code></td><td>Primary GID for all containers.</td></tr>
+          <tr><td><code>runAsNonRoot</code></td><td>Require containers to run as non-root. Pod is rejected if image runs as root.</td></tr>
+          <tr><td><code>fsGroup</code></td><td>GID applied to all volume mounts. Files created are owned by this GID.</td></tr>
+          <tr><td><code>supplementalGroups</code></td><td>Additional GIDs for processes.</td></tr>
+          <tr><td><code>sysctls</code></td><td>Kernel parameters to set (e.g., <code>net.ipv4.ip_forward</code>).</td></tr>
+          <tr><td><code>seccompProfile</code></td><td>Seccomp profile: <code>RuntimeDefault</code>, <code>Unconfined</code>, or <code>Localhost</code>.</td></tr>
+          <tr><td><code>appArmorProfile</code></td><td>AppArmor profile: <code>RuntimeDefault</code>, <code>Unconfined</code>, or <code>Localhost</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Container-level SecurityContext</h3>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>privileged</code></td><td>Run the container in privileged mode (full host access).</td></tr>
+          <tr><td><code>capabilities.add</code></td><td>Linux capabilities to add (e.g., <code>NET_ADMIN</code>, <code>SYS_TIME</code>).</td></tr>
+          <tr><td><code>capabilities.drop</code></td><td>Linux capabilities to drop (e.g., <code>ALL</code>).</td></tr>
+          <tr><td><code>readOnlyRootFilesystem</code></td><td>Mount the container's root filesystem as read-only.</td></tr>
+          <tr><td><code>allowPrivilegeEscalation</code></td><td>Controls whether a process can gain more privileges than its parent.</td></tr>
+          <tr><td><code>procMount</code></td><td><code>Default</code> or <code>Unmasked</code>. Controls /proc mount masking.</td></tr>
+          <tr><td><code>runAsUser</code></td><td>UID override for this container.</td></tr>
+          <tr><td><code>runAsGroup</code></td><td>GID override for this container.</td></tr>
+          <tr><td><code>runAsNonRoot</code></td><td>Override for this container.</td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">securitycontext.yaml</span>
+        </div>
+        <code>apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 3000
+    fsGroup: 2000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: myapp:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+          add: ["NET_BIND_SERVICE"]
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir: {}</code>
+      </pre>
+
+      <!-- ───────────────────── Secrets ───────────────────── -->
+      <h2 id="secrets">Secrets</h2>
+      <p>
+        Secrets store sensitive data like passwords, tokens, and TLS certificates. Data is
+        base64-encoded in the API but not encrypted at rest (unless storage-level encryption
+        is configured).
+      </p>
+
+      <h3>Secret Types</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Description</th><th>Required Keys</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Opaque</code></td><td>Default. Arbitrary key-value data.</td><td>None</td></tr>
+          <tr><td><code>kubernetes.io/tls</code></td><td>TLS certificate and key pair.</td><td><code>tls.crt</code>, <code>tls.key</code></td></tr>
+          <tr><td><code>kubernetes.io/dockerconfigjson</code></td><td>Docker registry credentials.</td><td><code>.dockerconfigjson</code></td></tr>
+          <tr><td><code>kubernetes.io/service-account-token</code></td><td>Legacy ServiceAccount token. Auto-populated by controller.</td><td>Annotations: <code>kubernetes.io/service-account.name</code></td></tr>
+          <tr><td><code>kubernetes.io/basic-auth</code></td><td>Basic authentication credentials.</td><td><code>username</code>, <code>password</code></td></tr>
+          <tr><td><code>kubernetes.io/ssh-auth</code></td><td>SSH authentication credentials.</td><td><code>ssh-privatekey</code></td></tr>
+        </tbody>
+      </table>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-title">terminal</span>
+        </div>
+        <code><span class="comment"># Create secrets</span>
+kubectl create secret generic <span class="value">db-creds</span> \
+  <span class="flag">--from-literal=</span><span class="value">username=admin</span> \
+  <span class="flag">--from-literal=</span><span class="value">password=secret123</span>
+
+kubectl create secret tls <span class="value">app-tls</span> \
+  <span class="flag">--cert=</span><span class="value">server.crt</span> \
+  <span class="flag">--key=</span><span class="value">server.key</span>
+
+kubectl create secret docker-registry <span class="value">regcred</span> \
+  <span class="flag">--docker-server=</span><span class="value">registry.example.com</span> \
+  <span class="flag">--docker-username=</span><span class="value">user</span> \
+  <span class="flag">--docker-password=</span><span class="value">pass</span>
+
+<span class="comment"># View secret (base64 encoded)</span>
+kubectl get secret <span class="value">db-creds</span> <span class="flag">-o</span> <span class="value">yaml</span>
+
+<span class="comment"># Decode a secret value</span>
+kubectl get secret <span class="value">db-creds</span> <span class="flag">-o</span> <span class="value">jsonpath='{.data.password}'</span> | base64 -d</code>
+      </pre>
+
+      <div class="doc-pager">
+        <a href="storage-volumes.html" class="prev">
+          <span class="pager-label">Previous</span>
+          &larr; Storage &amp; Volumes
+        </a>
+        <a href="crds.html" class="next">
+          <span class="pager-label">Next</span>
+          Custom Resources &rarr;
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p><a href="../index.html">Rusternetes</a> &mdash; Kubernetes reimplemented in Rust. Apache-2.0 License.</p>
+  </footer>
+
+  <button class="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <script src="search.js"></script>
+</body>
+</html>
