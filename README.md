@@ -2,7 +2,7 @@
 
 **A ground-up reimplementation of Kubernetes in Rust.**
 
-161,000+ lines of Rust across 10 crates. 31 controllers. 1,300+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 68% of conformance tests (299/441) across 118 rounds of testing.
+216,000+ lines of Rust across 10 crates. 31 controllers. 3,100+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 90% of conformance tests (398/441) across 149 rounds of testing.
 
 This isn't a wrapper around the Go codebase or a partial mock. Every component — API server, scheduler, controller manager, kubelet, kube-proxy — is written from scratch in Rust, implementing the actual Kubernetes API surface, wire format, and behavioral semantics.
 
@@ -92,7 +92,7 @@ Axum-based HTTPS server implementing the Kubernetes REST API. 76 handler modules
 - Watch API with Server-Sent Events
 - Server-Side Apply, Strategic Merge Patch, JSON Patch
 - Field selectors and label selectors
-- Custom Resource Definitions with hot-reload and conversion webhooks
+- Custom Resource Definitions with watch, status/scale subresources, schema validation
 - Validating and Mutating Admission Webhooks
 - ValidatingAdmissionPolicy with CEL expressions
 - RBAC authorization with Roles, ClusterRoles, and Bindings
@@ -182,9 +182,9 @@ Rusternetes is actively tested against the official Kubernetes v1.35 conformance
 |-------|------|-------|------|-------|
 | 97 | ~40 | 441 | ~9% | Baseline |
 | 101 | 245 | 441 | 56% | 76 fixes deployed |
-| 107 | ~422 | 441 | ~96% | Best deployed result |
-| 110 | 283 | 441 | 64% | Post-regression |
-| 118 | 299 | 441 | 68% | Latest full run |
+| 141 | 368 | 441 | 83% | Watch + storage fixes |
+| 146 | 379 | 441 | 86% | CRD + scheduler fixes |
+| 149 | 398 | 441 | 90% | Latest full run |
 
 ```bash
 # Run conformance tests
@@ -200,7 +200,7 @@ See [CONFORMANCE_FAILURES.md](docs/CONFORMANCE_FAILURES.md) for the full fix tra
 
 ```
 crates/
-  api-server/          Axum HTTPS API (76 handler modules, 2100-line router)
+  api-server/          Axum HTTPS API (76 handler modules, 2500-line router)
   controller-manager/  31 reconciliation controllers
   scheduler/           Filter/score plugin scheduling
   kubelet/             Container runtime, probes, volumes
@@ -225,7 +225,7 @@ docs/                  Architecture, guides, conformance tracking
 ```bash
 cargo build                    # Debug build
 cargo test                     # All workspace tests
-cargo test -p rusternetes_api_server  # Single crate
+cargo test -p rusternetes-api-server  # Single crate
 cargo clippy --all-targets --all-features -- -D warnings
 make pre-commit                # Format + clippy + test
 ```

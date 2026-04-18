@@ -11,7 +11,7 @@ cargo build --release          # Release build
 
 # Test
 cargo test                     # All workspace tests
-cargo test -p rusternetes_api_server  # Single crate (use underscores in package name)
+cargo test -p rusternetes-api-server  # Single crate
 cargo test test_name           # Single test by name
 cargo test test_name -- --nocapture  # With stdout
 

@@ -14,8 +14,8 @@ For new users, we recommend this path:
 
 ### Architecture & Design
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and component design
-- **[STATUS.md](STATUS.md)** - Current implementation status and feature matrix
 - **[CONFORMANCE_PLAN.md](planning/CONFORMANCE_PLAN.md)** - Kubernetes conformance tracking
+- **[CONFORMANCE_FAILURES.md](CONFORMANCE_FAILURES.md)** - Active conformance fix tracker
 
 ### Deployment
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide
@@ -25,19 +25,17 @@ For new users, we recommend this path:
 ## Feature Documentation
 
 ### API Features
-- **[API_FEATURES_COMPLETE.md](API_FEATURES_COMPLETE.md)** - Complete API features overview
 - **[ADVANCED_API_FEATURES.md](ADVANCED_API_FEATURES.md)** - PATCH, Field Selectors, Server-Side Apply
-- **[PATCH_IMPLEMENTATION.md](PATCH_IMPLEMENTATION.md)** - Detailed PATCH operations guide
-- **[CRD_IMPLEMENTATION.md](CRD_IMPLEMENTATION.md)** - Custom Resource Definitions
+- **[CRD_IMPLEMENTATION.md](CRD_IMPLEMENTATION.md)** - Custom Resource Definitions (CRUD, watch, status/scale subresources, schema validation)
 
 ### Networking
-- **[DNS.md](DNS.md)** - DNS server and service discovery
 - **[LOADBALANCER.md](LOADBALANCER.md)** - LoadBalancer services and cloud providers
 - **[METALLB_INTEGRATION.md](METALLB_INTEGRATION.md)** - MetalLB for local LoadBalancer services
 - **[CNI_INTEGRATION.md](CNI_INTEGRATION.md)** - Container Network Interface framework
 - **[CNI_IMPLEMENTATION_SUMMARY.md](CNI_IMPLEMENTATION_SUMMARY.md)** - CNI implementation details
 
 ### Storage
+- **[STORAGE_BACKENDS.md](storage/STORAGE_BACKENDS.md)** - Storage backend options (etcd, SQLite/Rhino, memory)
 - **[DYNAMIC_PROVISIONING.md](DYNAMIC_PROVISIONING.md)** - Dynamic volume provisioning
 - **[VOLUME_SNAPSHOTS.md](VOLUME_SNAPSHOTS.md)** - Volume snapshot feature
 - **[VOLUME_EXPANSION.md](VOLUME_EXPANSION.md)** - Volume expansion feature
@@ -45,15 +43,12 @@ For new users, we recommend this path:
 ### Security
 - **[SECURITY.md](SECURITY.md)** - Security features overview
 - **[WEBHOOK_INTEGRATION.md](WEBHOOK_INTEGRATION.md)** - Admission webhooks integration
-- **[WEBHOOK_TESTING.md](WEBHOOK_TESTING.md)** - Webhook testing guide
 - **[TLS_GUIDE.md](TLS_GUIDE.md)** - TLS configuration
-
-### Observability
-- **[TRACING.md](TRACING.md)** - Distributed tracing with OpenTelemetry
+- **[Service Account Tokens](security/service-account-tokens.md)** - SA token implementation
 
 ### Testing
-- **[TESTING.md](TESTING.md)** - Testing procedures
-- **[TESTING_IMPLEMENTATION_GUIDE.md](TESTING_IMPLEMENTATION_GUIDE.md)** - Comprehensive testing guide
+- **[TESTING.md](testing/TESTING.md)** - Testing procedures
+- **[TEST_STATUS.md](testing/TEST_STATUS.md)** - Test status tracking
 
 ## Development Guides
 
@@ -62,39 +57,18 @@ For new users, we recommend this path:
 - **[DEV_SETUP_METALLB.md](DEV_SETUP_METALLB.md)** - MetalLB setup for development
 - **[LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)** - Local development environment
 - **[KUBELET_CONFIGURATION.md](KUBELET_CONFIGURATION.md)** - Kubelet configuration options
+- **[DEV_PROCESSES.md](DEV_PROCESSES.md)** - Development processes (redeploy, conformance)
 
 ### Contributing
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 
-## Implementation Details & Summaries
+## Implementation Details
 
-These documents track specific implementations and improvements:
-
-- **[CONFORMANCE_IMPLEMENTATION_STATUS.md](CONFORMANCE_IMPLEMENTATION_STATUS.md)** - Detailed conformance status
-- **[CONFORMANCE_IMPROVEMENTS_2026-03-10.md](CONFORMANCE_IMPROVEMENTS_2026-03-10.md)** - Recent conformance improvements
-- **[METALLB_SETUP_SUMMARY.md](METALLB_SETUP_SUMMARY.md)** - MetalLB setup summary
-- **[KUBELET_CONFIG_IMPLEMENTATION.md](KUBELET_CONFIG_IMPLEMENTATION.md)** - Kubelet config implementation
 - **[WEBSOCKET_EXEC_IMPLEMENTATION.md](WEBSOCKET_EXEC_IMPLEMENTATION.md)** - WebSocket exec implementation
-- **[WEBSOCKET_ATTACH_PORTFORWARD_IMPLEMENTATION.md](WEBSOCKET_ATTACH_PORTFORWARD_IMPLEMENTATION.md)** - WebSocket attach/port-forward
-
-## Legacy/Archive Files
-
-The following files contain historical information or summaries that may be outdated:
-
-- **[DEV_COMPARISON.md](DEV_COMPARISON.md)** - Development environment comparison
+- **[BOOTSTRAP.md](BOOTSTRAP.md)** - Cluster bootstrap process
 - **[FIXES_SUMMARY.md](FIXES_SUMMARY.md)** - Summary of fixes (historical)
-- **[KUBECTL_FIX_SUMMARY.md](KUBECTL_FIX_SUMMARY.md)** - kubectl fixes (historical)
-- **[TEST_IMPROVEMENTS.md](TEST_IMPROVEMENTS.md)** - Test improvements (historical)
-- **[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)** - Verification report (historical)
-- **[CONFORMANCE.md](CONFORMANCE.md)** - Old conformance doc (use [planning/CONFORMANCE_PLAN.md](planning/CONFORMANCE_PLAN.md) instead)
 
-## Documentation Maintenance
-
-**Last Updated**: March 12, 2026
-
-**Note**: If you find outdated information or broken links, please update this index and the relevant documentation files.
-
-### Quick Reference
+## Quick Reference
 
 | What do you want to do? | Read this first |
 |-------------------------|----------------|
@@ -104,8 +78,7 @@ The following files contain historical information or summaries that may be outd
 | Set up development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Use LoadBalancer services | [LOADBALANCER.md](LOADBALANCER.md) + [METALLB_INTEGRATION.md](METALLB_INTEGRATION.md) |
 | Implement custom resources | [CRD_IMPLEMENTATION.md](CRD_IMPLEMENTATION.md) |
-| Configure networking | [CNI_INTEGRATION.md](CNI_INTEGRATION.md) + [DNS.md](DNS.md) |
+| Configure networking | [CNI_INTEGRATION.md](CNI_INTEGRATION.md) |
 | Secure the cluster | [SECURITY.md](SECURITY.md) + [WEBHOOK_INTEGRATION.md](WEBHOOK_INTEGRATION.md) |
-| Track conformance progress | [planning/CONFORMANCE_PLAN.md](planning/CONFORMANCE_PLAN.md) |
-| Write tests | [TESTING_IMPLEMENTATION_GUIDE.md](TESTING_IMPLEMENTATION_GUIDE.md) |
-
+| Track conformance progress | [CONFORMANCE_FAILURES.md](CONFORMANCE_FAILURES.md) |
+| Write tests | [TESTING.md](testing/TESTING.md) |
