@@ -256,7 +256,7 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: (msg: string) => vo
   );
 }
 
-function QuickCreatePVC({ onCreated }: { onCreated: (msg: string) => void }) {
+function QuickCreatePVC({ onCreated, storageClasses }: { onCreated: (msg: string) => void; storageClasses: SC[] }) {
   const [name, setName] = useState("");
   const [namespace, setNamespace] = useState("default");
   const [size, setSize] = useState("1Gi");
@@ -328,7 +328,7 @@ function QuickCreatePVC({ onCreated }: { onCreated: (msg: string) => void }) {
           {success}
         </div>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div>
           <label className="mb-1 block text-[10px] text-[#a89880]">Name</label>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-data"
@@ -338,6 +338,19 @@ function QuickCreatePVC({ onCreated }: { onCreated: (msg: string) => void }) {
           <label className="mb-1 block text-[10px] text-[#a89880]">Namespace</label>
           <input type="text" value={namespace} onChange={(e) => setNamespace(e.target.value)}
             className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Storage Class</label>
+          <select value={storageClass} onChange={(e) => setStorageClass(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent">
+            <option value="">None (manual binding)</option>
+            {storageClasses.map((sc) => (
+              <option key={sc.metadata.name} value={sc.metadata.name}>{sc.metadata.name}</option>
+            ))}
+          </select>
+          {storageClasses.length === 0 && (
+            <span className="mt-0.5 block text-[9px] text-walle-yellow">Create a StorageClass first</span>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-[10px] text-[#a89880]">Size</label>
@@ -516,7 +529,7 @@ export function StorageView() {
       {showCreatePVC && (
         <div className="rounded-lg border border-accent/20 bg-surface-1 p-4">
           <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">Create PersistentVolumeClaim</h3>
-          <QuickCreatePVC onCreated={(msg) => { setShowCreatePVC(false); setGlobalSuccess(msg); invalidateAll(); setTimeout(() => setGlobalSuccess(null), 5000); }} />
+          <QuickCreatePVC storageClasses={scs} onCreated={(msg) => { setShowCreatePVC(false); setGlobalSuccess(msg); invalidateAll(); setTimeout(() => setGlobalSuccess(null), 5000); }} />
         </div>
       )}
 
