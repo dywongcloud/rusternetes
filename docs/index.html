@@ -15,6 +15,7 @@
         <svg class="logo-cog" width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="0" width="8" height="5" fill="currentColor"/><rect x="12" y="27" width="8" height="5" fill="currentColor"/><rect x="0" y="12" width="5" height="8" fill="currentColor"/><rect x="27" y="12" width="5" height="8" fill="currentColor"/><rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/><circle cx="16" cy="16" r="12" fill="currentColor"/><circle cx="16" cy="16" r="4" fill="#1a1410"/></svg> rusternetes
       </a>
       <div class="nav-links">
+        <a href="#console">Console</a>
         <a href="#architecture">Architecture</a>
         <a href="#deploy">Deploy</a>
         <a href="#features">Features</a>
@@ -31,9 +32,9 @@
       <div class="hero-badge">Open Source &middot; Apache-2.0</div>
       <h1>Kubernetes,<br>reimplemented in <span class="rust-accent">Rust</span>.</h1>
       <p class="hero-sub">
-        A ground-up reimplementation of the Kubernetes control plane and node components.
+        A ground-up reimplementation of Kubernetes in Rust with a built-in web console.
         Memory-safe. Fast. Conformance-tested against the official K8s test suite.
-        Runs as a full cluster &mdash; or as a single binary with SQLite.
+        Runs as a full cluster &mdash; or as a single binary with SQLite and an embedded dashboard.
       </p>
       <div class="hero-stats">
         <div class="stat">
@@ -74,6 +75,94 @@
       </div>
     </div>
   </header>
+
+  <section id="console" class="section">
+    <div class="section-inner">
+      <h2>Built-in Web Console</h2>
+      <p class="section-sub">Real-time cluster management with animated topology, live metrics, and pod log streaming. Embedded in the API server &mdash; deploys automatically. No separate installation.</p>
+
+      <!-- Hero screenshot -->
+      <a href="screenshots/console-topology-logs.png" target="_blank" style="display: block; margin: 2em auto; max-width: 900px; border-radius: 12px; overflow: hidden; border: 2px solid var(--border); transition: border-color 0.3s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+        <img src="screenshots/thumbs/console-topology-logs.png" alt="Cluster Topology with Live Logs" style="width: 100%; display: block;">
+      </a>
+
+      <!-- Feature highlights -->
+      <div class="features-grid" style="margin: 2em 0;">
+        <div class="feature-card">
+          <div class="feature-icon">&#127912;</div>
+          <h3>Cluster Topology</h3>
+          <p>Animated SVG map showing nodes, pods, services, and network connections. Pods glow by CPU usage. Traffic particles flow along service routes. Click any pod for live logs.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128200;</div>
+          <h3>Live Metrics</h3>
+          <p>Real CPU and memory usage from Docker container stats. Health rings, sparkline charts, and capacity gauges update every 15 seconds. Time-travel slider to replay cluster history.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#9881;</div>
+          <h3>Full Management</h3>
+          <p>Create, scale, restart, and delete resources. Quick Deploy form, YAML editor, StorageClass provisioning. RBAC visualization, network config, event timeline with filtering.</p>
+        </div>
+      </div>
+
+      <!-- Screenshot gallery -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin: 1.5em 0;">
+        <a href="screenshots/console-overview.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-overview.png" alt="Overview" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Overview</div>
+          </div>
+        </a>
+        <a href="screenshots/console-topology.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-topology.png" alt="Topology" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Topology</div>
+          </div>
+        </a>
+        <a href="screenshots/console-workloads.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-workloads.png" alt="Workloads" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Workloads</div>
+          </div>
+        </a>
+        <a href="screenshots/console-networking.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-networking.png" alt="Networking" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Networking</div>
+          </div>
+        </a>
+        <a href="screenshots/console-storage.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-storage.png" alt="Storage" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Storage</div>
+          </div>
+        </a>
+        <a href="screenshots/console-nodes.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-nodes.png" alt="Nodes" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Nodes</div>
+          </div>
+        </a>
+        <a href="screenshots/console-config.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-config.png" alt="Config" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Config</div>
+          </div>
+        </a>
+        <a href="screenshots/console-events.png" target="_blank" style="text-decoration: none;">
+          <div style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-card); transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--rust)'" onmouseout="this.style.borderColor='var(--border)'">
+            <img src="screenshots/thumbs/console-events.png" alt="Events" style="width: 100%; display: block;">
+            <div style="padding: 4px 8px; font-size: 12px; color: var(--text-dim); font-family: 'VT323', monospace;">Events</div>
+          </div>
+        </a>
+      </div>
+
+      <div style="text-align: center; margin-top: 1.5em;">
+        <a href="guide/console.html" class="btn btn-primary" style="margin-right: 0.5em;">Console Guide</a>
+        <a href="guide/quickstart.html" class="btn btn-secondary">Get Started</a>
+      </div>
+    </div>
+  </section>
 
   <section id="architecture" class="section">
     <div class="section-inner">
@@ -346,9 +435,9 @@ kubectl get pods -A</code></pre>
         <div class="footer-col">
           <h4>Docs</h4>
           <a href="guide/index.html">Documentation</a>
+          <a href="guide/console.html">Web Console</a>
           <a href="guide/quickstart.html">Quick Start</a>
           <a href="guide/deployment.html">Deployment</a>
-          <a href="guide/conformance.html">Conformance</a>
         </div>
         <div class="footer-col">
           <h4>Project</h4>
