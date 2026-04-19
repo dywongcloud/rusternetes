@@ -6,6 +6,25 @@
 
 This isn't a wrapper around the Go codebase or a partial mock. Every component — API server, scheduler, controller manager, kubelet, kube-proxy — is written from scratch in Rust, implementing the actual Kubernetes API surface, wire format, and behavioral semantics.
 
+## Web Console
+
+Rusternetes includes a built-in web console with real-time cluster topology visualization, live metrics, pod log streaming, and full resource management. It deploys automatically — embedded in the API server, no separate installation.
+
+[![Cluster Topology with Live Logs](docs/screenshots/console-topology-logs.png)](docs/screenshots/console-topology-logs.png)
+
+| | | |
+|---|---|---|
+| [![Overview](docs/screenshots/thumbs/console-overview.png)](docs/screenshots/console-overview.png) | [![Topology](docs/screenshots/thumbs/console-topology.png)](docs/screenshots/console-topology.png) | [![Workloads](docs/screenshots/thumbs/console-workloads.png)](docs/screenshots/console-workloads.png) |
+| **Overview** — Health rings, sparkline charts, deployment rollout progress, event feed | **Topology** — Animated node/pod/service map with traffic particles, CPU heatmap, protocol badges | **Workloads** — Pod phase chart, deployment cards with scale/restart, restart heatmap |
+| [![Networking](docs/screenshots/thumbs/console-networking.png)](docs/screenshots/console-networking.png) | [![Storage](docs/screenshots/thumbs/console-storage.png)](docs/screenshots/console-storage.png) | [![Nodes](docs/screenshots/thumbs/console-nodes.png)](docs/screenshots/console-nodes.png) |
+| **Networking** — Service CIDR, DNS, kube-proxy config, service routing diagrams | **Storage** — Capabilities, StorageClass provisioning, PVC/PV management | **Nodes** — CPU/memory gauges from real Docker stats, cordon/uncordon |
+| [![Config](docs/screenshots/thumbs/console-config.png)](docs/screenshots/console-config.png) | [![Events](docs/screenshots/thumbs/console-events.png)](docs/screenshots/console-events.png) | [![RBAC](docs/screenshots/thumbs/console-rbac.png)](docs/screenshots/console-rbac.png) |
+| **Config** — ConfigMaps with key badges, Secrets, Service Accounts | **Events** — Frequency histogram, type/reason filtering, auto-refresh | **RBAC** — Subject-role mapping, binding visualization, rule badges |
+
+See the [Console User Guide](docs/CONSOLE_USER_GUIDE.md) for full documentation.
+
+## Architecture
+
 ```
 ┌───────────────────────────────────────────────────────────────┐
 │                       Control Plane                           │
@@ -15,6 +34,7 @@ This isn't a wrapper around the Go codebase or a partial mock. Every component �
 │  │  Axum + TLS      │  │  Affinity    │  │  Manager       │   │
 │  │  REST + Watch    │  │  Taints      │  │  31 control    │   │
 │  │  RBAC + Webhooks │  │  Preemption  │  │  loops         │   │
+│  │  Web Console     │  │              │  │                │   │
 │  └────────┬─────────┘  └──────────────┘  └────────────────┘   │
 │           │                                                   │
 │  ┌────────▼─────────┐                                         │
