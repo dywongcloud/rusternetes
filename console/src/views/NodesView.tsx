@@ -57,7 +57,7 @@ function Gauge({
           <span className="font-mono text-[#e8ddd0]">
             {fmt(used)} / {fmt(total)}{" "}
             <span className={pct > 85 ? "text-container-red" : pct > 60 ? "text-walle-yellow" : "text-walle-eye"}>
-              ({Math.round(pct)}%)
+              ({pct < 1 && pct > 0 ? pct.toFixed(1) : Math.round(pct)}%)
             </span>
           </span>
         ) : (
@@ -68,7 +68,7 @@ function Gauge({
         <div
           className="h-2 rounded-full transition-all duration-500"
           style={{
-            width: `${pct}%`,
+            width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`,
             backgroundColor: pct > 85 ? "#c85a5a" : pct > 60 ? "#f5c842" : color,
           }}
         />
@@ -100,6 +100,12 @@ function parseMemMi(q?: string): number {
 function formatMem(mi: number): string {
   if (mi >= 1024) return `${(mi / 1024).toFixed(1)}Gi`;
   return `${Math.round(mi)}Mi`;
+}
+
+function formatCpu(cores: number): string {
+  if (cores >= 1) return `${cores.toFixed(1)} cores`;
+  const millis = Math.round(cores * 1000);
+  return `${millis}m`;
 }
 
 /** Node card with capacity gauges and actions. */
@@ -201,8 +207,9 @@ function NodeCard({
           label="CPU"
           used={cpuUsed}
           total={cpuCapacity}
-          unit=" cores"
+          unit=""
           color="#4a90b8"
+          formatFn={formatCpu}
         />
         <Gauge
           label="Memory"

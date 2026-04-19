@@ -107,13 +107,12 @@ async fn collect_node_usage<S: Storage>(
         return ("0m".to_string(), "0Mi".to_string());
     }
 
-    // 4. Use `docker stats --no-stream` equivalent: one_shot mode
-    //    This returns current memory usage immediately without needing two samples.
-    //    For CPU we use the percentage from the container inspect data.
+    // 4. Get stats using stream mode — take 2 samples per container for valid CPU deltas.
+    //    All containers sampled in parallel to keep latency ~1s total.
     let mut total_memory_bytes: u64 = 0;
     let mut total_cpu_pct: f64 = 0.0;
 
-    // Query all matching containers in parallel
+    // Collect two stats samples per container in parallel
     let mut stat_futures = Vec::new();
     for container in &node_containers {
         if let Some(id) = &container.id {
@@ -122,11 +121,16 @@ async fn collect_node_usage<S: Storage>(
             stat_futures.push(async move {
                 use futures::StreamExt;
                 let stats_opts = bollard::container::StatsOptions {
-                    stream: false,
-                    one_shot: true,
+                    stream: true,
+                    one_shot: false,
                 };
                 let mut stream = docker_ref.stats(&id_clone, Some(stats_opts));
-                stream.next().await
+                // Skip first sample (precpu_stats are zeros), use second
+                let _ = stream.next().await;
+                let second = stream.next().await;
+                // Drop the stream to stop Docker from sending more
+                drop(stream);
+                second
             });
         }
     }
@@ -147,7 +151,7 @@ async fn collect_node_usage<S: Storage>(
                 total_memory_bytes += usage.saturating_sub(cache);
             }
 
-            // CPU: calculate from total usage vs system usage
+            // CPU: delta between second and first sample gives real usage
             let total_usage = stats.cpu_stats.cpu_usage.total_usage;
             if let Some(system_cpu) = stats.cpu_stats.system_cpu_usage {
                 let prev_total = stats.precpu_stats.cpu_usage.total_usage;
@@ -162,8 +166,8 @@ async fn collect_node_usage<S: Storage>(
         }
     }
 
-    // Convert CPU percentage to millicores (1 core = 1000m, so 3.5% of 1 core = 35m)
-    let cpu_millicores = (total_cpu_pct * 10.0) as u64; // pct * 1000 / 100
+    // Convert CPU percentage to millicores (1 core = 1000m, so 3.5% = 35m)
+    let cpu_millicores = (total_cpu_pct * 10.0) as u64;
     let memory_mi = total_memory_bytes / (1024 * 1024);
 
     debug!("Node {} real metrics: {}m CPU, {}Mi memory ({} containers on {} pods)",

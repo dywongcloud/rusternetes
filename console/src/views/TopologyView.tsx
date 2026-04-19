@@ -665,27 +665,27 @@ export function TopologyView() {
               </text>
               {/* CPU utilization bar */}
               <g>
-                <title>CPU: {Math.round(node.cpuPct)}% utilized</title>
+                <title>CPU: {node.cpuPct.toFixed(1)}% utilized</title>
                 <text x={node.x + node.width - 130} y={node.y + 16} textAnchor="end" fill={C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">CPU</text>
                 <rect x={node.x + node.width - 128} y={node.y + 10} width={90} height={6} rx={3} fill="#3d3024" />
-                <rect x={node.x + node.width - 128} y={node.y + 10} width={Math.max(node.cpuPct * 0.9, 0)} height={6} rx={3}
+                <rect x={node.x + node.width - 128} y={node.y + 10} width={Math.max(node.cpuPct * 0.9, node.cpuPct > 0 ? 3 : 0)} height={6} rx={3}
                   fill={node.cpuPct > 85 ? C.podFailed : node.cpuPct > 60 ? C.podPending : C.node}
                 />
                 <text x={node.x + node.width - 34} y={node.y + 16} fill={node.cpuPct > 60 ? C.podPending : C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">
-                  {Math.round(node.cpuPct)}%
+                  {node.cpuPct < 1 && node.cpuPct > 0 ? node.cpuPct.toFixed(1) : Math.round(node.cpuPct)}%
                 </text>
               </g>
 
               {/* Memory utilization bar */}
               <g>
-                <title>Memory: {Math.round(node.memPct)}% utilized</title>
+                <title>Memory: {node.memPct.toFixed(1)}% utilized</title>
                 <text x={node.x + node.width - 130} y={node.y + 28} textAnchor="end" fill={C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">MEM</text>
                 <rect x={node.x + node.width - 128} y={node.y + 22} width={90} height={6} rx={3} fill="#3d3024" />
-                <rect x={node.x + node.width - 128} y={node.y + 22} width={Math.max(node.memPct * 0.9, 0)} height={6} rx={3}
+                <rect x={node.x + node.width - 128} y={node.y + 22} width={Math.max(node.memPct * 0.9, node.memPct > 0 ? 3 : 0)} height={6} rx={3}
                   fill={node.memPct > 85 ? C.podFailed : node.memPct > 60 ? C.podPending : C.podRunning}
                 />
                 <text x={node.x + node.width - 34} y={node.y + 28} fill={node.memPct > 60 ? C.podPending : C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">
-                  {Math.round(node.memPct)}%
+                  {node.memPct < 1 && node.memPct > 0 ? node.memPct.toFixed(1) : Math.round(node.memPct)}%
                 </text>
               </g>
 
