@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useClusterStore } from "../store/clusterStore";
 import { k8sCreate, buildApiPath } from "../engine/query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -64,12 +64,95 @@ const TEMPLATES: Record<string, string> = {
 }`,
 };
 
+/** Generate a JSON template for any resource type. */
+function generateTemplate(kind: string, group: string, version: string, namespaced: boolean): string {
+  const apiVersion = group ? `${group}/${version}` : version;
+  const obj: Record<string, unknown> = {
+    apiVersion,
+    kind,
+    metadata: {
+      name: `my-${kind.toLowerCase()}`,
+      ...(namespaced ? { namespace: "default" } : {}),
+    },
+  };
+  // Add common spec stubs based on kind
+  if (["Deployment", "StatefulSet", "DaemonSet"].includes(kind)) {
+    obj.spec = {
+      replicas: 1,
+      selector: { matchLabels: { app: `my-${kind.toLowerCase()}` } },
+      template: {
+        metadata: { labels: { app: `my-${kind.toLowerCase()}` } },
+        spec: { containers: [{ name: "app", image: "nginx:latest", ports: [{ containerPort: 80 }] }] },
+      },
+    };
+  } else if (kind === "Service") {
+    obj.spec = { selector: { app: "my-app" }, ports: [{ port: 80, targetPort: 80, protocol: "TCP" }], type: "ClusterIP" };
+  } else if (kind === "ConfigMap") {
+    obj.data = { key: "value" };
+  } else if (kind === "Secret") {
+    obj.type = "Opaque";
+    obj.stringData = { key: "value" };
+  } else if (kind === "Namespace") {
+    delete (obj.metadata as Record<string, unknown>).namespace;
+  } else if (kind === "Job") {
+    obj.spec = {
+      template: {
+        spec: { containers: [{ name: "job", image: "busybox", command: ["echo", "hello"] }], restartPolicy: "Never" },
+      },
+    };
+  } else if (kind === "CronJob") {
+    obj.spec = {
+      schedule: "*/5 * * * *",
+      jobTemplate: {
+        spec: {
+          template: {
+            spec: { containers: [{ name: "job", image: "busybox", command: ["echo", "hello"] }], restartPolicy: "Never" },
+          },
+        },
+      },
+    };
+  } else if (kind === "Ingress") {
+    obj.spec = {
+      rules: [{ host: "example.com", http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "my-service", port: { number: 80 } } } }] } }],
+    };
+  } else if (kind === "PersistentVolumeClaim") {
+    obj.spec = { accessModes: ["ReadWriteOnce"], resources: { requests: { storage: "1Gi" } } };
+  } else if (kind === "ServiceAccount") {
+    // No spec needed
+  } else {
+    obj.spec = {};
+  }
+  return JSON.stringify(obj, null, 2);
+}
+
 export function CreateView() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const registry = useClusterStore((s) => s.resourceRegistry);
-  const [mode, setMode] = useState<Mode>("quick-deploy");
-  const [yaml, setYaml] = useState(TEMPLATES.deployment!);
+  const gvrParam = searchParams.get("gvr");
+
+  // If a GVR was passed, start in JSON mode with a template for that resource
+  const initialMode: Mode = gvrParam ? "yaml" : "quick-deploy";
+  const initialTemplate = (() => {
+    if (!gvrParam) return TEMPLATES.deployment!;
+    const rt = registry.get(decodeURIComponent(gvrParam));
+    if (!rt) return TEMPLATES.deployment!;
+    return generateTemplate(rt.kind, rt.group, rt.version, rt.namespaced);
+  })();
+
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [yaml, setYaml] = useState(initialTemplate);
+
+  // Update template when GVR param changes
+  useEffect(() => {
+    if (!gvrParam) return;
+    const rt = registry.get(decodeURIComponent(gvrParam));
+    if (rt) {
+      setMode("yaml");
+      setYaml(generateTemplate(rt.kind, rt.group, rt.version, rt.namespaced));
+    }
+  }, [gvrParam, registry]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);

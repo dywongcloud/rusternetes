@@ -4,9 +4,14 @@ import { useK8sList } from "../hooks/useK8sList";
 import { useK8sWatch } from "../hooks/useK8sWatch";
 import { k8sPatch, buildApiPath } from "../engine/query";
 import { StatusBadge } from "../components/StatusBadge";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Node, Pod } from "../engine/types";
 import { Server, Shield, Eye, Ban, CheckCircle } from "lucide-react";
+
+interface NodeMetrics {
+  metadata: { name: string };
+  usage: { cpu?: string; memory?: string };
+}
 
 function age(timestamp?: string): string {
   if (!timestamp) return "-";
@@ -25,28 +30,39 @@ function parseQuantity(q?: string): number {
   return parseInt(q) || 0;
 }
 
-/** Capacity gauge bar. */
+/** Capacity gauge bar with utilization percentage. */
 function Gauge({
   label,
   used,
   total,
   unit,
   color,
+  formatFn,
 }: {
   label: string;
   used: number;
   total: number;
   unit: string;
   color: string;
+  formatFn?: (v: number) => string;
 }) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
+  const fmt = formatFn ?? ((v: number) => `${Number(v.toFixed(2))}${unit}`);
+  const hasData = used > 0 || total > 0;
   return (
     <div>
       <div className="flex items-center justify-between text-[10px]">
         <span className="text-[#a89880]">{label}</span>
-        <span className="font-mono text-[#e8ddd0]">
-          {used}{unit} / {total}{unit}
-        </span>
+        {hasData ? (
+          <span className="font-mono text-[#e8ddd0]">
+            {fmt(used)} / {fmt(total)}{" "}
+            <span className={pct > 85 ? "text-container-red" : pct > 60 ? "text-walle-yellow" : "text-walle-eye"}>
+              ({Math.round(pct)}%)
+            </span>
+          </span>
+        ) : (
+          <span className="text-[#5a4a3a]">no metrics</span>
+        )}
       </div>
       <div className="mt-0.5 h-2 w-full rounded-full bg-surface-3">
         <div
@@ -61,13 +77,40 @@ function Gauge({
   );
 }
 
+/** Parse CPU quantity (e.g. "250m" -> 0.25, "2" -> 2). */
+function parseCpu(q?: string): number {
+  if (!q) return 0;
+  if (q.endsWith("m")) return parseInt(q) / 1000;
+  if (q.endsWith("n")) return parseInt(q) / 1_000_000_000;
+  return parseFloat(q) || 0;
+}
+
+/** Parse memory quantity to Mi (e.g. "512Mi" -> 512, "1Gi" -> 1024, "262144Ki" -> 256). */
+function parseMemMi(q?: string): number {
+  if (!q) return 0;
+  if (q.endsWith("Ki")) return parseInt(q) / 1024;
+  if (q.endsWith("Mi")) return parseInt(q);
+  if (q.endsWith("Gi")) return parseInt(q) * 1024;
+  if (q.endsWith("Ti")) return parseInt(q) * 1024 * 1024;
+  // Plain bytes
+  const n = parseInt(q);
+  return isNaN(n) ? 0 : n / (1024 * 1024);
+}
+
+function formatMem(mi: number): string {
+  if (mi >= 1024) return `${(mi / 1024).toFixed(1)}Gi`;
+  return `${Math.round(mi)}Mi`;
+}
+
 /** Node card with capacity gauges and actions. */
 function NodeCard({
   node,
   podCount,
+  metrics,
 }: {
   node: Node;
   podCount: number;
+  metrics?: NodeMetrics;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -81,10 +124,10 @@ function NodeCard({
     .map((l) => l.replace("node-role.kubernetes.io/", ""));
 
   const taints = node.spec.taints ?? [];
-  const cpuCapacity = parseInt(node.status?.capacity?.["cpu"] ?? "0");
-  const cpuAllocatable = parseInt(node.status?.allocatable?.["cpu"] ?? "0");
-  const memCapacity = parseQuantity(node.status?.capacity?.["memory"]);
-  const memAllocatable = parseQuantity(node.status?.allocatable?.["memory"]);
+  const cpuCapacity = parseCpu(node.status?.allocatable?.["cpu"] ?? node.status?.capacity?.["cpu"]);
+  const cpuUsed = parseCpu(metrics?.usage?.cpu);
+  const memCapacityMi = parseMemMi(node.status?.allocatable?.["memory"] ?? node.status?.capacity?.["memory"]);
+  const memUsedMi = parseMemMi(metrics?.usage?.memory);
 
   const handleCordon = async () => {
     const path = buildApiPath("", "v1", "nodes", undefined, node.metadata.name);
@@ -152,21 +195,22 @@ function NodeCard({
         </div>
       </div>
 
-      {/* Capacity gauges */}
+      {/* Utilization gauges */}
       <div className="mt-3 space-y-2">
         <Gauge
           label="CPU"
-          used={cpuCapacity - cpuAllocatable}
+          used={cpuUsed}
           total={cpuCapacity}
           unit=" cores"
           color="#4a90b8"
         />
         <Gauge
           label="Memory"
-          used={memCapacity - memAllocatable}
-          total={memCapacity}
-          unit="Gi"
+          used={memUsedMi}
+          total={memCapacityMi}
+          unit=""
           color="#7ec850"
+          formatFn={formatMem}
         />
       </div>
 
@@ -213,6 +257,28 @@ export function NodesView() {
   const navigate = useNavigate();
   const { data: nodesData, isLoading } = useK8sList<Node>("", "v1", "nodes");
   const { data: podsData } = useK8sList<Pod>("", "v1", "pods");
+
+  // Fetch real node metrics from metrics-server API
+  const { data: metricsData } = useQuery<{ items: NodeMetrics[] }>({
+    queryKey: ["k8s", "node-metrics"],
+    queryFn: async () => {
+      const headers: Record<string, string> = { Accept: "application/json" };
+      const token = sessionStorage.getItem("rusternetes-token");
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/apis/metrics.k8s.io/v1beta1/nodes", { headers });
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    refetchInterval: 15_000,
+  });
+
+  const nodeMetrics = useMemo(() => {
+    const map = new Map<string, NodeMetrics>();
+    for (const m of metricsData?.items ?? []) {
+      map.set(m.metadata.name, m);
+    }
+    return map;
+  }, [metricsData]);
 
   useK8sWatch("", "v1", "nodes");
 
@@ -271,6 +337,7 @@ export function NodesView() {
             key={node.metadata.uid ?? node.metadata.name}
             node={node}
             podCount={podsByNode[node.metadata.name] ?? 0}
+            metrics={nodeMetrics.get(node.metadata.name)}
           />
         ))}
       </div>
