@@ -178,7 +178,7 @@ function StorageCapabilities({ scs }: { scs: SC[] }) {
 
 // --- Quick create forms ---
 
-function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
+function QuickCreateStorageClass({ onCreated }: { onCreated: (msg: string) => void }) {
   const [name, setName] = useState("");
   const [provisioner, setProvisioner] = useState("kubernetes.io/no-provisioner");
   const [reclaimPolicy, setReclaimPolicy] = useState("Delete");
@@ -201,9 +201,8 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
         reclaimPolicy,
         volumeBindingMode: bindingMode,
       } as unknown as K8sResource);
-      setSuccess(`StorageClass "${name}" created`);
       setName("");
-      setTimeout(() => onCreated(), 3000);
+      onCreated(`StorageClass "${name}" created`);
     } catch (err) {
       const errObj = err as { message?: string };
       setError(errObj.message ?? String(err));
@@ -257,7 +256,7 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
+function QuickCreatePVC({ onCreated }: { onCreated: (msg: string) => void }) {
   const [name, setName] = useState("");
   const [namespace, setNamespace] = useState("default");
   const [size, setSize] = useState("1Gi");
@@ -301,9 +300,9 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
     })
       .then(async (res) => {
         if (res.ok) {
-          setSuccess(`PVC "${name}" created in ${namespace}`);
+          const createdName = name;
           setName("");
-          setTimeout(() => onCreated(), 3000);
+          onCreated(`PVC "${createdName}" created in ${namespace}`);
         } else {
           const data = await res.json().catch(() => ({}));
           setError(data.message ?? `HTTP ${res.status}: ${res.statusText}`);
@@ -445,6 +444,7 @@ export function StorageView() {
   const queryClient = useQueryClient();
   const [showCreateSC, setShowCreateSC] = useState(false);
   const [showCreatePVC, setShowCreatePVC] = useState(false);
+  const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
 
   const { data: pvcsData, isLoading } = useK8sList<PVC>("", "v1", "persistentvolumeclaims", ns || undefined);
   const { data: pvsData } = useK8sList<PV>("", "v1", "persistentvolumes");
@@ -494,17 +494,24 @@ export function StorageView() {
         </div>
       </div>
 
+      {/* Success banner — lives in parent so it survives form unmount */}
+      {globalSuccess && (
+        <div className="rounded-lg border-2 border-walle-eye/50 bg-walle-eye/10 px-4 py-3 text-sm font-medium text-walle-eye">
+          {globalSuccess}
+        </div>
+      )}
+
       {/* Create forms */}
       {showCreateSC && (
         <div className="rounded-lg border border-accent/20 bg-surface-1 p-4">
           <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">Create StorageClass</h3>
-          <QuickCreateStorageClass onCreated={() => { setShowCreateSC(false); invalidateAll(); }} />
+          <QuickCreateStorageClass onCreated={(msg) => { setShowCreateSC(false); setGlobalSuccess(msg); invalidateAll(); setTimeout(() => setGlobalSuccess(null), 5000); }} />
         </div>
       )}
       {showCreatePVC && (
         <div className="rounded-lg border border-accent/20 bg-surface-1 p-4">
           <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">Create PersistentVolumeClaim</h3>
-          <QuickCreatePVC onCreated={() => { setShowCreatePVC(false); invalidateAll(); }} />
+          <QuickCreatePVC onCreated={(msg) => { setShowCreatePVC(false); setGlobalSuccess(msg); invalidateAll(); setTimeout(() => setGlobalSuccess(null), 5000); }} />
         </div>
       )}
 
