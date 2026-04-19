@@ -789,8 +789,8 @@ pub struct JobTemplateSpec {
 #[serde(rename_all = "camelCase")]
 pub struct CronJobStatus {
     /// List of currently running jobs
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active: Option<Vec<crate::resources::service_account::ObjectReference>>,
+    #[serde(default)]
+    pub active: Vec<crate::resources::service_account::ObjectReference>,
 
     /// Last time the job was scheduled
     #[serde(skip_serializing_if = "Option::is_none")]

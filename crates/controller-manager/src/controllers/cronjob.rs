@@ -230,7 +230,7 @@ impl<S: Storage + 'static> CronJobController<S> {
                     )
                     .collect();
                 let new_status = Some(CronJobStatus {
-                    active: Some(active_refs),
+                    active: active_refs,
                     last_schedule_time: cronjob.status.as_ref().and_then(|s| s.last_schedule_time),
                     last_successful_time: cronjob
                         .status
@@ -302,11 +302,7 @@ impl<S: Storage + 'static> CronJobController<S> {
 
         // Update status with active refs and last schedule time
         let new_status = Some(CronJobStatus {
-            active: if active_refs.is_empty() {
-                None
-            } else {
-                Some(active_refs)
-            },
+            active: active_refs,
             last_schedule_time: Some(now),
             last_successful_time: cronjob.status.as_ref().and_then(|s| s.last_successful_time),
         });

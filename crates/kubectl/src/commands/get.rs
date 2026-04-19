@@ -1560,8 +1560,7 @@ fn print_cronjobs(cronjobs: &[CronJob], no_headers: bool, _show_labels: bool) {
         let active = cronjob
             .status
             .as_ref()
-            .and_then(|s| s.active.as_ref())
-            .map(|a| a.len())
+            .map(|s| s.active.len())
             .unwrap_or(0);
         let last_schedule = cronjob
             .status
