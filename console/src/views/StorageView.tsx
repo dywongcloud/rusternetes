@@ -185,11 +185,13 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
   const [bindingMode, setBindingMode] = useState("WaitForFirstConsumer");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleCreate = async () => {
-    if (!name) return;
+    if (!name) { setError("Name is required"); return; }
     setCreating(true);
     setError(null);
+    setSuccess(null);
     try {
       await k8sCreate(buildApiPath("storage.k8s.io", "v1", "storageclasses"), {
         apiVersion: "storage.k8s.io/v1",
@@ -198,11 +200,13 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
         provisioner,
         reclaimPolicy,
         volumeBindingMode: bindingMode,
-      });
+      } as unknown as K8sResource);
+      setSuccess(`StorageClass "${name}" created`);
       setName("");
-      onCreated();
+      setTimeout(() => onCreated(), 1500);
     } catch (err) {
-      setError(String(err));
+      const errObj = err as { message?: string };
+      setError(errObj.message ?? String(err));
     } finally {
       setCreating(false);
     }
@@ -211,6 +215,7 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
   return (
     <div className="space-y-3">
       {error && <div className="rounded-md border border-container-red/30 bg-container-red/5 px-3 py-2 text-xs text-container-red">{error}</div>}
+      {success && <div className="rounded-md border border-walle-eye/30 bg-walle-eye/5 px-3 py-2 text-xs text-walle-eye">{success}</div>}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-[10px] text-[#a89880]">Name</label>
@@ -243,7 +248,7 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
       </div>
-      <button onClick={handleCreate} disabled={creating || !name}
+      <button type="button" onClick={() => { handleCreate(); }} disabled={creating || !name}
         className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50">
         <Plus size={14} />
         {creating ? "Creating..." : "Create StorageClass"}
@@ -260,11 +265,16 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
   const [storageClass, setStorageClass] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleCreate = async () => {
-    if (!name) return;
+    if (!name) {
+      setError("Name is required");
+      return;
+    }
     setCreating(true);
     setError(null);
+    setSuccess(null);
     try {
       const pvc: Record<string, unknown> = {
         apiVersion: "v1",
@@ -278,11 +288,13 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
       if (storageClass) {
         (pvc.spec as Record<string, unknown>).storageClassName = storageClass;
       }
-      await k8sCreate(buildApiPath("", "v1", "persistentvolumeclaims", namespace), pvc);
+      await k8sCreate(buildApiPath("", "v1", "persistentvolumeclaims", namespace), pvc as K8sResource);
+      setSuccess(`PVC "${name}" created in ${namespace}`);
       setName("");
-      onCreated();
+      setTimeout(() => onCreated(), 1500);
     } catch (err) {
-      setError(String(err));
+      const errObj = err as { message?: string };
+      setError(errObj.message ?? String(err));
     } finally {
       setCreating(false);
     }
@@ -290,7 +302,16 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div className="space-y-3">
-      {error && <div className="rounded-md border border-container-red/30 bg-container-red/5 px-3 py-2 text-xs text-container-red">{error}</div>}
+      {error && (
+        <div className="rounded-md border border-container-red/30 bg-container-red/5 px-3 py-2 text-xs text-container-red">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="rounded-md border border-walle-eye/30 bg-walle-eye/5 px-3 py-2 text-xs text-walle-eye">
+          {success}
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <label className="mb-1 block text-[10px] text-[#a89880]">Name</label>
@@ -323,8 +344,12 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
           </select>
         </div>
       </div>
-      <button onClick={handleCreate} disabled={creating || !name}
-        className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50">
+      <button
+        type="button"
+        onClick={() => { handleCreate(); }}
+        disabled={creating || !name}
+        className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50"
+      >
         <Plus size={14} />
         {creating ? "Creating..." : "Create PVC"}
       </button>
