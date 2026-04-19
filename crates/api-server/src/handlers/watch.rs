@@ -455,12 +455,20 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // Filter by label and field selectors
-                                    if !matches_label_selector(object.metadata(), &label_selector)
-                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    // NEVER filter DELETED events by label selector.
+                                    // The client received an ADDED event when the object matched
+                                    // the selector. If labels changed before deletion, the client
+                                    // MUST still receive the DELETED event to remove the object
+                                    // from its cache. Only filter by field selector (metadata.name).
+                                    if !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
+
+                                    // Remove from deleted_from_watch tracking since the object
+                                    // is truly gone now
+                                    let obj_key = object.metadata().name.clone();
+                                    deleted_from_watch.remove(&obj_key);
 
                                     let k8s_event = K8sWatchEvent {
                                         event_type: WatchEventType::Deleted,
@@ -874,12 +882,20 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // Filter by label and field selectors
-                                    if !matches_label_selector(object.metadata(), &label_selector)
-                                        || !matches_field_selector(object.metadata(), &field_selector)
+                                    // NEVER filter DELETED events by label selector.
+                                    // The client received an ADDED event when the object matched
+                                    // the selector. If labels changed before deletion, the client
+                                    // MUST still receive the DELETED event to remove the object
+                                    // from its cache. Only filter by field selector (metadata.name).
+                                    if !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
+
+                                    // Remove from deleted_from_watch tracking since the object
+                                    // is truly gone now
+                                    let obj_key = object.metadata().name.clone();
+                                    deleted_from_watch.remove(&obj_key);
 
                                     let k8s_event = K8sWatchEvent {
                                         event_type: WatchEventType::Deleted,

@@ -216,9 +216,10 @@ impl<S: Storage + 'static> DaemonSetController<S> {
         let name = &daemonset.metadata.name;
         let namespace = daemonset.metadata.namespace.as_ref().unwrap();
 
-        // Skip reconciliation for DaemonSets being deleted — GC handles pod cleanup
+        // When DaemonSet is being deleted, actively delete all owned pods
+        // instead of waiting for GC (which can be slow and cause cascading delays)
         if daemonset.metadata.is_being_deleted() {
-            return Ok(());
+            return self.delete_owned_pods(daemonset).await;
         }
 
         debug!("Reconciling DaemonSet {}/{}", namespace, name);
@@ -590,6 +591,34 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             self.storage.update(&key, daemonset).await?;
         }
 
+        Ok(())
+    }
+
+    /// Delete all pods owned by a DaemonSet that is being deleted.
+    /// Sets deletionTimestamp on each owned pod so the kubelet tears down containers.
+    async fn delete_owned_pods(&self, daemonset: &DaemonSet) -> Result<()> {
+        let ns = daemonset.metadata.namespace.as_deref().unwrap_or("default");
+        let ds_name = &daemonset.metadata.name;
+        let pod_prefix = rusternetes_storage::build_prefix("pods", Some(ns));
+        let pods: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+
+        for pod in &pods {
+            // Check if pod is owned by this DaemonSet
+            if let Some(refs) = &pod.metadata.owner_references {
+                for owner_ref in refs {
+                    if owner_ref.kind == "DaemonSet" && owner_ref.name == *ds_name {
+                        // Set deletionTimestamp if not already set
+                        if pod.metadata.deletion_timestamp.is_none() {
+                            let mut updated_pod = pod.clone();
+                            updated_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
+                            let pod_key = build_key("pods", Some(ns), &pod.metadata.name);
+                            let _ = self.storage.update(&pod_key, &updated_pod).await;
+                            info!("Marked pod {} for deletion (DaemonSet {} being deleted)", pod.metadata.name, ds_name);
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

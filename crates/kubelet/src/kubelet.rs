@@ -52,6 +52,9 @@ pub struct Kubelet {
     /// K8s uses one goroutine per pod (podWorkerLoop). We use a lock set to
     /// ensure only one sync_pod runs at a time for each pod UID.
     pod_sync_locks: Mutex<HashSet<String>>,
+    /// Track recently-deleted pod names (from watch events) so orphan cleanup
+    /// can skip the grace period for pods that were explicitly deleted from storage.
+    recently_deleted: Arc<Mutex<HashSet<String>>>,
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
@@ -86,6 +89,7 @@ impl Kubelet {
             eviction_manager: Mutex::new(EvictionManager::new()),
             pod_states: Mutex::new(HashMap::new()),
             pod_sync_locks: Mutex::new(HashSet::new()),
+            recently_deleted: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -103,6 +107,7 @@ impl Kubelet {
         let storage_clone = self.storage.clone();
         let node_name = self.node_name.clone();
         let watch_tx_clone = watch_tx.clone();
+        let recently_deleted_clone = self.recently_deleted.clone();
         tokio::spawn(async move {
             let prefix = build_prefix("pods", None);
             loop {
@@ -134,6 +139,10 @@ impl Kubelet {
                                         let assigned_node =
                                             pod.pointer("/spec/nodeName").and_then(|v| v.as_str());
                                         if assigned_node == Some(&node_name) {
+                                            // Track the pod name so orphan cleanup skips the grace period
+                                            if let Some(pod_name) = pod.pointer("/metadata/name").and_then(|v| v.as_str()) {
+                                                recently_deleted_clone.lock().unwrap().insert(pod_name.to_string());
+                                            }
                                             let _ = watch_tx_clone.try_send(key);
                                         }
                                     }
@@ -766,21 +775,33 @@ impl Kubelet {
             if existing_pod_names.contains(running_pod_name) {
                 continue; // Pod exists in etcd — not an orphan
             }
-            // Check container age — don't kill containers younger than 60s
-            let container_age = self
-                .runtime
-                .get_container_age(running_pod_name)
-                .await
-                .unwrap_or(std::time::Duration::from_secs(0));
-            if container_age < std::time::Duration::from_secs(60) {
-                debug!(
-                    "Skipping recently started orphan {} (age {:?})",
-                    running_pod_name, container_age
+            // Fast path: if this pod was explicitly deleted (via watch event),
+            // skip the grace period and clean up immediately.
+            let is_recently_deleted = self.recently_deleted.lock().unwrap().contains(running_pod_name);
+            if !is_recently_deleted {
+                // Check container age — don't kill containers younger than 30s
+                let container_age = self
+                    .runtime
+                    .get_container_age(running_pod_name)
+                    .await
+                    .unwrap_or(std::time::Duration::from_secs(0));
+                if container_age < std::time::Duration::from_secs(30) {
+                    debug!(
+                        "Skipping recently started orphan {} (age {:?})",
+                        running_pod_name, container_age
+                    );
+                    continue;
+                }
+            } else {
+                // Remove from tracker — we're about to clean it up
+                self.recently_deleted.lock().unwrap().remove(running_pod_name);
+                info!(
+                    "Fast-path cleanup for explicitly deleted pod {} — skipping grace period",
+                    running_pod_name
                 );
-                continue;
             }
             info!(
-                "Found orphaned pod {} - not in etcd for >60s, stopping and removing containers",
+                "Found orphaned pod {} - not in etcd, stopping and removing containers",
                 running_pod_name
             );
             if let Err(e) = self.runtime.stop_and_remove_pod(running_pod_name).await {
