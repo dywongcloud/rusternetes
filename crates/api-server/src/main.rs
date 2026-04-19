@@ -234,6 +234,33 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Create default StorageClass (like k3s/kind ship with a default)
+    {
+        let sc_key = rusternetes_storage::build_key("storageclasses", None, "standard");
+        if storage.get::<serde_json::Value>(&sc_key).await.is_err() {
+            let storage_class = serde_json::json!({
+                "apiVersion": "storage.k8s.io/v1",
+                "kind": "StorageClass",
+                "metadata": {
+                    "name": "standard",
+                    "uid": uuid::Uuid::new_v4().to_string(),
+                    "creationTimestamp": chrono::Utc::now().to_rfc3339(),
+                    "annotations": {
+                        "storageclass.kubernetes.io/is-default-class": "true"
+                    }
+                },
+                "provisioner": "rusternetes.io/hostpath",
+                "reclaimPolicy": "Delete",
+                "volumeBindingMode": "WaitForFirstConsumer"
+            });
+            if let Err(e) = storage.create(&sc_key, &storage_class).await {
+                warn!("Failed to create default StorageClass: {}", e);
+            } else {
+                info!("Created default StorageClass 'standard' with rusternetes.io/hostpath provisioner");
+            }
+        }
+    }
+
     // Initialize Prometheus client for custom metrics (if URL provided)
     let prometheus_client = if let Some(url) = args.prometheus_url {
         info!("Initializing Prometheus client: {}", url);
