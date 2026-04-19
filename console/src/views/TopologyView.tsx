@@ -177,7 +177,7 @@ export function TopologyView() {
       const r = await fetch("/apis/metrics.k8s.io/v1beta1/nodes", { headers: h });
       return r.ok ? r.json() : { items: [] };
     },
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 
   const nodes = nodesData?.items ?? [];

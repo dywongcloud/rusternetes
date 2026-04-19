@@ -269,7 +269,7 @@ export function NodesView() {
       if (!res.ok) return { items: [] };
       return res.json();
     },
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 
   const nodeMetrics = useMemo(() => {
