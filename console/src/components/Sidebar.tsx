@@ -57,9 +57,18 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex h-12 items-center gap-2 border-b border-surface-3 px-3">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-sm font-bold text-surface-0">
-          R
-        </div>
+        <svg className="h-7 w-7 shrink-0 text-accent" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="12" y="0" width="8" height="5" fill="currentColor"/>
+          <rect x="12" y="27" width="8" height="5" fill="currentColor"/>
+          <rect x="0" y="12" width="5" height="8" fill="currentColor"/>
+          <rect x="27" y="12" width="5" height="8" fill="currentColor"/>
+          <rect x="23" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/>
+          <rect x="3" y="2" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/>
+          <rect x="23" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/>
+          <rect x="3" y="24" width="6" height="6" rx="1" fill="currentColor" opacity="0.8"/>
+          <circle cx="16" cy="16" r="12" fill="currentColor"/>
+          <circle cx="16" cy="16" r="4" fill="#1a1410"/>
+        </svg>
         {!collapsed && (
           <span className="font-retro text-lg tracking-tight text-walle-yellow">
             rusternetes
