@@ -99,6 +99,11 @@ impl Kubelet {
         // Register the node
         self.register_node().await?;
 
+        // Startup cleanup: immediately remove any containers from previous runs
+        // that don't correspond to pods in etcd. K8s kubelet does a full
+        // reconciliation at startup to ensure no stale containers remain.
+        self.startup_cleanup().await;
+
         // Channel for watch events to trigger immediate pod syncs
         let (watch_tx, mut watch_rx) = mpsc::channel::<String>(256);
 
@@ -742,6 +747,72 @@ impl Kubelet {
         }
 
         Ok(())
+    }
+
+    /// Startup cleanup: remove all containers that don't correspond to pods
+    /// in etcd. Runs once at kubelet startup before the main sync loop.
+    /// K8s kubelet does this in syncLoopIteration → HandlePodCleanups.
+    async fn startup_cleanup(&self) {
+        info!("Running startup cleanup — removing stale containers from previous runs");
+
+        // Get all pods from etcd
+        let all_pods: Vec<Pod> = match self.storage.list("/registry/pods/").await {
+            Ok(pods) => pods,
+            Err(e) => {
+                warn!("Failed to list pods for startup cleanup: {}", e);
+                return;
+            }
+        };
+
+        let existing_pod_names: std::collections::HashSet<String> = all_pods
+            .iter()
+            .map(|p| p.metadata.name.clone())
+            .collect();
+
+        // Get all running containers from Docker
+        let running_pods = match self.runtime.list_running_pods().await {
+            Ok(pods) => pods,
+            Err(e) => {
+                warn!("Failed to list running pods for startup cleanup: {}", e);
+                return;
+            }
+        };
+
+        // Find orphans — running in Docker but not in etcd
+        let orphans: Vec<String> = running_pods
+            .into_iter()
+            .filter(|name| !existing_pod_names.contains(name))
+            .collect();
+
+        if orphans.is_empty() {
+            info!("Startup cleanup: no stale containers found");
+            return;
+        }
+
+        info!("Startup cleanup: found {} stale containers, removing", orphans.len());
+
+        // Clean up in parallel (up to 10 concurrent) for fast startup
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(10));
+        let mut handles = Vec::new();
+
+        for orphan in orphans {
+            let runtime = self.runtime.clone();
+            let sem = semaphore.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await;
+                if let Err(e) = runtime.stop_and_remove_pod(&orphan).await {
+                    warn!("Startup cleanup: failed to remove {}: {}", orphan, e);
+                } else {
+                    info!("Startup cleanup: removed stale container {}", orphan);
+                }
+            }));
+        }
+
+        for handle in handles {
+            let _ = handle.await;
+        }
+
+        info!("Startup cleanup complete");
     }
 
     async fn cleanup_orphaned_containers(
