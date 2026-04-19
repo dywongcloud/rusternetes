@@ -832,61 +832,99 @@ export function TopologyView() {
         </div>
       )}
 
-      {/* Time-travel slider */}
-      {snapshots.length > 1 && (
-        <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-[#a89880]">
-              Timeline {timeSlider >= 0 ? `(${new Date(snapshots[timeSlider]?.time ?? 0).toLocaleTimeString()})` : "(live)"}
-            </h3>
-            <div className="flex items-center gap-2 text-[10px] text-[#a89880]">
-              <span>{snapshots.length} snapshots</span>
-              {timeSlider >= 0 && (
-                <button
-                  onClick={() => setTimeSlider(-1)}
-                  className="rounded bg-accent/15 px-2 py-0.5 text-rust-light"
-                >
-                  Back to Live
-                </button>
-              )}
+      {/* Cluster Activity Timeline */}
+      {snapshots.length > 1 && (() => {
+        const current = timeSlider >= 0 ? snapshots[timeSlider] : snapshots[snapshots.length - 1];
+        const prev = timeSlider > 0 ? snapshots[timeSlider - 1] : (snapshots.length > 1 ? snapshots[snapshots.length - 2] : null);
+        const podDelta = current && prev ? current.podCount - prev.podCount : 0;
+        const isLive = timeSlider < 0;
+
+        return (
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+            {/* Header with live/historical state */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h3 className="text-xs font-medium uppercase tracking-wider text-[#a89880]">
+                  Cluster Activity
+                </h3>
+                {isLive ? (
+                  <span className="flex items-center gap-1.5 rounded-full bg-walle-eye/15 px-2 py-0.5 text-[10px] text-walle-eye">
+                    <span className="h-1.5 w-1.5 rounded-full bg-walle-eye animate-pulse" />
+                    Live
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-walle-yellow/15 px-2 py-0.5 text-[10px] text-walle-yellow">
+                    {new Date(current?.time ?? 0).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {/* State summary for selected point */}
+                {current && (
+                  <div className="flex items-center gap-3 text-[10px]">
+                    <span className="text-[#a89880]">
+                      <span className="font-mono text-walle-eye">{current.podCount}</span> pods
+                    </span>
+                    <span className="text-[#a89880]">
+                      <span className="font-mono text-container-blue">{current.nodeCount}</span> nodes
+                    </span>
+                    <span className="text-[#a89880]">
+                      <span className="font-mono text-accent">{current.svcCount}</span> services
+                    </span>
+                    {podDelta !== 0 && (
+                      <span className={`font-mono ${podDelta > 0 ? "text-walle-eye" : "text-container-red"}`}>
+                        {podDelta > 0 ? "+" : ""}{podDelta} pods
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!isLive && (
+                  <button
+                    onClick={() => setTimeSlider(-1)}
+                    className="rounded bg-accent/15 px-2 py-0.5 text-[10px] text-rust-light hover:bg-accent/25"
+                  >
+                    Back to Live
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Timeline bar chart — click to select a point */}
+            <div className="mt-3 flex h-10 items-end gap-px">
+              {snapshots.map((snap, i) => {
+                const maxPods = Math.max(...snapshots.map((s) => s.podCount), 1);
+                const h = Math.max((snap.podCount / maxPods) * 100, 5);
+                const selected = isLive ? i === snapshots.length - 1 : i === timeSlider;
+                const prevSnap = i > 0 ? snapshots[i - 1] : null;
+                const delta = prevSnap ? snap.podCount - prevSnap.podCount : 0;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setTimeSlider(i === snapshots.length - 1 ? -1 : i)}
+                    className="flex-1 rounded-t-sm transition-all hover:opacity-100"
+                    style={{
+                      height: `${h}%`,
+                      backgroundColor: selected ? C.service : delta > 0 ? `${C.podRunning}60` : delta < 0 ? `${C.podFailed}60` : `${C.podRunning}30`,
+                      opacity: selected ? 1 : 0.7,
+                      minHeight: 3,
+                    }}
+                    title={`${new Date(snap.time).toLocaleTimeString()}: ${snap.podCount} pods, ${snap.nodeCount} nodes, ${snap.svcCount} services${delta !== 0 ? ` (${delta > 0 ? "+" : ""}${delta})` : ""}`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Time labels */}
+            <div className="mt-1 flex justify-between text-[9px] text-[#5a4a3a]">
+              <span>{new Date(snapshots[0]?.time ?? 0).toLocaleTimeString()}</span>
+              <span className="text-[#a89880]">
+                {Math.round((Date.now() - (snapshots[0]?.time ?? Date.now())) / 60_000)} min history
+              </span>
+              <span>now</span>
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-3">
-            <input
-              type="range"
-              min={0}
-              max={snapshots.length - 1}
-              value={timeSlider >= 0 ? timeSlider : snapshots.length - 1}
-              onChange={(e) => setTimeSlider(parseInt(e.target.value))}
-              className="flex-1 accent-accent"
-            />
-          </div>
-          {/* Mini sparkline of pod count over time */}
-          <div className="mt-2 flex h-8 items-end gap-px">
-            {snapshots.map((snap, i) => {
-              const maxPods = Math.max(...snapshots.map((s) => s.podCount), 1);
-              const h = (snap.podCount / maxPods) * 100;
-              const isSelected = i === timeSlider;
-              return (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t-sm transition-all"
-                  style={{
-                    height: `${h}%`,
-                    backgroundColor: isSelected ? C.service : `${C.podRunning}40`,
-                    minHeight: 2,
-                  }}
-                  title={`${new Date(snap.time).toLocaleTimeString()}: ${snap.podCount} pods, ${snap.nodeCount} nodes`}
-                />
-              );
-            })}
-          </div>
-          <div className="mt-1 flex justify-between text-[9px] text-[#5a4a3a]">
-            <span>{new Date(snapshots[0]?.time ?? 0).toLocaleTimeString()}</span>
-            <span>{new Date(snapshots[snapshots.length - 1]?.time ?? 0).toLocaleTimeString()}</span>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Pod log panel */}
       {logPodName && (
