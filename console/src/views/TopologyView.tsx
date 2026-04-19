@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useK8sList } from "../hooks/useK8sList";
+import { useK8sWatch } from "../hooks/useK8sWatch";
 import { useQuery } from "@tanstack/react-query";
 import type { Pod, Node, Service, K8sResource } from "../engine/types";
 import {
@@ -133,12 +134,27 @@ export function TopologyView() {
   const particleIdRef = useRef(0);
   const animRef = useRef<number>(0);
 
+  // Time-travel snapshot system
+  const [snapshots, setSnapshots] = useState<{ time: number; podCount: number; nodeCount: number; svcCount: number }[]>([]);
+  const [timeSlider, setTimeSlider] = useState(-1); // -1 = live
+  const snapshotTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Pod log streaming
+  const [logPodName, setLogPodName] = useState<string | null>(null);
+  const [logPodNs, setLogPodNs] = useState<string>("");
+  const [logLines, setLogLines] = useState<string[]>([]);
+
   // --- Data fetching ---
   const { data: nodesData } = useK8sList<Node>("", "v1", "nodes", undefined, { refetchInterval: 15_000 });
   const { data: podsData } = useK8sList<Pod>("", "v1", "pods", undefined, { refetchInterval: 10_000 });
   const { data: servicesData } = useK8sList<Service>("", "v1", "services", undefined, { refetchInterval: 30_000 });
   const { data: ingressData } = useK8sList<K8sResource>("networking.k8s.io", "v1", "ingresses", undefined, { refetchInterval: 60_000 });
   const { data: netpolData } = useK8sList<K8sResource>("networking.k8s.io", "v1", "networkpolicies", undefined, { refetchInterval: 60_000 });
+
+  // Real-time updates via watch
+  useK8sWatch("", "v1", "pods");
+  useK8sWatch("", "v1", "nodes");
+  useK8sWatch("", "v1", "services");
 
   const { data: podMetricsData } = useQuery<{ items: PodMetrics[] }>({
     queryKey: ["k8s", "pod-metrics"],
@@ -169,6 +185,41 @@ export function TopologyView() {
   const services = servicesData?.items ?? [];
   const ingresses = ingressData?.items ?? [];
   const netpols = netpolData?.items ?? [];
+
+  // --- Time-travel: record snapshots every 15s ---
+  useEffect(() => {
+    const record = () => {
+      setSnapshots((prev) => {
+        const snap = { time: Date.now(), podCount: pods.length, nodeCount: nodes.length, svcCount: services.length };
+        const next = [...prev, snap];
+        return next.length > 120 ? next.slice(-120) : next; // Keep 30 min
+      });
+    };
+    record();
+    snapshotTimerRef.current = setInterval(record, 15_000);
+    return () => { if (snapshotTimerRef.current) clearInterval(snapshotTimerRef.current); };
+  }, [pods.length, nodes.length, services.length]);
+
+  // --- Pod log streaming ---
+  useEffect(() => {
+    if (!logPodName || !logPodNs) { setLogLines([]); return; }
+    let cancelled = false;
+    const fetchLogs = async () => {
+      const headers: Record<string, string> = { Accept: "text/plain" };
+      const token = sessionStorage.getItem("rusternetes-token");
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      try {
+        const res = await fetch(`/api/v1/namespaces/${logPodNs}/pods/${logPodName}/log?tailLines=30&timestamps=true`, { headers });
+        if (res.ok && !cancelled) {
+          const text = await res.text();
+          setLogLines(text.split("\n").filter(Boolean).slice(-30));
+        }
+      } catch { /* non-fatal */ }
+    };
+    fetchLogs();
+    const iv = setInterval(fetchLogs, 5_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [logPodName, logPodNs]);
 
   // --- Build metrics maps ---
   const podMetricsMap = useMemo(() => {
@@ -480,16 +531,25 @@ export function TopologyView() {
             ));
           })}
 
-          {/* Service → Pod connection lines */}
-          {layout.services.map((svc) =>
-            svc.targetPodIds.map((podId) => {
+          {/* Service → Pod connection lines — fan out from service bottom */}
+          {layout.services.map((svc) => {
+            const svcBoxH = showProtocols ? 50 : 40;
+            const svcCx = svc.x + 70; // center X of service box
+            const svcBot = svc.y + svcBoxH; // bottom of service box
+            const count = svc.targetPodIds.length;
+            return svc.targetPodIds.map((podId, idx) => {
               const pos = findPodPos(podId);
               if (!pos) return null;
               const highlight = selectedService === svc.id || selectedPod === podId;
+              // Spread line origins across the bottom edge of the service box
+              const spreadWidth = Math.min(count * 8, 120);
+              const offsetX = count > 1
+                ? svcCx - spreadWidth / 2 + (idx / (count - 1)) * spreadWidth
+                : svcCx;
               return (
                 <line
                   key={`${svc.id}-${podId}`}
-                  x1={svc.x + 60} y1={svc.y + 20}
+                  x1={offsetX} y1={svcBot}
                   x2={pos.x} y2={pos.y}
                   stroke={highlight ? C.service : `${C.service}25`}
                   strokeWidth={highlight ? 1.5 : 0.8}
@@ -497,17 +557,26 @@ export function TopologyView() {
                   className="flow-line"
                 />
               );
-            }),
-          )}
+            });
+          })}
 
           {/* Animated particles flowing along connections */}
           {particles.map((p) => {
             const svc = layout.services.find((s) => s.id === p.svcId);
             const podPos = findPodPos(p.podId);
             if (!svc || !podPos) return null;
-            const x1 = svc.x + 60, y1 = svc.y + 20;
-            const x = x1 + (podPos.x - x1) * p.progress;
-            const y = y1 + (podPos.y - y1) * p.progress;
+            const svcBoxH = showProtocols ? 50 : 40;
+            const svcCx = svc.x + 70;
+            const svcBot = svc.y + svcBoxH;
+            // Find index of this pod in target list for spread offset
+            const idx = svc.targetPodIds.indexOf(p.podId);
+            const count = svc.targetPodIds.length;
+            const spreadWidth = Math.min(count * 8, 120);
+            const offsetX = count > 1 && idx >= 0
+              ? svcCx - spreadWidth / 2 + (idx / (count - 1)) * spreadWidth
+              : svcCx;
+            const x = offsetX + (podPos.x - offsetX) * p.progress;
+            const y = svcBot + (podPos.y - svcBot) * p.progress;
             const opacity = p.progress > 0.9 ? (1 - p.progress) * 10 : Math.min(p.progress * 5, 1);
             return (
               <circle
@@ -541,25 +610,35 @@ export function TopologyView() {
                 <text x={svc.x + 70} y={svc.y + 26} textAnchor="middle" fill={C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">
                   {svc.clusterIP} &middot; {svc.type}
                 </text>
-                {/* Port badges */}
-                {showProtocols && svc.ports.slice(0, 3).map((port, pi) => {
-                  const pc = protocolColor(port.protocol);
-                  return (
-                    <g key={pi}>
-                      <rect
-                        x={svc.x + 4 + pi * 46} y={svc.y + 32}
-                        width={44} height={14} rx={3}
-                        fill={`${pc}20`} stroke={pc} strokeWidth={0.5}
-                      />
-                      <text
-                        x={svc.x + 26 + pi * 46} y={svc.y + 42}
-                        textAnchor="middle" fill={pc} fontSize={7} fontFamily="'Space Mono', monospace"
-                      >
-                        {port.port}→{port.targetPort}/{port.protocol}
-                      </text>
-                    </g>
-                  );
-                })}
+                {/* Port badges — laid out centered below service info */}
+                {showProtocols && (() => {
+                  const ports = svc.ports.slice(0, 3);
+                  const badgeW = 42;
+                  const badgeGap = 3;
+                  const totalW = ports.length * badgeW + (ports.length - 1) * badgeGap;
+                  const startX = svc.x + (140 - totalW) / 2;
+                  return ports.map((port, pi) => {
+                    const pc = protocolColor(port.protocol);
+                    const bx = startX + pi * (badgeW + badgeGap);
+                    const label = `${port.port}/${port.protocol}`;
+                    return (
+                      <g key={pi}>
+                        <rect
+                          x={bx} y={svc.y + 33}
+                          width={badgeW} height={12} rx={3}
+                          fill={`${pc}20`} stroke={pc} strokeWidth={0.5}
+                        />
+                        <text
+                          x={bx + badgeW / 2} y={svc.y + 42}
+                          textAnchor="middle" fill={pc} fontSize={6.5}
+                          fontFamily="'Space Mono', monospace"
+                        >
+                          {label}
+                        </text>
+                      </g>
+                    );
+                  });
+                })()}
                 {/* Endpoint count */}
                 <text x={svc.x + 140 - 4} y={svc.y + 14} textAnchor="end" fill={C.textFaint} fontSize={8}>
                   {svc.targetPodIds.length}ep
@@ -584,24 +663,39 @@ export function TopologyView() {
               <text x={node.x + 12} y={node.y + 32} fill={C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">
                 {node.pods.length} pods
               </text>
-              {/* CPU/Mem utilization mini-bars */}
-              <rect x={node.x + node.width - 80} y={node.y + 10} width={60} height={4} rx={2} fill="#3d3024" />
-              <rect x={node.x + node.width - 80} y={node.y + 10} width={Math.max(node.cpuPct * 0.6, 0)} height={4} rx={2}
-                fill={node.cpuPct > 85 ? C.podFailed : node.cpuPct > 60 ? C.podPending : C.node}
-              />
-              <text x={node.x + node.width - 82} y={node.y + 14} textAnchor="end" fill={C.textFaint} fontSize={7}>CPU</text>
+              {/* CPU utilization bar */}
+              <g>
+                <title>CPU: {Math.round(node.cpuPct)}% utilized</title>
+                <text x={node.x + node.width - 130} y={node.y + 16} textAnchor="end" fill={C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">CPU</text>
+                <rect x={node.x + node.width - 128} y={node.y + 10} width={90} height={6} rx={3} fill="#3d3024" />
+                <rect x={node.x + node.width - 128} y={node.y + 10} width={Math.max(node.cpuPct * 0.9, 0)} height={6} rx={3}
+                  fill={node.cpuPct > 85 ? C.podFailed : node.cpuPct > 60 ? C.podPending : C.node}
+                />
+                <text x={node.x + node.width - 34} y={node.y + 16} fill={node.cpuPct > 60 ? C.podPending : C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">
+                  {Math.round(node.cpuPct)}%
+                </text>
+              </g>
 
-              <rect x={node.x + node.width - 80} y={node.y + 18} width={60} height={4} rx={2} fill="#3d3024" />
-              <rect x={node.x + node.width - 80} y={node.y + 18} width={Math.max(node.memPct * 0.6, 0)} height={4} rx={2}
-                fill={node.memPct > 85 ? C.podFailed : node.memPct > 60 ? C.podPending : C.podRunning}
-              />
-              <text x={node.x + node.width - 82} y={node.y + 22} textAnchor="end" fill={C.textFaint} fontSize={7}>MEM</text>
+              {/* Memory utilization bar */}
+              <g>
+                <title>Memory: {Math.round(node.memPct)}% utilized</title>
+                <text x={node.x + node.width - 130} y={node.y + 28} textAnchor="end" fill={C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">MEM</text>
+                <rect x={node.x + node.width - 128} y={node.y + 22} width={90} height={6} rx={3} fill="#3d3024" />
+                <rect x={node.x + node.width - 128} y={node.y + 22} width={Math.max(node.memPct * 0.9, 0)} height={6} rx={3}
+                  fill={node.memPct > 85 ? C.podFailed : node.memPct > 60 ? C.podPending : C.podRunning}
+                />
+                <text x={node.x + node.width - 34} y={node.y + 28} fill={node.memPct > 60 ? C.podPending : C.textDim} fontSize={8} fontFamily="'Space Mono', monospace">
+                  {Math.round(node.memPct)}%
+                </text>
+              </g>
 
               {/* Ready indicator */}
-              <circle cx={node.x + node.width - 12} y={node.y + 32} cy={node.y + 32} r={4}
+              <circle cx={node.x + node.width - 12} cy={node.y + 42} r={4}
                 fill={node.ready ? C.podRunning : C.podFailed}
                 className={node.ready ? "" : "pulse-slow"}
-              />
+              >
+                <title>{node.ready ? "Ready" : "NotReady"}</title>
+              </circle>
 
               {/* Pods — brightness based on CPU usage */}
               {node.pods.map((pod) => {
@@ -671,6 +765,12 @@ export function TopologyView() {
                 >
                   <Eye size={12} /> Detail
                 </button>
+                <button
+                  onClick={() => { setLogPodName(selectedPodData.name); setLogPodNs(selectedPodData.namespace); }}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[#a89880] hover:bg-surface-3 hover:text-walle-yellow"
+                >
+                  Logs
+                </button>
               </div>
               <div className="grid grid-cols-4 gap-3 text-xs">
                 <div><span className="text-[#a89880]">Phase</span><div className="font-mono text-[#e8ddd0]">{selectedPodData.phase}</div></div>
@@ -729,6 +829,92 @@ export function TopologyView() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Time-travel slider */}
+      {snapshots.length > 1 && (
+        <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-[#a89880]">
+              Timeline {timeSlider >= 0 ? `(${new Date(snapshots[timeSlider]?.time ?? 0).toLocaleTimeString()})` : "(live)"}
+            </h3>
+            <div className="flex items-center gap-2 text-[10px] text-[#a89880]">
+              <span>{snapshots.length} snapshots</span>
+              {timeSlider >= 0 && (
+                <button
+                  onClick={() => setTimeSlider(-1)}
+                  className="rounded bg-accent/15 px-2 py-0.5 text-rust-light"
+                >
+                  Back to Live
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={snapshots.length - 1}
+              value={timeSlider >= 0 ? timeSlider : snapshots.length - 1}
+              onChange={(e) => setTimeSlider(parseInt(e.target.value))}
+              className="flex-1 accent-accent"
+            />
+          </div>
+          {/* Mini sparkline of pod count over time */}
+          <div className="mt-2 flex h-8 items-end gap-px">
+            {snapshots.map((snap, i) => {
+              const maxPods = Math.max(...snapshots.map((s) => s.podCount), 1);
+              const h = (snap.podCount / maxPods) * 100;
+              const isSelected = i === timeSlider;
+              return (
+                <div
+                  key={i}
+                  className="flex-1 rounded-t-sm transition-all"
+                  style={{
+                    height: `${h}%`,
+                    backgroundColor: isSelected ? C.service : `${C.podRunning}40`,
+                    minHeight: 2,
+                  }}
+                  title={`${new Date(snap.time).toLocaleTimeString()}: ${snap.podCount} pods, ${snap.nodeCount} nodes`}
+                />
+              );
+            })}
+          </div>
+          <div className="mt-1 flex justify-between text-[9px] text-[#5a4a3a]">
+            <span>{new Date(snapshots[0]?.time ?? 0).toLocaleTimeString()}</span>
+            <span>{new Date(snapshots[snapshots.length - 1]?.time ?? 0).toLocaleTimeString()}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Pod log panel */}
+      {logPodName && (
+        <div className="rounded-lg border border-surface-3 bg-surface-0 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-medium text-[#e8ddd0]">
+              Logs: <span className="font-mono text-rust-light">{logPodNs}/{logPodName}</span>
+            </h3>
+            <button
+              onClick={() => { setLogPodName(null); setLogLines([]); }}
+              className="rounded px-2 py-0.5 text-xs text-[#a89880] hover:bg-surface-3 hover:text-[#e8ddd0]"
+            >
+              Close
+            </button>
+          </div>
+          <div className="mt-2 max-h-48 overflow-auto rounded bg-surface-1 p-2 font-mono text-[10px] text-[#a89880]">
+            {logLines.length > 0 ? (
+              logLines.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap break-all leading-relaxed hover:text-[#e8ddd0]">
+                  {line}
+                </div>
+              ))
+            ) : (
+              <div className="py-4 text-center text-[#5a4a3a]">
+                No logs available
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
