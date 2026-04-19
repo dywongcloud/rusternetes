@@ -16,18 +16,17 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
-/// Query Docker for real container stats and aggregate per-node CPU/memory usage.
+/// Query Docker for real container CPU/memory usage via container inspect.
 async fn collect_node_usage_from_docker(node_name: &str) -> (String, String) {
+    use futures::StreamExt;
+
     let docker = match bollard::Docker::connect_with_local_defaults() {
         Ok(d) => d,
         Err(_) => return ("0m".to_string(), "0Mi".to_string()),
     };
 
-    // List running containers that belong to pods on this node.
-    // Our containers have labels like rusternetes-node=node-1.
-    // But we can also just sum all running container stats as a proxy.
     let opts = bollard::container::ListContainersOptions::<String> {
-        all: false, // only running
+        all: false,
         ..Default::default()
     };
 
@@ -36,41 +35,76 @@ async fn collect_node_usage_from_docker(node_name: &str) -> (String, String) {
         Err(_) => return ("0m".to_string(), "0Mi".to_string()),
     };
 
-    // Filter containers by node name in their labels or names
-    let node_containers: Vec<_> = containers.iter().filter(|c| {
-        // Check if container has a node label matching
-        if let Some(labels) = &c.labels {
-            if labels.get("rusternetes-node").map(|v| v.as_str()) == Some(node_name) {
-                return true;
-            }
-        }
-        // Also match by container name prefix containing node name
-        if let Some(names) = &c.names {
-            for name in names {
-                if name.contains(node_name) {
-                    return true;
-                }
-            }
-        }
-        false
+    // Filter to pod containers (exclude pause and infrastructure)
+    let pod_containers: Vec<_> = containers.iter().filter(|c| {
+        let image = c.image.as_deref().unwrap_or("");
+        !image.contains("pause") && !image.contains("rusternetes-")
     }).collect();
 
-    // If no containers matched by node, just count all non-infrastructure containers
-    let target_containers = if node_containers.is_empty() {
-        // Count all pod containers (exclude pause, infrastructure)
-        containers.iter().filter(|c| {
-            let image = c.image.as_deref().unwrap_or("");
-            !image.contains("pause") && !image.contains("rusternetes-")
-        }).collect::<Vec<_>>()
-    } else {
-        node_containers
-    };
+    let mut total_cpu_nano: u64 = 0;
+    let mut total_memory_bytes: u64 = 0;
+    let mut sampled = 0u64;
 
-    // Estimate usage based on container count (since Docker stats is async/streaming)
-    // Each running container ≈ 50m CPU + 64Mi memory as baseline
-    let container_count = target_containers.len() as u64;
-    let cpu_millicores = container_count * 50 + (container_count * 17) % 100; // Add jitter
-    let memory_mi = container_count * 64 + (container_count * 23) % 128; // Add jitter
+    // Sample stats from up to 5 containers (each takes ~1s for 2 samples)
+    for container in pod_containers.iter().take(5) {
+        let id = match &container.id {
+            Some(id) => id.clone(),
+            None => continue,
+        };
+
+        // Get two stats samples so the second has valid precpu_stats for delta calculation
+        let stats_opts = bollard::container::StatsOptions {
+            stream: true,
+            one_shot: false,
+        };
+        let mut stats_stream = docker.stats(&id, Some(stats_opts));
+
+        // Skip first sample (precpu_stats are zeros), use second
+        let _ = stats_stream.next().await;
+        if let Some(Ok(stats)) = stats_stream.next().await {
+            // CPU: calculate delta between current and previous sample
+            let total_usage = stats.cpu_stats.cpu_usage.total_usage;
+            if let Some(system_cpu) = stats.cpu_stats.system_cpu_usage {
+                let prev_total = stats.precpu_stats.cpu_usage.total_usage;
+                let prev_system = stats.precpu_stats.system_cpu_usage.unwrap_or(0);
+                let cpu_delta = total_usage.saturating_sub(prev_total);
+                let system_delta = system_cpu.saturating_sub(prev_system);
+                if system_delta > 0 {
+                    let num_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as u64;
+                    let cpu_pct = (cpu_delta as f64 / system_delta as f64) * num_cpus as f64;
+                    total_cpu_nano += (cpu_pct * 1_000_000_000.0) as u64;
+                }
+            }
+
+            // Memory: use memory_stats.usage minus cache for working set
+            if let Some(usage) = stats.memory_stats.usage {
+                let cache = stats.memory_stats.stats
+                    .as_ref()
+                    .map(|s| match s {
+                        bollard::container::MemoryStatsStats::V1(v1) => v1.cache,
+                        bollard::container::MemoryStatsStats::V2(v2) => v2.inactive_file,
+                    })
+                    .unwrap_or(0);
+                total_memory_bytes += usage.saturating_sub(cache);
+            }
+
+            sampled += 1;
+        }
+    }
+
+    // If we sampled fewer containers than exist, extrapolate
+    let total_pods = pod_containers.len() as u64;
+    if sampled > 0 && total_pods > sampled {
+        let scale = total_pods as f64 / sampled as f64;
+        total_cpu_nano = (total_cpu_nano as f64 * scale) as u64;
+        total_memory_bytes = (total_memory_bytes as f64 * scale) as u64;
+    }
+
+    let cpu_millicores = total_cpu_nano / 1_000_000;
+    let memory_mi = total_memory_bytes / (1024 * 1024);
+
+    debug!("Node {} metrics: {}m CPU, {}Mi memory ({} containers sampled)",
+        node_name, cpu_millicores, memory_mi, sampled);
 
     (format!("{}m", cpu_millicores), format!("{}Mi", memory_mi))
 }
