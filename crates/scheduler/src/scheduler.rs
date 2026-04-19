@@ -535,8 +535,29 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
             return None;
         }
 
-        // Sort by score (descending) and select best node
-        node_scores.sort_by(|a, b| b.score.cmp(&a.score));
+        // Sort by score (descending). On tie, prefer the node with fewer
+        // pods already scheduled (LeastAllocated). This spreads pods across
+        // nodes when scores are equal (e.g. identical node configurations).
+        let pod_counts: std::collections::HashMap<String, usize> = {
+            let mut counts = std::collections::HashMap::new();
+            for p in all_pods {
+                if let Some(node) = p.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
+                    *counts.entry(node.clone()).or_insert(0) += 1;
+                }
+            }
+            counts
+        };
+        node_scores.sort_by(|a, b| {
+            let score_cmp = b.score.cmp(&a.score);
+            if score_cmp == std::cmp::Ordering::Equal {
+                // Fewer pods = better (ascending)
+                let a_pods = pod_counts.get(&a.node_name).unwrap_or(&0);
+                let b_pods = pod_counts.get(&b.node_name).unwrap_or(&0);
+                a_pods.cmp(b_pods)
+            } else {
+                score_cmp
+            }
+        });
 
         let best_node_name = &node_scores[0].node_name;
         debug!(

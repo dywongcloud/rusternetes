@@ -1,14 +1,27 @@
 # Conformance Failure Tracker
 
-## Known Issues
+## Current Run Failures (Round 150 — work queue migration, debug builds)
 
-| # | Component | Issue | Severity | Status |
-|---|-----------|-------|----------|--------|
-| A | job controller | Creates duplicate pods for same Job | Medium | Fixed — fresh re-count before creation + AlreadyExists handling |
-| B | serviceaccount controller | `Resource already exists` errors on token secrets | Low | Fixed — AlreadyExists handled gracefully |
-| C | endpoints/endpointslice | Pod readiness changes not detected until 30s resync | Medium | Fixed — added secondary pod watch with label selector matching |
-| D | daemonset controller | Node additions not detected until 30s resync | Medium | Fixed — added secondary node watch, enqueues all DSs on node change |
-| E | scheduler | No cross-resource watch for pod→node | Low | Open — uses sentinel pattern, works but less efficient |
-| F | garbage collector | 30s scan interval bottleneck for pod deletion | High | Fixed — reduced to 5s |
-| G | controllers | Status writes trigger same-resource watch feedback loops | High | Fixed — per-key cooldown in WorkQueue |
-| H | serviceaccount + namespace | SA controller fights namespace deletion | Critical | Fixed — worker skips namespaces with deletionTimestamp |
+| # | Test File | Error | Pre-existing? | Notes |
+|---|-----------|-------|---------------|-------|
+| 1 | statefulset.go:786 | timed out waiting for condition (620s) | Possibly new | Pods are Running+Ready but test times out. May be StatefulSet rolling update or readiness probe issue. Need to investigate if the SS controller's status update is delayed by per-key cooldown. |
+| 2 | output.go:263 | perms -rw-rw-rw- wrong | Yes | Pre-existing EmptyDir POSIX permissions issue |
+| 3 | predicates.go:1102 | 0/2 nodes available: no node matched scheduling constraints | Yes | Pre-existing — node label/taint scheduling |
+| 4 | init_container.go:440 | timed out waiting for condition | Yes | Pre-existing init container status issue |
+| 5 | rc.go:538 | pod responses timeout | Yes | Pre-existing — pod proxy/networking |
+| 6 | crd_watch.go:72 | gave up waiting for watch event for CRD creation | Possibly new | CRD controller uses per-resource keys — may need investigation if CRD watch is broken |
+| 7-8 | TBD | TBD | TBD | Need more failures to identify |
+
+## Resolved Issues
+
+| # | Component | Issue | Status |
+|---|-----------|-------|--------|
+| A | job controller | Duplicate pod creation | Fixed — fresh re-count + AlreadyExists |
+| B | serviceaccount controller | Resource already exists errors | Fixed — AlreadyExists handled |
+| C | endpoints/endpointslice | Pod readiness lag (30s) | Fixed — secondary pod watch |
+| D | daemonset controller | Node change lag (30s) | Fixed — secondary node watch |
+| E | scheduler | No cross-resource watch | Open (low priority) |
+| F | garbage collector | 30s scan bottleneck | Fixed — reduced to 5s |
+| G | controllers | Status write feedback loops | Fixed — per-key cooldown |
+| H | serviceaccount + namespace | SA fights namespace deletion | Fixed — skip terminating NS |
+| I | statefulset/RS/deploy/job | Pod status change lag (30s) | Fixed — secondary pod/RS watches |
