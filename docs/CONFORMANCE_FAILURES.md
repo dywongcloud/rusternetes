@@ -1,51 +1,50 @@
 # Conformance Failure Tracker
 
-## Root Causes and Fixes Required
+## Current Run (Round 152 — release builds, etcd, work queue + all fixes)
 
-### Fix 1: Node controller — grace period for new nodes (CRITICAL)
+**Status at 125min: 220 passed, 29 failed, 249/441 done (88.4%)**
 
-**Problem:** Node controller immediately sets Ready=False on new nodes (within 5ms of creation). K8s waits 60 seconds (`nodeStartupGracePeriod`) before marking a new node's condition as Unknown.
+### All 29 Failures
 
-**Impact:** The `node_lifecycle.go:95` test creates a fake node with Ready=True, but our controller overwrites it in 5ms, causing a resourceVersion conflict on the test's PATCH. The test fails, the fake node persists, and every subsequent test wastes 7 minutes waiting for it.
+| # | Test | Pre-existing? | Category |
+|---|------|---------------|----------|
+| 1 | aggregator.go:359 | Yes | Aggregator proxy — deployment not ready |
+| 2 | crd_publish_openapi.go:285 | Yes | CRD OpenAPI schema not dynamic |
+| 3 | crd_publish_openapi.go:318 | Yes | CRD OpenAPI schema |
+| 4 | crd_publish_openapi.go:451 | Yes | CRD OpenAPI schema |
+| 5 | garbage_collector.go:635 | Yes | GC orphan RS propagation |
+| 6 | resource_quota.go:1047 | **New?** | ResourceQuota — investigate |
+| 7 | daemon_set.go:1276 | Yes | GC deletes DS pod |
+| 8 | daemon_set.go:332 | Yes | DS retry failed pods |
+| 9 | deployment.go:1259 | Yes | Deployment proportional scaling |
+| 10 | deployment.go:883 | Yes | Deployment delete old RS |
+| 11 | disruption.go:187 | **New?** | PDB eviction — investigate |
+| 12 | job.go:1192 | **New** | Job PATCH conflict — controller writes status 12x during reconcile |
+| 13 | rc.go:212 | **New** | RC PATCH conflict — controller writes status 8x during reconcile. Fix committed. |
+| 14 | rc.go:453 | **New?** | RC test — investigate |
+| 15 | replica_set.go:232 | Yes | RS serve image — pod proxy |
+| 16 | replica_set.go:534 | **New?** | RS test — investigate |
+| 17 | statefulset.go:1205 | **New** | SS status endpoints — custom condition overwritten. Fix committed. |
+| 18 | init_container.go:241 | Yes | Init container ready |
+| 19 | pod_resize.go:857 | **New?** | Pod resize — investigate |
+| 20 | runtime.go:129 | Yes | Container state after restart |
+| 21-25 | output.go:263 x5 | Yes | EmptyDir perms |
+| 26 | hostport.go:219 | Yes | HostPort conflict |
+| 27 | proxy.go:271 | Yes | Service proxy unreachable |
+| 28 | service.go:3459 | Yes | Service delete timeout |
+| 29 | service.go:768 | Yes | Service endpoint unreachable |
 
-**K8s behavior** (from `pkg/controller/nodelifecycle/node_lifecycle_controller.go`):
-- New nodes get a 60s startup grace period before any condition changes
-- `tryUpdateNodeHealth()` checks `now > probeTimestamp + gracePeriod` before acting
-- Initial condition is set to `ConditionUnknown` (not False)
-- `nodeMonitorGracePeriod` (50s) for running nodes, `nodeStartupGracePeriod` (60s) for new nodes
-- NotReady nodes get `node.kubernetes.io/not-ready:NoExecute` taint
+### Summary
 
-**Fix:** Track when each node was first seen. Don't change Ready condition until startup grace period (60s) expires. Add not-ready taint when node becomes NotReady.
+- **Pre-existing (same as 90.2% baseline):** ~22 failures
+- **New from work queue / status writes:** ~3 (job, rc, statefulset — all resourceVersion conflicts from controllers writing status too frequently)
+- **Needs investigation:** ~4 (resource_quota, disruption, rc:453, replica_set:534, pod_resize)
+- **Already fixed (committed, not deployed):** SS condition merge, RC status reduction, kubelet startup cleanup
 
-### Fix 2: Deployment/DaemonSet/RS controllers — merge conditions, don't replace
+### Root Cause: Controller status write frequency
 
-**Problem:** Our controllers replace the entire status.conditions array when updating status. K8s MERGES conditions — only updating conditions of known types (Progressing, Available, ReplicaFailure) and preserving all other condition types.
+The systematic issue causing NEW failures: controllers write to storage multiple times during a single reconcile (status updates, pod creation, adoption). Each write increments resourceVersion. Conformance tests that GET→PATCH a resource hit conflicts because the controller modified it between the GET and PATCH.
 
-**Impact:** Conformance tests inject custom status conditions (e.g. type="StatusUpdate") via PUT /status. Our controller immediately overwrites them on the next reconcile. Tests timeout waiting for their custom condition to persist.
+K8s pattern: controllers batch changes and do ONE status update at the end of reconciliation. Our controllers do multiple mid-reconcile writes.
 
-**K8s behavior** (from `pkg/controller/deployment/util/deployment_util.go:128`):
-```go
-func SetDeploymentCondition(status, condition) {
-    currentCond := GetDeploymentCondition(status, condition.Type)
-    // Only update conditions of the SAME TYPE
-    newConditions := filterOutCondition(status.Conditions, condition.Type)
-    status.Conditions = append(newConditions, condition)
-}
-```
-- Copies ALL existing conditions first
-- Only replaces conditions of types the controller manages
-- Unknown/external conditions are preserved
-
-**Fix:** Change status update logic in deployment, daemonset, and replicaset controllers to merge conditions instead of replacing. Only touch condition types the controller owns.
-
-### Fix 3: ReplicaSet controller — availableReplicas tracking
-
-**Problem:** Our RS controller may not be computing `availableReplicas` correctly. The deployment proportional scaling test waits 28 minutes for `availableReplicas = 8` on an RS.
-
-**K8s behavior** (from `pkg/controller/replicaset/replica_set_utils.go:96`):
-- `availableReplicas` = count of pods that are Ready AND have satisfied `minReadySeconds`
-- Uses `podutil.IsPodAvailable(pod, minReadySeconds, now)`
-- The RS controller computes this, NOT the deployment controller
-- Deployment controller just sums `rs.Status.AvailableReplicas` from all its RSes
-
-**Fix:** Ensure RS controller sets `availableReplicas` correctly using Ready + minReadySeconds check.
+Fix: each controller should accumulate status changes and write once at the end of reconcile, not after each sub-operation.

@@ -77,7 +77,7 @@ pub struct ScopedResourceSelectorRequirement {
 }
 
 /// ResourceQuotaStatus defines the enforced hard limits and observed use
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceQuotaStatus {
     /// Hard is the set of enforced hard limits for each named resource
@@ -288,7 +288,7 @@ impl std::fmt::Display for IntOrString {
 }
 
 /// PodDisruptionBudgetStatus represents the current status of a PDB
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodDisruptionBudgetStatus {
     /// Current number of healthy pods
@@ -327,7 +327,7 @@ pub struct PodDisruptionBudgetStatus {
 }
 
 /// PodDisruptionBudgetCondition contains details for the current condition of this PDB
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodDisruptionBudgetCondition {
     /// Type of PDB condition

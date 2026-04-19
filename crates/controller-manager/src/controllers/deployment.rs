@@ -811,6 +811,61 @@ impl<S: Storage + 'static> DeploymentController<S> {
             }
         }
 
+        // Clean up old ReplicaSets beyond revisionHistoryLimit.
+        // K8s ref: pkg/controller/deployment/deployment_controller.go — cleanupDeployment()
+        // After a rollout completes, delete old RSes (replicas=0) that exceed the history limit.
+        // Re-fetch owned RSes since they may have changed during reconcile.
+        let cleanup_rs_prefix = build_prefix("replicasets", Some(namespace));
+        let cleanup_all_rs: Vec<ReplicaSet> = self.storage.list(&cleanup_rs_prefix).await.unwrap_or_default();
+        let cleanup_owned: Vec<ReplicaSet> = cleanup_all_rs
+            .into_iter()
+            .filter(|rs| self.is_owned_by_deployment(rs, deployment))
+            .collect();
+
+        let revision_history_limit = deployment.spec.revision_history_limit.unwrap_or(10);
+        if revision_history_limit >= 0 {
+            // Collect old RSes (those that don't match current template AND have 0 replicas)
+            let mut old_rses: Vec<ReplicaSet> = cleanup_owned
+                .iter()
+                .filter(|rs| {
+                    !self.replicaset_matches_template(rs, deployment) && rs.spec.replicas == 0
+                })
+                .cloned()
+                .collect();
+
+            // Sort by revision (ascending) so we delete the oldest first
+            old_rses.sort_by(|a, b| {
+                let rev_a = a
+                    .metadata
+                    .annotations
+                    .as_ref()
+                    .and_then(|ann| ann.get("deployment.kubernetes.io/revision"))
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(0);
+                let rev_b = b
+                    .metadata
+                    .annotations
+                    .as_ref()
+                    .and_then(|ann| ann.get("deployment.kubernetes.io/revision"))
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(0);
+                rev_a.cmp(&rev_b)
+            });
+
+            // Delete old RSes that exceed the history limit
+            let to_delete = old_rses.len() as i32 - revision_history_limit;
+            if to_delete > 0 {
+                for rs in old_rses.iter().take(to_delete as usize) {
+                    let rs_key = build_key("replicasets", Some(namespace), &rs.metadata.name);
+                    info!(
+                        "Cleaning up old ReplicaSet {}/{} (revisionHistoryLimit={})",
+                        namespace, rs.metadata.name, revision_history_limit
+                    );
+                    let _ = self.storage.delete(&rs_key).await;
+                }
+            }
+        }
+
         // Update deployment status
         self.update_deployment_status(deployment).await?;
 
@@ -1001,12 +1056,25 @@ impl<S: Storage + 'static> DeploymentController<S> {
         };
 
         let key = build_key("replicasets", Some(namespace), &rs_name);
-        self.storage.create(&key, &replicaset).await?;
-
-        info!(
-            "Created ReplicaSet {}/{} with {} replicas for deployment {}",
-            namespace, rs_name, replicas, deployment.metadata.name
-        );
+        match self.storage.create(&key, &replicaset).await {
+            Ok(_) => {
+                info!(
+                    "Created ReplicaSet {}/{} with {} replicas for deployment {}",
+                    namespace, rs_name, replicas, deployment.metadata.name
+                );
+            }
+            Err(e) => {
+                let err_str = format!("{}", e);
+                if err_str.contains("already exists") || err_str.contains("AlreadyExists") {
+                    debug!(
+                        "ReplicaSet {}/{} already exists, skipping creation",
+                        namespace, rs_name
+                    );
+                } else {
+                    return Err(e);
+                }
+            }
+        }
 
         Ok(())
     }
@@ -1017,11 +1085,19 @@ impl<S: Storage + 'static> DeploymentController<S> {
         replicas: i32,
     ) -> rusternetes_common::Result<()> {
         let namespace = rs.metadata.namespace.as_deref().unwrap_or("default");
-
-        let mut updated_rs = rs.clone();
-        updated_rs.spec.replicas = replicas;
-
         let key = build_key("replicasets", Some(namespace), &rs.metadata.name);
+
+        // Re-read from storage for fresh resourceVersion to avoid CAS conflicts
+        let mut updated_rs: ReplicaSet = match self.storage.get(&key).await {
+            Ok(fresh) => fresh,
+            Err(_) => rs.clone(),
+        };
+
+        if updated_rs.spec.replicas == replicas {
+            return Ok(()); // Already at desired count
+        }
+
+        updated_rs.spec.replicas = replicas;
         self.storage.update(&key, &updated_rs).await?;
 
         info!(
@@ -1277,7 +1353,13 @@ impl<S: Storage + 'static> DeploymentController<S> {
 
         // Only write if status or revision annotation actually changed
         if status_changed || revision_changed {
-            let mut updated_deployment = deployment.clone();
+            let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
+            // Re-read from storage for fresh resourceVersion to avoid CAS conflicts
+            // with concurrent test PATCH operations
+            let mut updated_deployment: Deployment = match self.storage.get(&key).await {
+                Ok(d) => d,
+                Err(_) => deployment.clone(),
+            };
             updated_deployment.status = Some(new_status);
 
             if let Some(rev) = max_revision {
@@ -1291,7 +1373,6 @@ impl<S: Storage + 'static> DeploymentController<S> {
                     );
             }
 
-            let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
             self.storage.update(&key, &updated_deployment).await?;
         }
 

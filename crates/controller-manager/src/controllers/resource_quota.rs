@@ -183,21 +183,28 @@ impl<S: Storage + 'static> ResourceQuotaController<S> {
             }
         }
 
-        // Update quota status — re-read for fresh resourceVersion to avoid CAS conflicts
-        let key = build_key("resourcequotas", Some(namespace), quota_name);
-        let mut updated_quota: ResourceQuota = match self.storage.get(&key).await {
-            Ok(q) => q,
-            Err(_) => quota.clone(),
-        };
-        updated_quota.status = Some(ResourceQuotaStatus {
+        // Build the desired status
+        let new_status = Some(ResourceQuotaStatus {
             hard: quota.spec.hard.clone(),
             used: Some(used),
         });
 
-        // Save updated quota
-        self.storage.update(&key, &updated_quota).await?;
-
-        debug!("Updated quota {}/{} status", namespace, quota_name);
+        // Only write if status actually changed to avoid unnecessary storage writes
+        // that cause resourceVersion conflicts with concurrent test PATCH operations
+        if quota.status != new_status {
+            let key = build_key("resourcequotas", Some(namespace), quota_name);
+            // Re-read for fresh resourceVersion to avoid CAS conflicts
+            let mut updated_quota: ResourceQuota = match self.storage.get(&key).await {
+                Ok(q) => q,
+                Err(_) => quota.clone(),
+            };
+            // Check again after re-read (may have been updated concurrently)
+            if updated_quota.status != new_status {
+                updated_quota.status = new_status;
+                self.storage.update(&key, &updated_quota).await?;
+                debug!("Updated quota {}/{} status", namespace, quota_name);
+            }
+        }
 
         Ok(())
     }

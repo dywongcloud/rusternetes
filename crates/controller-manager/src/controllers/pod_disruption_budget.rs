@@ -174,21 +174,29 @@ impl<S: Storage + 'static> PodDisruptionBudgetController<S> {
             namespace, pdb.metadata.name, desired_healthy, disruptions_allowed
         );
 
-        // 6. Update PDB status
-        let mut updated_pdb = pdb.clone();
-        updated_pdb.status = Some(PodDisruptionBudgetStatus {
+        // 6. Build desired status
+        let new_status = PodDisruptionBudgetStatus {
             current_healthy: healthy_pods,
             desired_healthy,
             disruptions_allowed,
             expected_pods: total_pods,
             observed_generation: pdb.metadata.generation,
-            conditions: None,
-            disrupted_pods: None,
-        });
+            conditions: pdb.status.as_ref().and_then(|s| s.conditions.clone()),
+            disrupted_pods: pdb.status.as_ref().and_then(|s| s.disrupted_pods.clone()),
+        };
 
-        // Save updated PDB back to storage
-        let key = build_key("poddisruptionbudgets", Some(namespace), &pdb.metadata.name);
-        self.storage.update(&key, &updated_pdb).await?;
+        // Only write if status actually changed to avoid unnecessary storage writes
+        // that cause resourceVersion conflicts with concurrent test PATCH operations
+        if pdb.status.as_ref() != Some(&new_status) {
+            let key = build_key("poddisruptionbudgets", Some(namespace), &pdb.metadata.name);
+            // Re-read from storage for fresh resourceVersion to avoid CAS conflicts
+            let mut fresh_pdb: PodDisruptionBudget = match self.storage.get(&key).await {
+                Ok(p) => p,
+                Err(_) => pdb.clone(),
+            };
+            fresh_pdb.status = Some(new_status);
+            self.storage.update(&key, &fresh_pdb).await?;
+        }
 
         Ok(())
     }
