@@ -774,12 +774,26 @@ body::after {
 
 /* --- Responsive --- */
 @media (max-width: 768px) {
-  .nav-links {
-    gap: 12px;
+  .nav-inner {
+    padding: 10px 16px;
   }
 
-  .nav-links a:not(.nav-gh) {
-    display: none;
+  .nav-logo {
+    font-size: 12px;
+  }
+
+  .nav-links {
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .nav-links a {
+    font-size: 14px !important;
+  }
+
+  .nav-links a.nav-gh {
+    font-size: 8px !important;
   }
 
   .hero {
