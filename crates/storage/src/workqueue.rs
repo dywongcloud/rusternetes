@@ -89,9 +89,9 @@ struct WorkQueueInner {
 
 /// Minimum interval between processing the same key. Prevents tight loops
 /// when a controller writes back to its own watched resource (e.g. status
-/// updates). Set to 1 second — long enough to coalesce self-triggered
-/// events, short enough for responsive reconciliation.
-const MIN_REPROCESS_INTERVAL: Duration = Duration::ZERO;
+/// updates). Set to 200ms — fast enough for test convergence, long enough
+/// to coalesce self-triggered events (status write -> watch -> re-enqueue).
+const MIN_REPROCESS_INTERVAL: Duration = Duration::from_millis(200);
 
 impl WorkQueue {
     /// Create a new work queue with default rate limiting.
@@ -339,11 +339,15 @@ mod tests {
         // Not in queue yet (still processing)
         assert_eq!(q.len().await, 0);
 
-        // done() should immediately re-queue because dirty flag is set
+        // done() delays re-queue by MIN_REPROCESS_INTERVAL to prevent
+        // self-write feedback loops. The key goes into the delayed map
+        // rather than immediately into the queue.
         q.done(&key).await;
-        assert_eq!(q.len().await, 1);
 
-        // Should be able to get it again immediately
+        // Wait for MIN_REPROCESS_INTERVAL to elapse so the key becomes available
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+
+        // Should be able to get it after the cooldown
         let key2 = q.get().await.unwrap();
         assert_eq!(key2, "key1");
         q.done(&key2).await;

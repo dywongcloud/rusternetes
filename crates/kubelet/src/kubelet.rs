@@ -2079,10 +2079,18 @@ impl Kubelet {
                                     Ok(p) => p,
                                     _ => pod.clone(),
                                 };
+                                // Refresh init container statuses so completed init containers
+                                // have ready=true in the final pod status.
+                                // K8s ref: pkg/kubelet/prober/prober_manager.go — UpdatePodStatus
+                                let init_container_statuses =
+                                    self.runtime.get_init_container_statuses(&new_pod).await;
                                 if let Some(ref mut status) = new_pod.status {
                                     status.phase = Some(terminal_phase);
                                     status.message = Some(message);
                                     status.container_statuses = Some(container_statuses);
+                                    if init_container_statuses.is_some() {
+                                        status.init_container_statuses = init_container_statuses;
+                                    }
                                     // Update conditions — terminated pod is not Ready
                                     if let Some(ref mut conditions) = status.conditions {
                                         for c in conditions.iter_mut() {
@@ -2111,11 +2119,16 @@ impl Kubelet {
                                         Ok(p) => p,
                                         _ => pod.clone(),
                                     };
+                                    let init_container_statuses =
+                                        self.runtime.get_init_container_statuses(&new_pod).await;
                                     if let Some(ref mut status) = new_pod.status {
                                         status.phase = Some(Phase::Succeeded);
                                         status.message =
                                             Some("Pod completed successfully".to_string());
                                         status.container_statuses = Some(container_statuses);
+                                        if init_container_statuses.is_some() {
+                                            status.init_container_statuses = init_container_statuses;
+                                        }
                                         status.conditions = Some(Self::succeeded_pod_conditions());
                                     }
                                     let _ = self.storage.update(&key, &new_pod).await;
@@ -2584,10 +2597,16 @@ impl Kubelet {
                                     Ok(p) => p,
                                     _ => pod.clone(),
                                 };
+                                // Refresh init container statuses for terminal pod
+                                let init_container_statuses =
+                                    self.runtime.get_init_container_statuses(&new_pod).await;
                                 if let Some(ref mut status) = new_pod.status {
                                     status.phase = Some(terminal_phase);
                                     status.message = Some(message);
                                     status.container_statuses = Some(container_statuses);
+                                    if init_container_statuses.is_some() {
+                                        status.init_container_statuses = init_container_statuses;
+                                    }
                                     // Update conditions — terminated pod is not Ready
                                     if let Some(ref mut conditions) = status.conditions {
                                         for c in conditions.iter_mut() {
@@ -2640,11 +2659,16 @@ impl Kubelet {
                                         Ok(p) => p,
                                         _ => pod.clone(),
                                     };
+                                    let init_container_statuses =
+                                        self.runtime.get_init_container_statuses(&new_pod).await;
                                     if let Some(ref mut status) = new_pod.status {
                                         status.phase = Some(Phase::Succeeded);
                                         status.message =
                                             Some("Pod completed successfully".to_string());
                                         status.container_statuses = Some(container_statuses);
+                                        if init_container_statuses.is_some() {
+                                            status.init_container_statuses = init_container_statuses;
+                                        }
                                         status.conditions = Some(Self::succeeded_pod_conditions());
                                     }
                                     let _ = self.storage.update(&key, &new_pod).await;
@@ -2896,11 +2920,16 @@ impl Kubelet {
                                 Ok(p) => p,
                                 _ => pod.clone(),
                             };
+                            let init_container_statuses =
+                                self.runtime.get_init_container_statuses(&new_pod).await;
                             if let Some(ref mut status) = new_pod.status {
                                 status.phase = Some(Phase::Succeeded);
                                 status.message = Some("Pod completed successfully".to_string());
                                 if let Some(ref cs) = container_statuses {
                                     status.container_statuses = Some(cs.clone());
+                                }
+                                if init_container_statuses.is_some() {
+                                    status.init_container_statuses = init_container_statuses;
                                 }
                                 status.conditions = Some(Self::succeeded_pod_conditions());
                             }
@@ -2928,11 +2957,16 @@ impl Kubelet {
                             Ok(p) => p,
                             _ => pod.clone(),
                         };
+                        let init_container_statuses =
+                            self.runtime.get_init_container_statuses(&new_pod).await;
                         if let Some(ref mut status) = new_pod.status {
                             status.phase = Some(terminal_phase.clone());
                             status.message = Some(message);
                             if let Some(ref cs) = container_statuses {
                                 status.container_statuses = Some(cs.clone());
+                            }
+                            if init_container_statuses.is_some() {
+                                status.init_container_statuses = init_container_statuses;
                             }
                             if terminal_phase == Phase::Succeeded {
                                 status.conditions = Some(Self::succeeded_pod_conditions());

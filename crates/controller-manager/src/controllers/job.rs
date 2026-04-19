@@ -236,12 +236,16 @@ impl<S: Storage + 'static> JobController<S> {
                         .count() as i32;
                     // Update terminating count if it changed
                     if status.terminating != Some(terminating) {
-                        let mut updated_job = job.clone();
-                        if let Some(ref mut s) = updated_job.status {
-                            s.terminating = Some(terminating);
-                        }
                         let key = build_key("jobs", Some(namespace), name);
-                        let _ = self.storage.update(&key, &updated_job).await;
+                        // Re-read for fresh resourceVersion to avoid CAS conflict
+                        if let Ok(mut fresh_job) = self.storage.get::<Job>(&key).await {
+                            if fresh_job.status.as_ref().and_then(|s| s.terminating) != Some(terminating) {
+                                if let Some(ref mut s) = fresh_job.status {
+                                    s.terminating = Some(terminating);
+                                }
+                                let _ = self.storage.update(&key, &fresh_job).await;
+                            }
+                        }
                     }
                     return Ok(());
                 }
@@ -454,8 +458,10 @@ impl<S: Storage + 'static> JobController<S> {
             let key = format!("/registry/jobs/{}/{}", namespace, name);
             // Refresh RV before update to avoid CAS conflict
             if let Ok(mut fresh) = self.storage.get::<Job>(&key).await {
-                fresh.status = job.status.clone();
-                self.storage.update(&key, &fresh).await?;
+                if fresh.status != job.status {
+                    fresh.status = job.status.clone();
+                    self.storage.update(&key, &fresh).await?;
+                }
             }
             return Ok(());
         }
@@ -506,8 +512,10 @@ impl<S: Storage + 'static> JobController<S> {
                     let key = format!("/registry/jobs/{}/{}", namespace, name);
                     // Refresh RV before update to avoid CAS conflict
                     if let Ok(mut fresh) = self.storage.get::<Job>(&key).await {
-                        fresh.status = job.status.clone();
-                        self.storage.update(&key, &fresh).await?;
+                        if fresh.status != job.status {
+                            fresh.status = job.status.clone();
+                            self.storage.update(&key, &fresh).await?;
+                        }
                     }
                     return Ok(());
                 }
@@ -910,8 +918,10 @@ impl<S: Storage + 'static> JobController<S> {
             let key = format!("/registry/jobs/{}/{}", namespace, name);
             // Refresh RV before update to avoid CAS conflict
             if let Ok(mut fresh) = self.storage.get::<Job>(&key).await {
-                fresh.status = job.status.clone();
-                self.storage.update(&key, &fresh).await?;
+                if fresh.status != job.status {
+                    fresh.status = job.status.clone();
+                    self.storage.update(&key, &fresh).await?;
+                }
             }
             return Ok(());
         }

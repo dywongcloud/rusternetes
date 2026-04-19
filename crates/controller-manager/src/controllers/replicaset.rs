@@ -588,7 +588,7 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
                 if let Ok(mut fresh_rs) = self.storage.get::<ReplicaSet>(&key).await {
                     let fresh_conditions =
                         fresh_rs.status.as_ref().and_then(|s| s.conditions.clone());
-                    fresh_rs.status = Some(ReplicaSetStatus {
+                    let retry_status = Some(ReplicaSetStatus {
                         replicas,
                         ready_replicas,
                         available_replicas,
@@ -597,7 +597,10 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
                         conditions: fresh_conditions,
                         terminating_replicas: None,
                     });
-                    let _ = self.storage.update(&key, &fresh_rs).await;
+                    if fresh_rs.status != retry_status {
+                        fresh_rs.status = retry_status;
+                        let _ = self.storage.update(&key, &fresh_rs).await;
+                    }
                 }
             }
         }

@@ -70,9 +70,13 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             // Initial full reconciliation
             self.enqueue_all(&queue).await;
 
-            // Watch BOTH daemonsets and nodes
+            // Watch daemonsets, nodes, AND pods.
+            // K8s DS controller watches pods to react when a pod's status changes
+            // (e.g., phase set to Failed by kubelet or test), which triggers
+            // immediate reconciliation of the owning DaemonSet.
             let ds_prefix = "/registry/daemonsets/";
             let node_prefix = "/registry/nodes/";
+            let pod_prefix = "/registry/pods/";
 
             let ds_watch = match self.storage.watch(ds_prefix).await {
                 Ok(w) => w,
@@ -90,9 +94,18 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                     continue;
                 }
             };
+            let pod_watch = match self.storage.watch(pod_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Failed to establish pod watch for DS controller: {}, retrying in {:?}", e, retry_interval);
+                    time::sleep(retry_interval).await;
+                    continue;
+                }
+            };
 
             let mut ds_watch = ds_watch;
             let mut node_watch = node_watch;
+            let mut pod_watch = pod_watch;
 
             // Periodic full resync as safety net (every 30s)
             let mut resync = tokio::time::interval(Duration::from_secs(30));
@@ -133,12 +146,48 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                             }
                         }
                     }
+                    event = pod_watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                // When a pod changes, enqueue the owning DaemonSet.
+                                self.enqueue_ds_for_pod_event(&ev, &queue).await;
+                            }
+                            Some(Err(e)) => {
+                                warn!("Pod watch error in DS controller: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("Pod watch stream ended in DS controller, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
                     _ = resync.tick() => {
                         self.enqueue_all(&queue).await;
                     }
                 }
             }
             // Watch broke — loop back to re-establish
+        }
+    }
+
+    /// When a pod changes, find its owning DaemonSet and enqueue it for reconciliation.
+    async fn enqueue_ds_for_pod_event(&self, event: &rusternetes_storage::WatchEvent, queue: &WorkQueue) {
+        let json_str = match event {
+            rusternetes_storage::WatchEvent::Added(_, v)
+            | rusternetes_storage::WatchEvent::Modified(_, v)
+            | rusternetes_storage::WatchEvent::Deleted(_, v) => v,
+        };
+        if let Ok(pod) = serde_json::from_str::<Pod>(json_str) {
+            if let Some(owner_refs) = &pod.metadata.owner_references {
+                for owner in owner_refs {
+                    if owner.kind == "DaemonSet" {
+                        let ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+                        let key = format!("daemonsets/{}/{}", ns, owner.name);
+                        queue.add(key).await;
+                    }
+                }
+            }
         }
     }
 
@@ -377,7 +426,6 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             .collect();
 
         let mut pods_by_node = std::collections::HashMap::new();
-        let mut nodes_with_deleted_terminal_pods = std::collections::HashSet::new();
         for pod in daemonset_pods.iter() {
             if let Some(node_name) = pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
                 // Check if pod is in a terminal phase (Failed or Succeeded)
@@ -389,7 +437,11 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                     .unwrap_or(false);
 
                 if is_terminal {
-                    // Delete failed/succeeded pods so they can be recreated
+                    // Delete failed/succeeded pods so they can be recreated.
+                    // K8s DS controller deletes failed pods and creates replacements
+                    // in the same sync cycle (the node won't be in pods_by_node,
+                    // so it will be treated as needing a new pod).
+                    // K8s ref: pkg/controller/daemon/daemon_controller.go — podsShouldBeOnNode
                     let pod_name = &pod.metadata.name;
                     let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
                     if let Err(e) = self.storage.delete(&pod_key).await {
@@ -404,9 +456,8 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                             pod_name
                         );
                     }
-                    // Track this node so we don't immediately recreate in this cycle
-                    // (allows the deletion to be observed by watchers before recreation)
-                    nodes_with_deleted_terminal_pods.insert(node_name.clone());
+                    // Don't add to pods_by_node — the node needs a new pod.
+                    // The replacement will be created in the same reconcile cycle below.
                 } else {
                     pods_by_node.insert(node_name.clone(), pod.clone());
                 }
@@ -469,7 +520,7 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             let needs_pod = !pods_by_node.contains_key(node_name)
                 || rolling_update_deleted_nodes.contains(node_name);
 
-            if needs_pod && !nodes_with_deleted_terminal_pods.contains(node_name) {
+            if needs_pod {
                 // Create pod for this node, ignore AlreadyExists (race / re-reconcile)
                 match self.create_pod(daemonset, node_name, namespace).await {
                     Ok(_) => {
@@ -1543,14 +1594,16 @@ mod tests {
             .await
             .unwrap();
 
-        // Reconcile again — should delete the failed pod but NOT recreate in this cycle
+        // Reconcile again — should delete the failed pod AND recreate in the same cycle.
+        // K8s DS controller deletes failed pods and creates replacements immediately.
+        // K8s ref: pkg/controller/daemon/daemon_controller.go — podsShouldBeOnNode
         controller.reconcile(&mut ds).await.unwrap();
 
         // The failed pod should be gone
         let result: rusternetes_common::Result<Pod> = storage.get(&pod_key).await;
         assert!(result.is_err(), "Failed pod should have been deleted");
 
-        // But no new pod should be created in this reconcile cycle
+        // A replacement pod should already exist (created in the same cycle)
         let pods_after: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
         let ds_pods_after: Vec<&Pod> = pods_after
             .iter()
@@ -1563,30 +1616,8 @@ mod tests {
             .collect();
         assert_eq!(
             ds_pods_after.len(),
-            0,
-            "No DS pods should exist after terminal pod deletion in same cycle"
-        );
-
-        // Next reconcile should create a new pod
-        let mut ds: DaemonSet = storage
-            .get("/registry/daemonsets/default/fail-ds")
-            .await
-            .unwrap();
-        controller.reconcile(&mut ds).await.unwrap();
-        let pods_next: Vec<Pod> = storage.list("/registry/pods/default/").await.unwrap();
-        let ds_pods_next: Vec<&Pod> = pods_next
-            .iter()
-            .filter(|p| {
-                p.metadata
-                    .owner_references
-                    .as_ref()
-                    .map_or(false, |refs| refs.iter().any(|r| r.name == "fail-ds"))
-            })
-            .collect();
-        assert_eq!(
-            ds_pods_next.len(),
             1,
-            "A new DS pod should be created in the next cycle"
+            "A replacement DS pod should be created in the same cycle as deletion"
         );
     }
 

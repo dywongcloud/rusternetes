@@ -646,8 +646,10 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
             // CAS conflict — re-read and retry once to ensure condition updates persist
             debug!("RC status update CAS conflict, retrying: {}", e);
             if let Ok(mut fresh_rc) = self.storage.get::<ReplicationController>(&key).await {
-                fresh_rc.status = Some(new_status_clone);
-                let _ = self.storage.update(&key, &fresh_rc).await;
+                if fresh_rc.status.as_ref() != Some(&new_status_clone) {
+                    fresh_rc.status = Some(new_status_clone);
+                    let _ = self.storage.update(&key, &fresh_rc).await;
+                }
             }
         }
 

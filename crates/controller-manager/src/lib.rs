@@ -3,6 +3,7 @@ pub mod controllers;
 pub use controllers::*;
 
 use controllers::{
+    apiservice::APIServiceAvailabilityController,
     certificate_signing_request::CertificateSigningRequestController, crd::CRDController,
     cronjob::CronJobController, daemonset::DaemonSetController, deployment::DeploymentController,
     dynamic_provisioner::DynamicProvisionerController, endpoints::EndpointsController,
@@ -216,6 +217,12 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
     tokio::spawn(async move {
         let c = Arc::new(NodeController::new(s));
         if let Err(e) = c.run().await { error!("Node controller error: {}", e); }
+    });
+
+    let s = storage.clone();
+    tokio::spawn(async move {
+        let c = APIServiceAvailabilityController::new(s);
+        if let Err(e) = c.run().await { error!("APIService availability controller error: {}", e); }
     });
 
     info!("All controllers started successfully");

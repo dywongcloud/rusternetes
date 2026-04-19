@@ -3,6 +3,7 @@ mod controllers;
 use anyhow::Result;
 use clap::Parser;
 use controllers::{
+    apiservice::APIServiceAvailabilityController,
     certificate_signing_request::CertificateSigningRequestController, crd::CRDController,
     cronjob::CronJobController, daemonset::DaemonSetController, deployment::DeploymentController,
     dynamic_provisioner::DynamicProvisionerController, endpoints::EndpointsController,
@@ -574,6 +575,17 @@ async fn main() -> Result<()> {
         async move {
             if let Err(e) = controller.run().await {
                 tracing::error!("Node controller error: {}", e);
+            }
+        }
+    });
+
+    // Start APIService availability controller
+    let apiservice_controller = Arc::new(APIServiceAvailabilityController::new(storage.clone()));
+    spawn_controller!("APIService availability controller", leader_elector, {
+        let controller = apiservice_controller.clone();
+        async move {
+            if let Err(e) = controller.run().await {
+                tracing::error!("APIService availability controller error: {}", e);
             }
         }
     });
