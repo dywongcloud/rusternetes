@@ -782,6 +782,13 @@ impl<S: Storage + 'static> StatefulSetController<S> {
             current_revision.clone()
         };
 
+        // Preserve existing conditions of unknown types — the StatefulSet controller
+        // doesn't manage any condition types itself, so keep ALL existing conditions.
+        // This prevents overwriting conditions set via PUT /status (e.g. "StatusUpdate"
+        // condition from conformance tests).
+        let existing_conditions = statefulset.status.as_ref()
+            .and_then(|s| s.conditions.clone());
+
         // Update status with accurate counts
         // current_replicas = pods matching currentRevision (K8s semantics)
         // updated_replicas = pods matching updateRevision
@@ -801,7 +808,7 @@ impl<S: Storage + 'static> StatefulSetController<S> {
             observed_generation: statefulset.metadata.generation,
             current_revision: Some(final_current_revision),
             update_revision: Some(update_revision),
-            conditions: None,
+            conditions: existing_conditions,
         });
 
         // Only write status if it actually changed to avoid unnecessary storage writes

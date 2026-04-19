@@ -580,65 +580,73 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
         let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
         let key = build_key("replicationcontrollers", Some(namespace), &rc.metadata.name);
 
-        let conditions = if let Some(msg) = failure_message {
-            // Only set ReplicaFailure when there's an actual failure message
-            // (quota exceeded, pod creation failed, etc.)
-            Some(vec![ReplicationControllerCondition {
-                condition_type: "ReplicaFailure".to_string(),
-                status: "True".to_string(),
-                last_transition_time: Some(Utc::now()),
-                reason: Some("FailedCreate".to_string()),
-                message: Some(msg.to_string()),
-            }])
-        } else {
-            // Clear ReplicaFailure condition when no creation failure.
-            // K8s removes the ReplicaFailure condition once pods can be
-            // created successfully again. Preserve other conditions.
-            let existing = rc
-                .status
-                .as_ref()
-                .and_then(|s| s.conditions.as_ref())
-                .cloned()
-                .unwrap_or_default();
-            let filtered: Vec<_> = existing
-                .into_iter()
-                .filter(|c| c.condition_type != "ReplicaFailure")
-                .collect();
-            if filtered.is_empty() {
-                None
-            } else {
-                Some(filtered)
-            }
-        };
-
         // Re-read from storage for fresh resourceVersion to avoid CAS conflicts
         let mut updated_rc: ReplicationController = match self.storage.get(&key).await {
             Ok(rc) => rc,
             Err(_) => rc.clone(),
         };
-        let conditions_clone = conditions.clone();
-        updated_rc.status = Some(rusternetes_common::resources::ReplicationControllerStatus {
+
+        // Build conditions: preserve existing conditions of unknown types,
+        // only manage "ReplicaFailure" condition type
+        let existing_conditions = updated_rc
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .cloned()
+            .unwrap_or_default();
+
+        // Keep all conditions that are NOT managed by this controller
+        let mut conditions: Vec<_> = existing_conditions
+            .into_iter()
+            .filter(|c| c.condition_type != "ReplicaFailure")
+            .collect();
+
+        if let Some(msg) = failure_message {
+            // Add ReplicaFailure when there's an actual failure message
+            // (quota exceeded, pod creation failed, etc.)
+            conditions.push(ReplicationControllerCondition {
+                condition_type: "ReplicaFailure".to_string(),
+                status: "True".to_string(),
+                last_transition_time: Some(Utc::now()),
+                reason: Some("FailedCreate".to_string()),
+                message: Some(msg.to_string()),
+            });
+        }
+        // else: ReplicaFailure already filtered out above, clearing it
+
+        let final_conditions = if conditions.is_empty() {
+            None
+        } else {
+            Some(conditions)
+        };
+
+        let new_status = rusternetes_common::resources::ReplicationControllerStatus {
             replicas: current_replicas,
             fully_labeled_replicas: Some(current_replicas),
             ready_replicas: Some(ready_replicas),
             available_replicas: Some(ready_replicas),
             observed_generation: updated_rc.metadata.generation,
-            conditions,
-        });
+            conditions: final_conditions,
+        };
+
+        // Only write if status actually changed to avoid unnecessary storage writes
+        // that increment resourceVersion and cause conflicts for concurrent clients
+        if updated_rc.status.as_ref() == Some(&new_status) {
+            debug!(
+                "Status unchanged for replicationcontroller {}/{}, skipping write",
+                namespace, rc.metadata.name
+            );
+            return Ok(());
+        }
+
+        let new_status_clone = new_status.clone();
+        updated_rc.status = Some(new_status);
 
         if let Err(e) = self.storage.update(&key, &updated_rc).await {
             // CAS conflict — re-read and retry once to ensure condition updates persist
             debug!("RC status update CAS conflict, retrying: {}", e);
             if let Ok(mut fresh_rc) = self.storage.get::<ReplicationController>(&key).await {
-                fresh_rc.status =
-                    Some(rusternetes_common::resources::ReplicationControllerStatus {
-                        replicas: current_replicas,
-                        fully_labeled_replicas: Some(current_replicas),
-                        ready_replicas: Some(ready_replicas),
-                        available_replicas: Some(ready_replicas),
-                        observed_generation: fresh_rc.metadata.generation,
-                        conditions: conditions_clone,
-                    });
+                fresh_rc.status = Some(new_status_clone);
                 let _ = self.storage.update(&key, &fresh_rc).await;
             }
         }
