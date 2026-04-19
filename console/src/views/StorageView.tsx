@@ -203,7 +203,7 @@ function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
       } as unknown as K8sResource);
       setSuccess(`StorageClass "${name}" created`);
       setName("");
-      setTimeout(() => onCreated(), 1500);
+      setTimeout(() => onCreated(), 3000);
     } catch (err) {
       const errObj = err as { message?: string };
       setError(errObj.message ?? String(err));
@@ -267,7 +267,7 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (!name) {
       setError("Name is required");
       return;
@@ -275,40 +275,57 @@ function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
     setCreating(true);
     setError(null);
     setSuccess(null);
-    try {
-      const pvc: Record<string, unknown> = {
-        apiVersion: "v1",
-        kind: "PersistentVolumeClaim",
-        metadata: { name, namespace },
-        spec: {
-          accessModes: [accessMode],
-          resources: { requests: { storage: size } },
-        },
-      };
-      if (storageClass) {
-        (pvc.spec as Record<string, unknown>).storageClassName = storageClass;
-      }
-      await k8sCreate(buildApiPath("", "v1", "persistentvolumeclaims", namespace), pvc as K8sResource);
-      setSuccess(`PVC "${name}" created in ${namespace}`);
-      setName("");
-      setTimeout(() => onCreated(), 1500);
-    } catch (err) {
-      const errObj = err as { message?: string };
-      setError(errObj.message ?? String(err));
-    } finally {
-      setCreating(false);
-    }
+
+    const body = JSON.stringify({
+      apiVersion: "v1",
+      kind: "PersistentVolumeClaim",
+      metadata: { name, namespace },
+      spec: {
+        accessModes: [accessMode],
+        resources: { requests: { storage: size } },
+        ...(storageClass ? { storageClassName: storageClass } : {}),
+      },
+    });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    const token = sessionStorage.getItem("rusternetes-token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    fetch(`/api/v1/namespaces/${namespace}/persistentvolumeclaims`, {
+      method: "POST",
+      headers,
+      body,
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          setSuccess(`PVC "${name}" created in ${namespace}`);
+          setName("");
+          setTimeout(() => onCreated(), 3000);
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setError(data.message ?? `HTTP ${res.status}: ${res.statusText}`);
+        }
+      })
+      .catch((err) => {
+        setError(`Network error: ${err.message ?? err}`);
+      })
+      .finally(() => {
+        setCreating(false);
+      });
   };
 
   return (
     <div className="space-y-3">
       {error && (
-        <div className="rounded-md border border-container-red/30 bg-container-red/5 px-3 py-2 text-xs text-container-red">
-          {error}
+        <div className="rounded-md border border-container-red/30 bg-container-red/10 px-4 py-3 text-sm text-container-red">
+          Failed: {error}
         </div>
       )}
       {success && (
-        <div className="rounded-md border border-walle-eye/30 bg-walle-eye/5 px-3 py-2 text-xs text-walle-eye">
+        <div className="rounded-md border-2 border-walle-eye/50 bg-walle-eye/10 px-4 py-3 text-sm font-medium text-walle-eye">
           {success}
         </div>
       )}
