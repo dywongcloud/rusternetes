@@ -360,15 +360,20 @@ function QuickCreatePVC({ onCreated }: { onCreated: (msg: string) => void }) {
           </select>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => { handleCreate(); }}
-        disabled={creating || !name}
-        className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50"
-      >
-        <Plus size={14} />
-        {creating ? "Creating..." : "Create PVC"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => { handleCreate(); }}
+          disabled={creating}
+          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50"
+        >
+          <Plus size={14} />
+          {creating ? "Creating..." : "Create PVC"}
+        </button>
+        {!name && (
+          <span className="text-xs text-walle-yellow">Enter a name to create</span>
+        )}
+      </div>
     </div>
   );
 }
