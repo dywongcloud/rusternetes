@@ -570,6 +570,10 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             })
             .count() as i32;
 
+        // Preserve existing conditions from current status (merge pattern)
+        let existing_conditions = daemonset.status.as_ref()
+            .and_then(|s| s.conditions.clone());
+
         let new_status = Some(DaemonSetStatus {
             desired_number_scheduled,
             current_number_scheduled,
@@ -580,7 +584,7 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             updated_number_scheduled: Some(updated_count),
             observed_generation: daemonset.metadata.generation,
             collision_count: None,
-            conditions: None,
+            conditions: existing_conditions,
         });
 
         // Only write status if it actually changed to avoid unnecessary storage writes

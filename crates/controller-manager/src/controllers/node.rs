@@ -4,6 +4,7 @@ use futures::StreamExt;
 use rusternetes_common::resources::{Node, NodeCondition, NodeStatus, Pod, PodStatus};
 use rusternetes_common::types::Phase;
 use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -17,14 +18,19 @@ use tracing::{debug, error, info, warn};
 /// 5. Update node status
 const NODE_MONITOR_GRACE_PERIOD_SECONDS: i64 = 40;
 const POD_EVICTION_TIMEOUT_SECONDS: i64 = 300; // 5 minutes
+const NODE_STARTUP_GRACE_PERIOD_SECS: u64 = 60;
 
 pub struct NodeController<S: Storage> {
     storage: Arc<S>,
+    first_seen: Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
 }
 
 impl<S: Storage + 'static> NodeController<S> {
     pub fn new(storage: Arc<S>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            first_seen: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        }
     }
 
     /// Watch-based run loop. Performs an initial full reconciliation, then watches
@@ -140,6 +146,16 @@ impl<S: Storage + 'static> NodeController<S> {
     async fn reconcile_node(&self, node: &Node) -> Result<()> {
         let node_name = &node.metadata.name;
 
+        // Don't change node conditions during startup grace period (K8s: nodeStartupGracePeriod = 60s)
+        let first_seen_time = {
+            let mut first_seen = self.first_seen.lock().unwrap();
+            *first_seen.entry(node_name.clone()).or_insert_with(std::time::Instant::now)
+        };
+        if first_seen_time.elapsed() < std::time::Duration::from_secs(NODE_STARTUP_GRACE_PERIOD_SECS) {
+            // Node is still in startup grace period — don't modify its conditions
+            return Ok(());
+        }
+
         // Check if node is ready based on heartbeat AND Lease
         let is_ready = self.is_node_ready_async(node).await;
 
@@ -162,12 +178,16 @@ impl<S: Storage + 'static> NodeController<S> {
             info!("Node {} ready status changed to: {}", node_name, is_ready);
             self.update_node_status(node, is_ready).await?;
 
-            // If node became NotReady, start eviction timer
+            // Manage not-ready/unreachable taints (K8s node lifecycle controller pattern)
             if !is_ready {
                 info!(
-                    "Node {} is NotReady, will evict pods after timeout",
+                    "Node {} is NotReady, adding not-ready taint and will evict pods after timeout",
                     node_name
                 );
+                self.add_not_ready_taint(node).await?;
+            } else {
+                // Node became Ready — remove not-ready taint
+                self.remove_not_ready_taint(node).await?;
             }
         }
 
@@ -385,6 +405,60 @@ impl<S: Storage + 'static> NodeController<S> {
         self.storage.update(&node_key, &updated_node).await?;
 
         info!("Updated node {} status to ready={}", node_name, is_ready);
+        Ok(())
+    }
+
+    /// Add not-ready and unreachable taints to a NotReady node.
+    /// K8s node lifecycle controller adds these taints so that:
+    /// 1. New pods aren't scheduled on NotReady nodes (NoSchedule)
+    /// 2. The conformance framework can distinguish real vs fake/dead nodes
+    async fn add_not_ready_taint(&self, node: &Node) -> Result<()> {
+        let node_name = &node.metadata.name;
+        let key = build_key("nodes", None, node_name);
+        let mut updated_node: Node = self.storage.get(&key).await?;
+
+        let not_ready_taint = rusternetes_common::resources::node::Taint {
+            key: "node.kubernetes.io/not-ready".to_string(),
+            value: Some("".to_string()),
+            effect: "NoSchedule".to_string(),
+            time_added: None,
+        };
+
+        let spec = updated_node.spec.get_or_insert_with(|| rusternetes_common::resources::NodeSpec {
+            pod_cidr: None,
+            pod_cidrs: None,
+            provider_id: None,
+            unschedulable: None,
+            taints: None,
+        });
+        let taints = spec.taints.get_or_insert_with(Vec::new);
+        if !taints.iter().any(|t| t.key == not_ready_taint.key) {
+            taints.push(not_ready_taint);
+            self.storage.update(&key, &updated_node).await?;
+            debug!("Added not-ready taint to node {}", node_name);
+        }
+        Ok(())
+    }
+
+    /// Remove not-ready taint from a node that became Ready.
+    async fn remove_not_ready_taint(&self, node: &Node) -> Result<()> {
+        let node_name = &node.metadata.name;
+        let key = build_key("nodes", None, node_name);
+        let mut updated_node: Node = self.storage.get(&key).await?;
+
+        if let Some(ref mut spec) = updated_node.spec {
+            if let Some(ref mut taints) = spec.taints {
+                let before = taints.len();
+                taints.retain(|t| t.key != "node.kubernetes.io/not-ready");
+                if taints.len() < before {
+                    if taints.is_empty() {
+                        spec.taints = None;
+                    }
+                    self.storage.update(&key, &updated_node).await?;
+                    debug!("Removed not-ready taint from node {}", node_name);
+                }
+            }
+        }
         Ok(())
     }
 

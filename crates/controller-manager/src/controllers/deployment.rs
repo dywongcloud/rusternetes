@@ -1121,8 +1121,13 @@ impl<S: Storage + 'static> DeploymentController<S> {
             0
         };
 
-        // Build status conditions
-        let mut conditions = Vec::new();
+        // Build status conditions — merge with existing, preserving unknown types
+        let mut conditions = deployment.status.as_ref()
+            .and_then(|s| s.conditions.clone())
+            .unwrap_or_default();
+
+        // Remove only the types we manage, then add our computed ones
+        conditions.retain(|c| c.condition_type != "Available" && c.condition_type != "Progressing" && c.condition_type != "ReplicaFailure");
 
         // Available condition
         if available_replicas >= desired_replicas {

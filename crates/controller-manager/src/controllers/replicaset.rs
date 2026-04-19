@@ -506,6 +506,20 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
             return false;
         }
 
+        // Pod must be Running (not just Ready)
+        let is_running = matches!(
+            pod.status.as_ref().and_then(|s| s.phase.as_ref()),
+            Some(Phase::Running)
+        );
+        if !is_running {
+            return false;
+        }
+
+        // Pod must not be terminating
+        if pod.metadata.deletion_timestamp.is_some() {
+            return false;
+        }
+
         // Check if pod has been ready for minReadySeconds
         let min_ready_seconds = replicaset.spec.min_ready_seconds.unwrap_or(0);
         if min_ready_seconds > 0 {
