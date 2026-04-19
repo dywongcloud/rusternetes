@@ -1,10 +1,23 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useK8sList } from "../hooks/useK8sList";
 import { useK8sWatch } from "../hooks/useK8sWatch";
 import { useUIStore } from "../store/uiStore";
 import { StatusBadge } from "../components/StatusBadge";
+import { k8sCreate, k8sDelete, buildApiPath } from "../engine/query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { K8sResource } from "../engine/types";
-import { HardDrive, Eye, Database, ArrowRight } from "lucide-react";
+import {
+  HardDrive,
+  Eye,
+  Trash2,
+  Database,
+  ArrowRight,
+  Plus,
+  FolderOpen,
+  Layers,
+  Info,
+} from "lucide-react";
 
 interface PVC extends K8sResource {
   spec: { accessModes?: string[]; resources?: { requests?: Record<string, string> }; storageClassName?: string; volumeName?: string };
@@ -20,30 +33,337 @@ interface SC extends K8sResource {
   provisioner?: string;
   reclaimPolicy?: string;
   volumeBindingMode?: string;
+  allowVolumeExpansion?: boolean;
+  parameters?: Record<string, string>;
 }
 
-/** PVC card with capacity bar and binding info. */
+// --- Storage Overview Panel ---
+
+function StorageOverviewPanel({
+  pvcs,
+  pvs,
+  scs,
+  csiDriverCount,
+  volumeAttachmentCount,
+}: {
+  pvcs: PVC[];
+  pvs: PV[];
+  scs: SC[];
+  csiDriverCount: number;
+  volumeAttachmentCount: number;
+}) {
+  const totalCapacity = pvs.reduce((sum, pv) => {
+    const cap = pv.spec.capacity?.["storage"] ?? "0";
+    if (cap.endsWith("Gi")) return sum + parseInt(cap);
+    if (cap.endsWith("Mi")) return sum + parseInt(cap) / 1024;
+    if (cap.endsWith("Ti")) return sum + parseInt(cap) * 1024;
+    return sum;
+  }, 0);
+
+  const boundPVCs = pvcs.filter((p) => p.status?.phase === "Bound").length;
+  const availablePVs = pvs.filter((p) => p.status?.phase === "Available").length;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+        <div className="flex items-center gap-2 text-[#a89880]">
+          <FolderOpen size={14} className="text-container-blue" />
+          <span className="text-xs font-medium uppercase tracking-wider">Claims</span>
+        </div>
+        <div className="mt-2">
+          <span className="font-retro text-xl text-[#e8ddd0]">{pvcs.length}</span>
+          {pvcs.length > 0 && (
+            <span className="ml-2 text-xs text-walle-eye">{boundPVCs} bound</span>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+        <div className="flex items-center gap-2 text-[#a89880]">
+          <HardDrive size={14} className="text-walle-eye" />
+          <span className="text-xs font-medium uppercase tracking-wider">Volumes</span>
+        </div>
+        <div className="mt-2">
+          <span className="font-retro text-xl text-[#e8ddd0]">{pvs.length}</span>
+          {pvs.length > 0 && (
+            <span className="ml-2 text-xs text-container-teal">{availablePVs} available</span>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+        <div className="flex items-center gap-2 text-[#a89880]">
+          <Database size={14} className="text-accent" />
+          <span className="text-xs font-medium uppercase tracking-wider">Classes</span>
+        </div>
+        <div className="mt-2">
+          <span className="font-retro text-xl text-[#e8ddd0]">{scs.length}</span>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+        <div className="flex items-center gap-2 text-[#a89880]">
+          <Layers size={14} className="text-walle-yellow" />
+          <span className="text-xs font-medium uppercase tracking-wider">CSI Drivers</span>
+        </div>
+        <div className="mt-2">
+          <span className="font-retro text-xl text-[#e8ddd0]">{csiDriverCount}</span>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+        <div className="flex items-center gap-2 text-[#a89880]">
+          <HardDrive size={14} className="text-container-teal" />
+          <span className="text-xs font-medium uppercase tracking-wider">Capacity</span>
+        </div>
+        <div className="mt-2">
+          <span className="font-retro text-xl text-[#e8ddd0]">
+            {totalCapacity > 0 ? `${totalCapacity.toFixed(1)}Gi` : "0"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Storage capabilities info ---
+
+function StorageCapabilities({ scs }: { scs: SC[] }) {
+  return (
+    <div className="rounded-lg border border-surface-3 bg-surface-1 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Info size={14} className="text-container-blue" />
+        <h3 className="text-xs font-medium uppercase tracking-wider text-[#a89880]">
+          Storage Capabilities
+        </h3>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-md bg-surface-2 p-3">
+          <div className="text-xs font-medium text-[#e8ddd0]">Supported Volume Types</div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {["emptyDir", "hostPath", "configMap", "secret", "projected", "downwardAPI", "persistentVolumeClaim"].map((t) => (
+              <span key={t} className="rounded bg-walle-eye/10 px-1.5 py-0.5 text-[9px] text-walle-eye">{t}</span>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-md bg-surface-2 p-3">
+          <div className="text-xs font-medium text-[#e8ddd0]">Access Modes</div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {[
+              { mode: "ReadWriteOnce", short: "RWO", desc: "single node" },
+              { mode: "ReadOnlyMany", short: "ROX", desc: "many nodes read" },
+              { mode: "ReadWriteMany", short: "RWX", desc: "many nodes write" },
+            ].map((m) => (
+              <span key={m.mode} className="rounded bg-container-blue/10 px-1.5 py-0.5 text-[9px] text-container-blue">
+                {m.short} ({m.desc})
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-md bg-surface-2 p-3">
+          <div className="text-xs font-medium text-[#e8ddd0]">Reclaim Policies</div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {["Delete", "Retain", "Recycle"].map((p) => (
+              <span key={p} className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] text-accent">{p}</span>
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] text-[#a89880]">
+            Dynamic provisioning: {scs.length > 0 ? "enabled" : "no StorageClasses configured"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Quick create forms ---
+
+function QuickCreateStorageClass({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [provisioner, setProvisioner] = useState("kubernetes.io/no-provisioner");
+  const [reclaimPolicy, setReclaimPolicy] = useState("Delete");
+  const [bindingMode, setBindingMode] = useState("WaitForFirstConsumer");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    if (!name) return;
+    setCreating(true);
+    setError(null);
+    try {
+      await k8sCreate(buildApiPath("storage.k8s.io", "v1", "storageclasses"), {
+        apiVersion: "storage.k8s.io/v1",
+        kind: "StorageClass",
+        metadata: { name },
+        provisioner,
+        reclaimPolicy,
+        volumeBindingMode: bindingMode,
+      });
+      setName("");
+      onCreated();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {error && <div className="rounded-md border border-container-red/30 bg-container-red/5 px-3 py-2 text-xs text-container-red">{error}</div>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Name</label>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="standard"
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Provisioner</label>
+          <select value={provisioner} onChange={(e) => setProvisioner(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent">
+            <option value="kubernetes.io/no-provisioner">No provisioner (manual)</option>
+            <option value="rancher.io/local-path">Local path</option>
+            <option value="kubernetes.io/host-path">Host path</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Reclaim Policy</label>
+          <select value={reclaimPolicy} onChange={(e) => setReclaimPolicy(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent">
+            <option value="Delete">Delete</option>
+            <option value="Retain">Retain</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Volume Binding Mode</label>
+          <select value={bindingMode} onChange={(e) => setBindingMode(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent">
+            <option value="WaitForFirstConsumer">Wait for first consumer</option>
+            <option value="Immediate">Immediate</option>
+          </select>
+        </div>
+      </div>
+      <button onClick={handleCreate} disabled={creating || !name}
+        className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50">
+        <Plus size={14} />
+        {creating ? "Creating..." : "Create StorageClass"}
+      </button>
+    </div>
+  );
+}
+
+function QuickCreatePVC({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [namespace, setNamespace] = useState("default");
+  const [size, setSize] = useState("1Gi");
+  const [accessMode, setAccessMode] = useState("ReadWriteOnce");
+  const [storageClass, setStorageClass] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    if (!name) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const pvc: Record<string, unknown> = {
+        apiVersion: "v1",
+        kind: "PersistentVolumeClaim",
+        metadata: { name, namespace },
+        spec: {
+          accessModes: [accessMode],
+          resources: { requests: { storage: size } },
+        },
+      };
+      if (storageClass) {
+        (pvc.spec as Record<string, unknown>).storageClassName = storageClass;
+      }
+      await k8sCreate(buildApiPath("", "v1", "persistentvolumeclaims", namespace), pvc);
+      setName("");
+      onCreated();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {error && <div className="rounded-md border border-container-red/30 bg-container-red/5 px-3 py-2 text-xs text-container-red">{error}</div>}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Name</label>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-data"
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Namespace</label>
+          <input type="text" value={namespace} onChange={(e) => setNamespace(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Size</label>
+          <select value={size} onChange={(e) => setSize(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent">
+            <option value="1Gi">1 Gi</option>
+            <option value="5Gi">5 Gi</option>
+            <option value="10Gi">10 Gi</option>
+            <option value="50Gi">50 Gi</option>
+            <option value="100Gi">100 Gi</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] text-[#a89880]">Access Mode</label>
+          <select value={accessMode} onChange={(e) => setAccessMode(e.target.value)}
+            className="w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-[#e8ddd0] outline-none focus:border-accent">
+            <option value="ReadWriteOnce">ReadWriteOnce (RWO)</option>
+            <option value="ReadOnlyMany">ReadOnlyMany (ROX)</option>
+            <option value="ReadWriteMany">ReadWriteMany (RWX)</option>
+          </select>
+        </div>
+      </div>
+      <button onClick={handleCreate} disabled={creating || !name}
+        className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover disabled:opacity-50">
+        <Plus size={14} />
+        {creating ? "Creating..." : "Create PVC"}
+      </button>
+    </div>
+  );
+}
+
+// --- PVC card ---
+
 function PVCCard({ pvc }: { pvc: PVC }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const requested = pvc.spec.resources?.requests?.["storage"] ?? "-";
   const actual = pvc.status?.capacity?.["storage"];
-  const phase = pvc.status?.phase ?? "Unknown";
+  const phase = pvc.status?.phase ?? "Pending";
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete PVC "${pvc.metadata.name}"?`)) return;
+    await k8sDelete(buildApiPath("", "v1", "persistentvolumeclaims", pvc.metadata.namespace, pvc.metadata.name));
+    queryClient.invalidateQueries({ queryKey: ["k8s", "list", "", "v1", "persistentvolumeclaims"] });
+  };
 
   return (
     <div className="rounded-lg border border-surface-3 bg-surface-1 p-4 transition-colors hover:border-accent/20">
       <div className="flex items-start justify-between">
         <button
-          onClick={() =>
-            navigate(`/resources/${encodeURIComponent("core/v1/persistentvolumeclaims")}/${pvc.metadata.namespace}/${pvc.metadata.name}`)
-          }
+          onClick={() => navigate(`/resources/${encodeURIComponent("core/v1/persistentvolumeclaims")}/${pvc.metadata.namespace}/${pvc.metadata.name}`)}
           className="text-left"
         >
           <div className="font-mono text-sm text-[#e8ddd0] hover:text-rust-light">{pvc.metadata.name}</div>
           <div className="text-xs text-[#a89880]">{pvc.metadata.namespace}</div>
         </button>
-        <StatusBadge status={phase} />
+        <div className="flex items-center gap-1">
+          <StatusBadge status={phase} />
+          <button onClick={handleDelete} className="rounded p-1 text-[#a89880] hover:bg-surface-3 hover:text-container-red">
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
-
       <div className="mt-3 space-y-1.5 text-[10px]">
         <div className="flex justify-between">
           <span className="text-[#a89880]">Requested</span>
@@ -75,93 +395,178 @@ function PVCCard({ pvc }: { pvc: PVC }) {
   );
 }
 
+// --- Main view ---
+
 export function StorageView() {
   const ns = useUIStore((s) => s.selectedNamespace);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [showCreateSC, setShowCreateSC] = useState(false);
+  const [showCreatePVC, setShowCreatePVC] = useState(false);
 
-  const { data: pvcsData, isLoading: pvcsLoading } = useK8sList<PVC>("", "v1", "persistentvolumeclaims", ns || undefined);
+  const { data: pvcsData, isLoading } = useK8sList<PVC>("", "v1", "persistentvolumeclaims", ns || undefined);
   const { data: pvsData } = useK8sList<PV>("", "v1", "persistentvolumes");
   const { data: scsData } = useK8sList<SC>("storage.k8s.io", "v1", "storageclasses");
+  const { data: csiData } = useK8sList<K8sResource>("storage.k8s.io", "v1", "csidrivers");
+  const { data: vaData } = useK8sList<K8sResource>("storage.k8s.io", "v1", "volumeattachments");
 
   useK8sWatch("", "v1", "persistentvolumeclaims", ns || undefined);
+  useK8sWatch("storage.k8s.io", "v1", "storageclasses");
 
   const pvcs = pvcsData?.items ?? [];
   const pvs = pvsData?.items ?? [];
   const scs = scsData?.items ?? [];
 
-  if (pvcsLoading) {
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["k8s"] });
+  };
+
+  if (isLoading) {
     return <div className="flex items-center justify-center py-16 text-[#a89880]">Loading storage...</div>;
   }
 
-  // Zero state
-  if (pvcs.length === 0 && pvs.length === 0 && scs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <HardDrive size={48} className="mb-4 text-[#5a4a3a]" />
-        <h2 className="font-retro text-xl text-walle-yellow">No storage resources</h2>
-        <p className="mt-2 text-sm text-[#a89880]">Create PersistentVolumeClaims to provision storage</p>
-      </div>
-    );
-  }
-
-  const boundPVCs = pvcs.filter((p) => p.status?.phase === "Bound").length;
-  const availablePVs = pvs.filter((p) => p.status?.phase === "Available").length;
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-retro text-2xl text-walle-yellow">Storage</h1>
-        <p className="text-sm text-[#a89880]">
-          {pvcs.length} PVCs ({boundPVCs} bound) &middot; {pvs.length} PVs ({availablePVs} available) &middot; {scs.length} storage classes
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-retro text-2xl text-walle-yellow">Storage</h1>
+          <p className="text-sm text-[#a89880]">
+            Manage persistent storage, volume claims, and storage classes
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowCreatePVC(!showCreatePVC); setShowCreateSC(false); }}
+            className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-surface-0 hover:bg-accent-hover"
+          >
+            <Plus size={14} />
+            Create PVC
+          </button>
+          <button
+            onClick={() => { setShowCreateSC(!showCreateSC); setShowCreatePVC(false); }}
+            className="flex items-center gap-1.5 rounded-md border border-surface-3 px-3 py-1.5 text-xs text-[#a89880] hover:border-accent/30 hover:text-accent"
+          >
+            <Plus size={14} />
+            StorageClass
+          </button>
+        </div>
       </div>
 
+      {/* Create forms */}
+      {showCreateSC && (
+        <div className="rounded-lg border border-accent/20 bg-surface-1 p-4">
+          <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">Create StorageClass</h3>
+          <QuickCreateStorageClass onCreated={() => { setShowCreateSC(false); invalidateAll(); }} />
+        </div>
+      )}
+      {showCreatePVC && (
+        <div className="rounded-lg border border-accent/20 bg-surface-1 p-4">
+          <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">Create PersistentVolumeClaim</h3>
+          <QuickCreatePVC onCreated={() => { setShowCreatePVC(false); invalidateAll(); }} />
+        </div>
+      )}
+
+      {/* Overview stats */}
+      <StorageOverviewPanel
+        pvcs={pvcs}
+        pvs={pvs}
+        scs={scs}
+        csiDriverCount={csiData?.items?.length ?? 0}
+        volumeAttachmentCount={vaData?.items?.length ?? 0}
+      />
+
+      {/* Storage capabilities */}
+      <StorageCapabilities scs={scs} />
+
       {/* Storage Classes */}
-      {scs.length > 0 && (
-        <div>
-          <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">Storage Classes</h3>
-          <div className="flex flex-wrap gap-2">
+      <div>
+        <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">
+          Storage Classes ({scs.length})
+        </h3>
+        {scs.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {scs.map((sc) => (
               <button
-                key={sc.metadata.uid}
-                onClick={() =>
-                  navigate(`/resources/${encodeURIComponent("storage.k8s.io/v1/storageclasses")}/${sc.metadata.name}`)
-                }
-                className="flex items-center gap-2 rounded-lg border border-surface-3 bg-surface-1 px-3 py-2 hover:border-accent/20"
+                key={sc.metadata.uid ?? sc.metadata.name}
+                onClick={() => navigate(`/resources/${encodeURIComponent("storage.k8s.io/v1/storageclasses")}/${sc.metadata.name}`)}
+                className="rounded-lg border border-surface-3 bg-surface-1 p-4 text-left hover:border-accent/20"
               >
-                <Database size={14} className="text-container-teal" />
-                <div className="text-left">
-                  <div className="font-mono text-xs text-[#e8ddd0]">{sc.metadata.name}</div>
-                  <div className="text-[9px] text-[#a89880]">
-                    {sc.provisioner ?? "unknown"} &middot; {sc.reclaimPolicy ?? "Delete"}
+                <div className="flex items-center gap-2">
+                  <Database size={16} className="text-accent" />
+                  <div>
+                    <div className="font-mono text-sm text-[#e8ddd0]">{sc.metadata.name}</div>
+                    <div className="text-[10px] text-[#a89880]">{sc.provisioner ?? "unknown provisioner"}</div>
                   </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] text-accent">
+                    {sc.reclaimPolicy ?? "Delete"}
+                  </span>
+                  <span className="rounded bg-container-blue/10 px-1.5 py-0.5 text-[9px] text-container-blue">
+                    {sc.volumeBindingMode ?? "Immediate"}
+                  </span>
+                  {sc.allowVolumeExpansion && (
+                    <span className="rounded bg-walle-eye/10 px-1.5 py-0.5 text-[9px] text-walle-eye">
+                      expandable
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-dashed border-surface-3 bg-surface-1 p-6 text-center">
+            <Database size={24} className="mx-auto mb-2 text-[#5a4a3a]" />
+            <div className="text-sm text-[#a89880]">No StorageClasses configured</div>
+            <div className="mt-1 text-xs text-[#5a4a3a]">
+              Create a StorageClass to enable dynamic volume provisioning
+            </div>
+            <button
+              onClick={() => setShowCreateSC(true)}
+              className="mt-3 flex items-center gap-1.5 mx-auto rounded-md border border-accent/30 px-3 py-1.5 text-xs text-accent hover:bg-accent/10"
+            >
+              <Plus size={14} />
+              Create StorageClass
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* PVCs */}
-      {pvcs.length > 0 && (
-        <div>
-          <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">
-            PersistentVolumeClaims ({pvcs.length})
-          </h3>
+      <div>
+        <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">
+          PersistentVolumeClaims ({pvcs.length})
+        </h3>
+        {pvcs.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {pvcs.map((pvc) => (
               <PVCCard key={pvc.metadata.uid ?? pvc.metadata.name} pvc={pvc} />
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-dashed border-surface-3 bg-surface-1 p-6 text-center">
+            <FolderOpen size={24} className="mx-auto mb-2 text-[#5a4a3a]" />
+            <div className="text-sm text-[#a89880]">No PersistentVolumeClaims</div>
+            <div className="mt-1 text-xs text-[#5a4a3a]">
+              PVCs request storage from available PersistentVolumes or StorageClasses
+            </div>
+            <button
+              onClick={() => setShowCreatePVC(true)}
+              className="mt-3 flex items-center gap-1.5 mx-auto rounded-md border border-accent/30 px-3 py-1.5 text-xs text-accent hover:bg-accent/10"
+            >
+              <Plus size={14} />
+              Create PVC
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* PVs */}
-      {pvs.length > 0 && (
-        <div>
-          <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">
-            PersistentVolumes ({pvs.length})
-          </h3>
+      <div>
+        <h3 className="mb-3 text-sm font-medium text-[#e8ddd0]">
+          PersistentVolumes ({pvs.length})
+        </h3>
+        {pvs.length > 0 ? (
           <div className="overflow-x-auto rounded-lg border border-surface-3">
             <table className="w-full text-left text-sm">
               <thead>
@@ -179,9 +584,7 @@ export function StorageView() {
                   <tr key={pv.metadata.uid} className="hover:bg-surface-2">
                     <td className="px-3 py-2">
                       <button
-                        onClick={() =>
-                          navigate(`/resources/${encodeURIComponent("core/v1/persistentvolumes")}/${pv.metadata.name}`)
-                        }
+                        onClick={() => navigate(`/resources/${encodeURIComponent("core/v1/persistentvolumes")}/${pv.metadata.name}`)}
                         className="font-mono text-[#e8ddd0] hover:text-rust-light"
                       >
                         {pv.metadata.name}
@@ -195,9 +598,7 @@ export function StorageView() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
-                        onClick={() =>
-                          navigate(`/resources/${encodeURIComponent("core/v1/persistentvolumes")}/${pv.metadata.name}`)
-                        }
+                        onClick={() => navigate(`/resources/${encodeURIComponent("core/v1/persistentvolumes")}/${pv.metadata.name}`)}
                         className="rounded p-1 text-[#a89880] hover:bg-surface-3 hover:text-container-blue"
                       >
                         <Eye size={13} />
@@ -208,8 +609,16 @@ export function StorageView() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-dashed border-surface-3 bg-surface-1 p-6 text-center">
+            <HardDrive size={24} className="mx-auto mb-2 text-[#5a4a3a]" />
+            <div className="text-sm text-[#a89880]">No PersistentVolumes</div>
+            <div className="mt-1 text-xs text-[#5a4a3a]">
+              PVs are created automatically by dynamic provisioning or manually by an admin
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
