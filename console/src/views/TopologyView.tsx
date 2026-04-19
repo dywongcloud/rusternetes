@@ -708,8 +708,17 @@ export function TopologyView() {
                     className="cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedPod(isSelected ? null : pod.id);
-                      setSelectedService(null);
+                      if (isSelected) {
+                        setSelectedPod(null);
+                        setLogPodName(null);
+                        setLogLines([]);
+                      } else {
+                        setSelectedPod(pod.id);
+                        setSelectedService(null);
+                        // Auto-open logs for the clicked pod
+                        setLogPodName(pod.name);
+                        setLogPodNs(pod.namespace);
+                      }
                     }}
                   >
                     <rect
@@ -926,13 +935,17 @@ export function TopologyView() {
         );
       })()}
 
-      {/* Pod log panel */}
+      {/* Pod log overlay — fixed at bottom of screen */}
       {logPodName && (
-        <div className="rounded-lg border border-surface-3 bg-surface-0 p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-medium text-[#e8ddd0]">
-              Logs: <span className="font-mono text-rust-light">{logPodNs}/{logPodName}</span>
-            </h3>
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-accent/30 bg-surface-0/95 backdrop-blur-sm">
+          <div className="flex items-center justify-between border-b border-surface-3 px-4 py-2">
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-xs text-[#a89880]">
+                <span className="h-1.5 w-1.5 rounded-full bg-walle-eye animate-pulse" />
+                Live Logs
+              </span>
+              <span className="font-mono text-xs text-rust-light">{logPodNs}/{logPodName}</span>
+            </div>
             <button
               onClick={() => { setLogPodName(null); setLogLines([]); }}
               className="rounded px-2 py-0.5 text-xs text-[#a89880] hover:bg-surface-3 hover:text-[#e8ddd0]"
@@ -940,16 +953,30 @@ export function TopologyView() {
               Close
             </button>
           </div>
-          <div className="mt-2 max-h-48 overflow-auto rounded bg-surface-1 p-2 font-mono text-[10px] text-[#a89880]">
+          <div className="h-48 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-[#a89880]">
             {logLines.length > 0 ? (
-              logLines.map((line, i) => (
-                <div key={i} className="whitespace-pre-wrap break-all leading-relaxed hover:text-[#e8ddd0]">
-                  {line}
-                </div>
-              ))
+              logLines.map((line, i) => {
+                // Color timestamps differently from log content
+                const tsMatch = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s(.*)$/);
+                return (
+                  <div key={i} className="whitespace-pre-wrap break-all hover:text-[#e8ddd0]">
+                    {tsMatch ? (
+                      <>
+                        <span className="text-[#5a4a3a]">{tsMatch[1]}</span>{" "}
+                        <span className={
+                          tsMatch[2]?.includes("[ERROR]") || tsMatch[2]?.includes("error") ? "text-container-red" :
+                          tsMatch[2]?.includes("[WARN]") || tsMatch[2]?.includes("warn") ? "text-walle-yellow" :
+                          tsMatch[2]?.includes("[INFO]") ? "text-container-blue" :
+                          ""
+                        }>{tsMatch[2]}</span>
+                      </>
+                    ) : line}
+                  </div>
+                );
+              })
             ) : (
-              <div className="py-4 text-center text-[#5a4a3a]">
-                No logs available
+              <div className="flex h-full items-center justify-center text-[#5a4a3a]">
+                Waiting for logs...
               </div>
             )}
           </div>
