@@ -1415,11 +1415,21 @@ impl Kubelet {
                             });
 
                             if let Err(e) = self.storage.update(&key, &new_pod).await {
-                                // Log but don't fail — the sync loop will catch up on the next tick
-                                warn!(
-                                    "Failed to update pod {}/{} status to Running: {}",
-                                    namespace, pod_name, e
-                                );
+                                // Retry with fresh read on conflict (K8s pattern)
+                                if e.to_string().contains("Conflict") || e.to_string().contains("mismatch") {
+                                    if let Ok(fresh_pod) = self.storage.get::<Pod>(&key).await {
+                                        let mut retry_pod = fresh_pod;
+                                        if let Some(ref mut status) = retry_pod.status {
+                                            status.phase = Some(Phase::Running);
+                                            status.message = Some("All containers ready".to_string());
+                                        }
+                                        if let Err(e2) = self.storage.update(&key, &retry_pod).await {
+                                            warn!("Failed to update pod {}/{} status to Running after retry: {}", namespace, pod_name, e2);
+                                        }
+                                    }
+                                } else {
+                                    warn!("Failed to update pod {}/{} status to Running: {}", namespace, pod_name, e);
+                                }
                             }
                         }
                         Err(e) => {
