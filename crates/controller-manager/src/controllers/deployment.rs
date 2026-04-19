@@ -1211,7 +1211,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
             });
         }
 
-        let status = DeploymentStatus {
+        let new_status = DeploymentStatus {
             replicas: Some(total_replicas),
             ready_replicas: Some(ready_replicas),
             available_replicas: Some(available_replicas),
@@ -1223,10 +1223,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
             terminating_replicas: None,
         };
 
-        let mut updated_deployment = deployment.clone();
-        updated_deployment.status = Some(status);
-
-        // Ensure the deployment's revision annotation matches the latest ReplicaSet's revision
+        // Check if the revision annotation needs updating
         let max_revision = owned_replicasets
             .iter()
             .filter_map(|rs| {
@@ -1237,19 +1234,61 @@ impl<S: Storage + 'static> DeploymentController<S> {
                     .and_then(|v| v.parse::<i64>().ok())
             })
             .max();
-        if let Some(rev) = max_revision {
-            updated_deployment
+
+        // Compare old status (ignoring condition timestamps) with new status counts.
+        // For deployments, we compare the numeric fields to decide if an update is needed,
+        // since condition timestamps always change.
+        let old_status = &deployment.status;
+        let status_changed = match old_status {
+            Some(old) => {
+                old.replicas != new_status.replicas
+                    || old.ready_replicas != new_status.ready_replicas
+                    || old.available_replicas != new_status.available_replicas
+                    || old.unavailable_replicas != new_status.unavailable_replicas
+                    || old.updated_replicas != new_status.updated_replicas
+                    || old.observed_generation != new_status.observed_generation
+                    || old.conditions.as_ref().map(|c| {
+                        c.iter()
+                            .map(|cond| (&cond.condition_type, &cond.status, &cond.reason))
+                            .collect::<Vec<_>>()
+                    }) != new_status.conditions.as_ref().map(|c| {
+                        c.iter()
+                            .map(|cond| (&cond.condition_type, &cond.status, &cond.reason))
+                            .collect::<Vec<_>>()
+                    })
+            }
+            None => true,
+        };
+
+        let revision_changed = max_revision.map_or(false, |rev| {
+            let current = deployment
                 .metadata
                 .annotations
-                .get_or_insert_with(std::collections::HashMap::new)
-                .insert(
-                    "deployment.kubernetes.io/revision".to_string(),
-                    rev.to_string(),
-                );
-        }
+                .as_ref()
+                .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                .and_then(|v| v.parse::<i64>().ok());
+            current != Some(rev)
+        });
 
-        let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
-        self.storage.update(&key, &updated_deployment).await?;
+        // Only write if status or revision annotation actually changed
+        if status_changed || revision_changed {
+            let mut updated_deployment = deployment.clone();
+            updated_deployment.status = Some(new_status);
+
+            if let Some(rev) = max_revision {
+                updated_deployment
+                    .metadata
+                    .annotations
+                    .get_or_insert_with(std::collections::HashMap::new)
+                    .insert(
+                        "deployment.kubernetes.io/revision".to_string(),
+                        rev.to_string(),
+                    );
+            }
+
+            let key = build_key("deployments", Some(namespace), &deployment.metadata.name);
+            self.storage.update(&key, &updated_deployment).await?;
+        }
 
         debug!(
             "Updated status for deployment {}/{}: total={}, ready={}, available={}, updated={}",

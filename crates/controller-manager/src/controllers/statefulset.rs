@@ -785,7 +785,7 @@ impl<S: Storage + 'static> StatefulSetController<S> {
         // Update status with accurate counts
         // current_replicas = pods matching currentRevision (K8s semantics)
         // updated_replicas = pods matching updateRevision
-        statefulset.status = Some(StatefulSetStatus {
+        let new_status = Some(StatefulSetStatus {
             replicas: final_current_replicas,
             ready_replicas: Some(final_ready_pods),
             current_replicas: Some(if final_current_revision == update_revision {
@@ -804,9 +804,13 @@ impl<S: Storage + 'static> StatefulSetController<S> {
             conditions: None,
         });
 
-        // Save updated status
-        let key = format!("/registry/statefulsets/{}/{}", namespace, name);
-        self.storage.update(&key, statefulset).await?;
+        // Only write status if it actually changed to avoid unnecessary storage writes
+        // that trigger watch events and cause feedback loops
+        if statefulset.status != new_status {
+            statefulset.status = new_status;
+            let key = format!("/registry/statefulsets/{}/{}", namespace, name);
+            self.storage.update(&key, statefulset).await?;
+        }
 
         // Ensure a ControllerRevision exists for the current template revision
         let revision = Self::compute_revision(&statefulset.spec.template);

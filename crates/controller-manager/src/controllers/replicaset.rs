@@ -553,7 +553,7 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
             .as_ref()
             .and_then(|s| s.conditions.clone());
 
-        let status = ReplicaSetStatus {
+        let new_status = Some(ReplicaSetStatus {
             replicas,
             ready_replicas,
             available_replicas,
@@ -561,25 +561,30 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
             observed_generation: updated_rs.metadata.generation,
             conditions: existing_conditions,
             terminating_replicas: None,
-        };
+        });
 
-        updated_rs.status = Some(status.clone());
+        // Only write status if it actually changed to avoid unnecessary storage writes
+        // that trigger watch events and cause feedback loops
+        if updated_rs.status != new_status {
+            updated_rs.status = new_status;
 
-        if let Err(e) = self.storage.update(&key, &updated_rs).await {
-            // CAS conflict — re-read and retry once
-            debug!("RS status update CAS conflict, retrying: {}", e);
-            if let Ok(mut fresh_rs) = self.storage.get::<ReplicaSet>(&key).await {
-                let fresh_conditions = fresh_rs.status.as_ref().and_then(|s| s.conditions.clone());
-                fresh_rs.status = Some(ReplicaSetStatus {
-                    replicas,
-                    ready_replicas,
-                    available_replicas,
-                    fully_labeled_replicas: Some(replicas),
-                    observed_generation: fresh_rs.metadata.generation,
-                    conditions: fresh_conditions,
-                    terminating_replicas: None,
-                });
-                let _ = self.storage.update(&key, &fresh_rs).await;
+            if let Err(e) = self.storage.update(&key, &updated_rs).await {
+                // CAS conflict — re-read and retry once
+                debug!("RS status update CAS conflict, retrying: {}", e);
+                if let Ok(mut fresh_rs) = self.storage.get::<ReplicaSet>(&key).await {
+                    let fresh_conditions =
+                        fresh_rs.status.as_ref().and_then(|s| s.conditions.clone());
+                    fresh_rs.status = Some(ReplicaSetStatus {
+                        replicas,
+                        ready_replicas,
+                        available_replicas,
+                        fully_labeled_replicas: Some(replicas),
+                        observed_generation: fresh_rs.metadata.generation,
+                        conditions: fresh_conditions,
+                        terminating_replicas: None,
+                    });
+                    let _ = self.storage.update(&key, &fresh_rs).await;
+                }
             }
         }
 

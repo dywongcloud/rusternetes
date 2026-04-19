@@ -91,7 +91,7 @@ struct WorkQueueInner {
 /// when a controller writes back to its own watched resource (e.g. status
 /// updates). Set to 1 second — long enough to coalesce self-triggered
 /// events, short enough for responsive reconciliation.
-const MIN_REPROCESS_INTERVAL: Duration = Duration::from_millis(100);
+const MIN_REPROCESS_INTERVAL: Duration = Duration::ZERO;
 
 impl WorkQueue {
     /// Create a new work queue with default rate limiting.

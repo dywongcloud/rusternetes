@@ -1185,6 +1185,11 @@ impl<S: Storage + 'static> JobController<S> {
         for attempt in 0..3 {
             match self.storage.get::<Job>(&key).await {
                 Ok(mut fresh_job) => {
+                    // Only write status if it actually changed to avoid unnecessary
+                    // storage writes that trigger watch events and cause feedback loops
+                    if fresh_job.status == status_to_save {
+                        break;
+                    }
                     fresh_job.status = status_to_save.clone();
                     match self.storage.update(&key, &fresh_job).await {
                         Ok(_) => {

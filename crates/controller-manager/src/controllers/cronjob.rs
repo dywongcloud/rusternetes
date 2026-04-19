@@ -229,7 +229,7 @@ impl<S: Storage + 'static> CronJobController<S> {
                         },
                     )
                     .collect();
-                cronjob.status = Some(CronJobStatus {
+                let new_status = Some(CronJobStatus {
                     active: Some(active_refs),
                     last_schedule_time: cronjob.status.as_ref().and_then(|s| s.last_schedule_time),
                     last_successful_time: cronjob
@@ -237,8 +237,12 @@ impl<S: Storage + 'static> CronJobController<S> {
                         .as_ref()
                         .and_then(|s| s.last_successful_time),
                 });
-                let key = format!("/registry/cronjobs/{}/{}", namespace, name);
-                let _ = self.storage.update(&key, cronjob).await;
+                // Only write status if it actually changed
+                if cronjob.status != new_status {
+                    cronjob.status = new_status;
+                    let key = format!("/registry/cronjobs/{}/{}", namespace, name);
+                    let _ = self.storage.update(&key, cronjob).await;
+                }
                 return Ok(());
             }
             "Replace" if !active_jobs.is_empty() => {
@@ -297,7 +301,7 @@ impl<S: Storage + 'static> CronJobController<S> {
         };
 
         // Update status with active refs and last schedule time
-        cronjob.status = Some(CronJobStatus {
+        let new_status = Some(CronJobStatus {
             active: if active_refs.is_empty() {
                 None
             } else {
@@ -307,9 +311,13 @@ impl<S: Storage + 'static> CronJobController<S> {
             last_successful_time: cronjob.status.as_ref().and_then(|s| s.last_successful_time),
         });
 
-        // Save updated status
-        let key = format!("/registry/cronjobs/{}/{}", namespace, name);
-        self.storage.update(&key, cronjob).await?;
+        // Only write status if it actually changed to avoid unnecessary storage writes
+        // that trigger watch events and cause feedback loops
+        if cronjob.status != new_status {
+            cronjob.status = new_status;
+            let key = format!("/registry/cronjobs/{}/{}", namespace, name);
+            self.storage.update(&key, cronjob).await?;
+        }
 
         // Clean up old jobs based on history limits
         self.cleanup_old_jobs(cronjob, namespace).await?;

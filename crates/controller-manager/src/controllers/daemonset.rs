@@ -569,7 +569,7 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             })
             .count() as i32;
 
-        daemonset.status = Some(DaemonSetStatus {
+        let new_status = Some(DaemonSetStatus {
             desired_number_scheduled,
             current_number_scheduled,
             number_ready,
@@ -582,9 +582,13 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             conditions: None,
         });
 
-        // Save updated status
-        let key = format!("/registry/daemonsets/{}/{}", namespace, name);
-        self.storage.update(&key, daemonset).await?;
+        // Only write status if it actually changed to avoid unnecessary storage writes
+        // that trigger watch events and cause feedback loops
+        if daemonset.status != new_status {
+            daemonset.status = new_status;
+            let key = format!("/registry/daemonsets/{}/{}", namespace, name);
+            self.storage.update(&key, daemonset).await?;
+        }
 
         Ok(())
     }
