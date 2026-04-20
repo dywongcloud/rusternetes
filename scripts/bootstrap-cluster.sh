@@ -19,20 +19,29 @@ print_step() {
 }
 
 # Detect container runtime (docker or podman)
-if command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
+# Override with CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman
+if [ -n "$CONTAINER_RUNTIME" ]; then
+    CONTAINER_RT="$CONTAINER_RUNTIME"
+elif command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
     CONTAINER_RT=podman
-    # Podman needs base images pre-pulled (Docker Desktop caches them)
+elif command -v docker &>/dev/null && docker ps &>/dev/null 2>&1; then
+    CONTAINER_RT=docker
+else
+    echo "ERROR: No container runtime (docker or podman) found"
+    echo "Set CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman to override"
+    exit 1
+fi
+
+echo "Using container runtime: $CONTAINER_RT"
+
+# Podman needs base images pre-pulled (Docker Desktop caches them)
+if [ "$CONTAINER_RT" = "podman" ]; then
     for img in busybox:latest; do
         if ! podman image exists "$img" 2>/dev/null; then
             echo "  Pulling required image: $img"
             podman pull "$img" >/dev/null 2>&1 || true
         fi
     done
-elif command -v docker &>/dev/null && docker ps &>/dev/null 2>&1; then
-    CONTAINER_RT=docker
-else
-    echo "ERROR: No container runtime (docker or podman) found"
-    exit 1
 fi
 
 print_warning() {
