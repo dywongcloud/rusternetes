@@ -39,6 +39,9 @@
     // Reference
     { title: 'API Reference', section: 'Reference', url: 'api-reference.html', keywords: 'api endpoint resource type group version route handler' },
     { title: 'Conformance', section: 'Reference', url: 'conformance.html', keywords: 'conformance test sonobuoy e2e pass fail kubernetes' },
+    // Console & Auth
+    { title: 'Web Console', section: 'Features', url: 'console.html', keywords: 'console dashboard topology visualization metrics logs deploy scale restart create resource explorer cni networking storage rbac events fleet multi-cluster' },
+    { title: 'Authentication', section: 'Operations', url: 'authentication.html', keywords: 'authentication authorization rbac jwt token mTLS client certificate skip-auth security serviceaccount' },
   ];
 
   var input, resultsContainer;
