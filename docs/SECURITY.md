@@ -762,7 +762,7 @@ Before going to production:
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Cluster deployment guide
-- [RBAC.md](RBAC.md) - Role-Based Access Control
+- [AUTHENTICATION.md](AUTHENTICATION.md) - Authentication, RBAC, and authorization
 - [TLS_GUIDE.md](TLS_GUIDE.md) - TLS configuration
 
 ## Further Reading

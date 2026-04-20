@@ -235,7 +235,7 @@ brew install --cask docker
 - [README.md](../README.md) - Quick start guide
 - [docs/DEVELOPMENT.md](DEVELOPMENT.md) - Detailed development setup
 - [docs/PODMAN_TIPS.md](PODMAN_TIPS.md) - Podman tips (with macOS warning)
-- [docs/CNI-NETWORKING.md](CNI-NETWORKING.md) - CNI implementation details
+- [CNI Guide](CNI_GUIDE.md) - CNI implementation details
 
 ## Verification Checklist
 
