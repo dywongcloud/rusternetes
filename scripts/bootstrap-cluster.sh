@@ -28,8 +28,13 @@ elif [ -n "$CONTAINER_RUNTIME" ]; then
 else
     HAS_PODMAN=false
     HAS_DOCKER=false
-    command -v podman &>/dev/null && podman ps &>/dev/null 2>&1 && HAS_PODMAN=true
-    command -v docker &>/dev/null && docker ps &>/dev/null 2>&1 && HAS_DOCKER=true
+    # Use background + wait to timeout commands that may hang (e.g. docker ps when Docker Desktop is stopped)
+    if command -v podman &>/dev/null; then
+        podman ps &>/dev/null 2>&1 & PID=$!; ( sleep 3; kill $PID 2>/dev/null ) &>/dev/null & wait $PID 2>/dev/null && HAS_PODMAN=true
+    fi
+    if command -v docker &>/dev/null; then
+        docker ps &>/dev/null 2>&1 & PID=$!; ( sleep 3; kill $PID 2>/dev/null ) &>/dev/null & wait $PID 2>/dev/null && HAS_DOCKER=true
+    fi
 
     if $HAS_PODMAN && $HAS_DOCKER; then
         echo "ERROR: Both docker and podman are available. Please specify which to use:"
