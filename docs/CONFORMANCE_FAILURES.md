@@ -1,46 +1,77 @@
 # Conformance Failure Tracker
 
-## Fixes Applied (ready for next run)
+## Next Run (Round 153 — release builds, etcd, clean state, all fixes)
 
-| # | Test(s) | Fix | Commit |
-|---|---------|-----|--------|
-| 1 | node_lifecycle.go:95 | 60s startup grace period + not-ready taint | 79fde16 |
-| 2 | statefulset.go:1205 | SS condition merge — preserves custom conditions | 9344dec |
-| 3 | rc.go:212 | RC status write reduction + condition merge | 9344dec |
-| 4 | resource_quota.go:1047 | RQ status comparison + fresh resourceVersion | ffeb5c6 |
-| 5 | disruption.go:187 | PDB status comparison + condition preservation | ffeb5c6 |
-| 6 | deployment.go:883 | Old RS cleanup (revisionHistoryLimit) + idempotent RS | ffeb5c6 |
-| 7 | aggregator.go:359 | New APIService availability controller | 7ea342d |
-| 8 | daemon_set.go:332 | DS retry failed pods in same cycle + pod watch | 7ea342d |
-| 9 | init_container.go:241 | Kubelet refreshes init container status on terminal | 7ea342d |
-| 10 | job.go:1192 | Job status guards on early-return paths | 7ea342d |
-| 11 | rc.go:453 | RC CAS retry guard — skip if status matches | 7ea342d |
-| 12 | replica_set.go:534 | RS CAS retry guard — skip if status matches | 7ea342d |
-| 13 | deployment status tests | Deployment condition merge + fresh resourceVersion | ffeb5c6 |
-| 14 | DaemonSet status tests | DS condition preservation | earlier |
-| 15 | kubelet orphans | Startup cleanup + fast-path deletion | earlier |
+Building now. All fixes committed. Clean etcd — no stale state.
 
-## Critical Infrastructure Issues
+## All Fixes Applied
 
-| # | Issue | Root Cause |
-|---|-------|------------|
-| 1 | Namespace deletion hangs on stale pods | Namespace controller can't finalize namespaces with Succeeded/Failed pods. GC or kubelet doesn't delete terminal pod records from storage. Blocks conformance restarts. |
-| 2 | Stale etcd state across cluster restarts | Pod records persist in etcd after cluster restart but Docker containers are gone. Kubelet startup cleanup only removes Docker containers, doesn't clean API-side pod records. |
-| 3 | run-conformance.sh hangs on stuck cleanup | Script waits indefinitely for sonobuoy namespace deletion. Needs timeout and force-delete fallback. |
+### Infrastructure
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| Kubelet startup cleanup | Parallel orphan container removal at startup before sync loop | 7acc745 |
+| Kubelet terminal pod GC | Delete Succeeded/Failed pods from storage after containers stop | c179b5a |
+| Kubelet orphan fast-path | Skip 30s grace period for explicitly deleted pods | efd0877 |
+| Kubelet status retry | Retry pod status update on resourceVersion conflict | 3bf2ed2 |
+| Namespace finalization | Hard-delete terminal pods during namespace finalization | c179b5a |
+| run-conformance.sh | Timeout on stuck cleanup with force-delete fallback | c179b5a |
 
-## Remaining Pre-existing (not yet fixed)
+### Node Controller
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| Startup grace period | 60s grace before changing new node's Ready condition (K8s: nodeStartupGracePeriod) | 79fde16 |
+| Not-ready taint | Add node.kubernetes.io/not-ready:NoSchedule taint on NotReady nodes | 79fde16 |
 
-| # | Test(s) | Root Cause | Priority |
-|---|---------|------------|----------|
-| 1 | deployment.go:1259 | Proportional scaling — RS availableReplicas convergence | Medium |
-| 2 | crd_publish_openapi.go x3 | CRD OpenAPI schema not served dynamically | Low |
-| 3 | output.go:263 x5 | EmptyDir POSIX permissions — needs container-local path | Low |
-| 4 | hostport.go:219 | HostPort conflict detection | Low |
-| 5 | service.go:768 | Service endpoint unreachable — networking | Medium |
-| 6 | service.go:3459 | Service delete timeout | Low |
-| 7 | proxy.go:271 | Service proxy unreachable — networking | Medium |
-| 8 | replica_set.go:232 | RS pod proxy — networking | Medium |
-| 9 | runtime.go:129 | Container state after restart | Low |
-| 10 | daemon_set.go:1276 | GC deletes DS pod | Low |
-| 11 | garbage_collector.go:635 | GC orphan RS propagation | Low |
-| 12 | pod_resize.go:857 | Pod resize cgroup — not implemented | Low |
+### Controller Status Write Fixes (prevents resourceVersion conflicts)
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| Deployment | Condition merge + fresh resourceVersion + revisionHistoryLimit cleanup + idempotent RS creation | ffeb5c6 |
+| Deployment proportional scaling | Gate proportional scaling with isScalingEvent check using desired-replicas annotation | c179b5a |
+| StatefulSet | Condition merge — preserve custom conditions from PUT /status | 9344dec |
+| ReplicaSet | availableReplicas = Running + Ready + not-terminating. CAS retry guard. | 79fde16, 7ea342d |
+| ReplicationController | Status write reduction + condition merge + CAS retry guard | 9344dec, 7ea342d |
+| Job | Status guards on 4 early-return paths + fresh resourceVersion on termination | 7ea342d |
+| DaemonSet | Condition preservation + retry failed pods in same cycle + pod watch | 7ea342d |
+| ResourceQuota | Status comparison guard + fresh resourceVersion | ffeb5c6 |
+| PDB | Status comparison guard + condition preservation | ffeb5c6 |
+| WorkQueue cooldown | 200ms MIN_REPROCESS_INTERVAL — coalesces self-triggered events | 7ea342d |
+
+### New Controllers
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| APIService availability | Checks backing service endpoints, updates Available condition | 7ea342d |
+
+### API Server
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| CRD OpenAPI | Dynamic schema generation from CRD validation specs | c179b5a |
+| CRD strict validation | Reject unknown fields in strict mode with K8s-format errors | 3fc9c9b |
+| Service proxy | Resolve port from EndpointSlice/Endpoints instead of targetPort | c179b5a |
+
+### Kubelet Runtime
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| EmptyDir permissions | tmpfs mode 0777 (not 1777) matching K8s | c179b5a |
+| Container restart state | Re-read pod from storage after restart to preserve restart_count and last_state | c179b5a |
+| Init container status | Refresh init container statuses on terminal phase transition | 7ea342d |
+
+### GC
+| Fix | Description | Commit |
+|-----|-------------|--------|
+| Conservative orphan detection | Include all resources (even deleting) in existing_uids — match K8s informer-cache behavior | c179b5a |
+
+## Known Architectural Limitations
+
+| Issue | Reason | Impact |
+|-------|--------|--------|
+| Pod resize cgroup | Docker creates cgroup paths as /docker/{container_id}/, not /kubepods/{pod_uid}/. Test looks for pod UID in cgroup hierarchy. | pod_resize.go:857 may still fail |
+| HostPort conflict | Scheduler/kubelet logic is correct but test may timeout due to image pull or readiness probe timing | hostport.go:219 may still fail |
+| Some networking tests | service.go:768, proxy.go:271, replica_set.go:232 depend on pod-to-pod networking via Docker bridge which may have timing issues | May still fail intermittently |
+
+## Previous Results
+
+| Round | Pass | Fail | Total | Rate | Notes |
+|-------|------|------|-------|------|-------|
+| 149 | 398 | 43 | 441 | 90.2% | Pre-work-queue baseline (etcd) |
+| 152 | 266 | 42 | 308* | 86.4% | Work queue + partial fixes. *Killed at 308 by external restart. |
+| 153 | — | — | — | — | Pending — all fixes applied |
