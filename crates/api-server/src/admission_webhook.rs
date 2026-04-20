@@ -628,7 +628,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 Operation::Create => "CREATE",
                                 Operation::Update => "UPDATE",
                                 Operation::Delete => "DELETE",
-                                _ => "",
+                                Operation::Connect => "CONNECT",
                             };
                             let mut ctx = rusternetes_common::CELContext::new();
                             if let Some(ref obj) = object {
@@ -704,14 +704,31 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         .unwrap_or(FailurePolicy::Fail);
                     let ca_bundle = webhook.client_config.ca_bundle.clone();
 
+                    // K8s splits resource/subresource in the admission review request.
+                    // e.g. GVR "pods/attach" becomes resource="pods", subResource="attach".
+                    // The webhook server expects this split format.
+                    let (wire_gvr, sub_resource) =
+                        if let Some(idx) = gvr.resource.find('/') {
+                            (
+                                GroupVersionResource {
+                                    group: gvr.group.clone(),
+                                    version: gvr.version.clone(),
+                                    resource: gvr.resource[..idx].to_string(),
+                                },
+                                Some(gvr.resource[idx + 1..].to_string()),
+                            )
+                        } else {
+                            (gvr.clone(), None)
+                        };
+
                     let request = AdmissionReviewRequest {
                         uid: uuid::Uuid::new_v4().to_string(),
                         kind: gvk.clone(),
-                        resource: gvr.clone(),
-                        sub_resource: None,
+                        resource: wire_gvr.clone(),
+                        sub_resource: sub_resource.clone(),
                         request_kind: Some(gvk.clone()),
-                        request_resource: Some(gvr.clone()),
-                        request_sub_resource: None,
+                        request_resource: Some(wire_gvr),
+                        request_sub_resource: sub_resource,
                         name: name.to_string(),
                         namespace: namespace.map(|s| s.to_string()),
                         operation: operation.clone(),
@@ -970,7 +987,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                 Operation::Create => "CREATE",
                                 Operation::Update => "UPDATE",
                                 Operation::Delete => "DELETE",
-                                _ => "",
+                                Operation::Connect => "CONNECT",
                             };
                             let mut ctx = rusternetes_common::CELContext::new();
                             if let Some(ref obj) = object {
@@ -1040,15 +1057,30 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         webhook.name, gvk.kind, name
                     );
 
-                    // Build admission request with potentially mutated object
+                    // Build admission request with potentially mutated object.
+                    // K8s splits resource/subresource in the admission review request.
+                    let (wire_gvr, sub_resource) =
+                        if let Some(idx) = gvr.resource.find('/') {
+                            (
+                                GroupVersionResource {
+                                    group: gvr.group.clone(),
+                                    version: gvr.version.clone(),
+                                    resource: gvr.resource[..idx].to_string(),
+                                },
+                                Some(gvr.resource[idx + 1..].to_string()),
+                            )
+                        } else {
+                            (gvr.clone(), None)
+                        };
+
                     let request = AdmissionReviewRequest {
                         uid: uuid::Uuid::new_v4().to_string(),
                         kind: gvk.clone(),
-                        resource: gvr.clone(),
-                        sub_resource: None,
+                        resource: wire_gvr.clone(),
+                        sub_resource: sub_resource.clone(),
                         request_kind: Some(gvk.clone()),
-                        request_resource: Some(gvr.clone()),
-                        request_sub_resource: None,
+                        request_resource: Some(wire_gvr),
+                        request_sub_resource: sub_resource,
                         name: name.to_string(),
                         namespace: namespace.map(|s| s.to_string()),
                         operation: operation.clone(),

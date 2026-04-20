@@ -470,6 +470,13 @@ pub async fn exec(
         namespace, name, query.command, upgrade_header, connection_header, sec_ws_protocol
     );
 
+    // Save user info for webhook check before auth moves ownership
+    let webhook_user_info = rusternetes_common::admission::UserInfo {
+        username: auth_ctx.user.username.clone(),
+        uid: auth_ctx.user.uid.clone(),
+        groups: auth_ctx.user.groups.clone(),
+    };
+
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "pods")
         .with_namespace(&namespace)
@@ -483,24 +490,32 @@ pub async fn exec(
         }
     }
 
-    // Run admission webhooks for Connect operation (exec/attach)
+    // Run admission webhooks for Connect operation (exec)
+    // K8s passes PodExecOptions as the admission object so webhooks can
+    // inspect what command is being run and what streams are requested.
     {
         use rusternetes_common::admission::{GroupVersionKind, GroupVersionResource, Operation};
         let gvk = GroupVersionKind {
             group: "".to_string(),
             version: "v1".to_string(),
-            kind: "Pod".to_string(),
+            kind: "PodExecOptions".to_string(),
         };
         let gvr = GroupVersionResource {
             group: "".to_string(),
             version: "v1".to_string(),
             resource: "pods/exec".to_string(),
         };
-        let user_info = rusternetes_common::admission::UserInfo {
-            username: "admin".to_string(),
-            uid: "system:admin".to_string(),
-            groups: vec!["system:masters".to_string()],
-        };
+        // Build PodExecOptions object matching K8s schema
+        let exec_options = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "PodExecOptions",
+            "stdin": query.stdin,
+            "stdout": query.stdout,
+            "stderr": query.stderr,
+            "tty": query.tty,
+            "container": query.container.as_deref().unwrap_or(""),
+            "command": query.command
+        });
         match state
             .webhook_manager
             .run_validating_webhooks(
@@ -509,9 +524,9 @@ pub async fn exec(
                 &gvr,
                 Some(&namespace),
                 &name,
+                Some(exec_options),
                 None,
-                None,
-                &user_info,
+                &webhook_user_info,
             )
             .await?
         {
@@ -769,18 +784,30 @@ pub async fn attach(
     // K8s validates attach requests through admission webhooks the same as exec.
     // The GVR resource must include the subresource (pods/attach) so that webhook
     // rules matching "pods/attach" or "pods/*" are correctly triggered.
+    // K8s passes PodAttachOptions as the admission object so webhooks can inspect
+    // which container is being attached to and what streams are requested.
     {
         use rusternetes_common::admission::{GroupVersionKind, GroupVersionResource, Operation};
         let gvk = GroupVersionKind {
             group: "".to_string(),
             version: "v1".to_string(),
-            kind: "Pod".to_string(),
+            kind: "PodAttachOptions".to_string(),
         };
         let gvr = GroupVersionResource {
             group: "".to_string(),
             version: "v1".to_string(),
             resource: "pods/attach".to_string(),
         };
+        // Build PodAttachOptions object matching K8s schema
+        let attach_options = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "PodAttachOptions",
+            "stdin": query.stdin,
+            "stdout": query.stdout,
+            "stderr": query.stderr,
+            "tty": query.tty,
+            "container": query.container.as_deref().unwrap_or("")
+        });
         match state
             .webhook_manager
             .run_validating_webhooks(
@@ -789,7 +816,7 @@ pub async fn attach(
                 &gvr,
                 Some(&namespace),
                 &name,
-                None,
+                Some(attach_options),
                 None,
                 &webhook_user_info,
             )

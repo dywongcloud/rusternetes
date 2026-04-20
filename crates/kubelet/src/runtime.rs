@@ -3718,10 +3718,18 @@ impl ContainerRuntime {
                         // Determine the effective host path, applying validated sub_path
                         let effective_host_path = if let Some(ref sub) = expanded_sub_path {
                             let full = format!("{}/{}", host_path, sub);
-                            let sub_meta = std::fs::metadata(&full);
-                            if sub_meta.is_err() {
-                                if let Err(e) = std::fs::create_dir_all(&full) {
-                                    warn!("Failed to create subPath dir {}: {}", full, e);
+                            match std::fs::metadata(&full) {
+                                Ok(_meta) => {
+                                    // subPath target exists — use it as-is (file or directory).
+                                    // For projected volumes (configmaps, secrets), the subPath
+                                    // points to a specific file within the volume, not a directory.
+                                    // Docker can bind-mount files directly.
+                                }
+                                Err(_) => {
+                                    // subPath target doesn't exist — create as directory
+                                    if let Err(e) = std::fs::create_dir_all(&full) {
+                                        warn!("Failed to create subPath dir {}: {}", full, e);
+                                    }
                                 }
                             }
                             full
