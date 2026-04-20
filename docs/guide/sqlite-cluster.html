@@ -11,7 +11,7 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../index.html" class="nav-logo">
-        <img src="../favicon.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
+        <img src="../favicon-colored.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
       </a>
       <div class="nav-links">
         <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
@@ -103,7 +103,7 @@
     <main class="doc-content">
       <h1>Docker Compose with SQLite (Rhino)</h1>
       <p class="lead">
-        Run a multi-node Rusternetes cluster with SQLite as the storage backend instead of etcd.
+        Run a multi-node Rūsternetes cluster with SQLite as the storage backend instead of etcd.
         The <a href="https://github.com/calfonso/rhino">Rhino</a> server provides an etcd-compatible
         gRPC API backed by SQLite, giving you the same multi-node architecture with simpler operations
         and a smaller footprint.
@@ -122,7 +122,7 @@
       </ul>
 
       <p>
-        From the Rusternetes components' perspective, Rhino is indistinguishable from etcd. The
+        From the Rūsternetes components' perspective, Rhino is indistinguishable from etcd. The
         API server, scheduler, controller manager, kubelets, and kube-proxy all connect to Rhino
         using the standard etcd client library. No code changes are needed &mdash; you simply
         swap the service in your Docker Compose file.

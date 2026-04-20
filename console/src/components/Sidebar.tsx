@@ -71,7 +71,7 @@ export function Sidebar() {
         </svg>
         {!collapsed && (
           <span className="font-retro text-lg tracking-tight text-walle-yellow">
-            rusternetes
+            rūsternetes
           </span>
         )}
       </div>

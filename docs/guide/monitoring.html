@@ -11,7 +11,7 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../index.html" class="nav-logo">
-        <img src="../favicon.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
+        <img src="../favicon-colored.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
       </a>
       <div class="nav-links">
         <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
@@ -102,7 +102,7 @@
     <main class="doc-content">
       <h1>Monitoring &amp; Observability</h1>
       <p class="lead">
-        Health checks, Prometheus metrics, structured logging, and tracing for every Rusternetes component.
+        Health checks, Prometheus metrics, structured logging, and tracing for every Rūsternetes component.
       </p>
 
       <h2>Health Endpoints</h2>
@@ -238,7 +238,7 @@ curl http://localhost:8081/metrics</code>
 
       <h2>Tracing</h2>
       <p>
-        Rusternetes uses the <code>tracing</code> and <code>tracing-subscriber</code> crates for
+        Rūsternetes uses the <code>tracing</code> and <code>tracing-subscriber</code> crates for
         structured logging and distributed tracing. OpenTelemetry integration is available via
         <code>tracing-opentelemetry</code> for exporting spans to Jaeger, Zipkin, or any
         OTLP-compatible collector.
@@ -258,7 +258,7 @@ export OTEL_SERVICE_NAME=<span class="value">rusternetes-api-server</span></code
 
       <h2>Logging</h2>
       <p>
-        All Rusternetes components use Rust's <code>tracing</code> framework for structured logging.
+        All Rūsternetes components use Rust's <code>tracing</code> framework for structured logging.
         Log levels and component-specific filtering are controlled via the <code>RUST_LOG</code>
         environment variable or the <code>--log-level</code> CLI flag.
       </p>

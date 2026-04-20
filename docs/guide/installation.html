@@ -11,7 +11,7 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../index.html" class="nav-logo">
-        <img src="../favicon.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
+        <img src="../favicon-colored.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
       </a>
       <div class="nav-links">
         <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
@@ -103,7 +103,7 @@
     <main class="doc-content">
       <h1>Installation</h1>
       <p class="lead">
-        Build Rusternetes from source, understand feature flags, and set up your development
+        Build Rūsternetes from source, understand feature flags, and set up your development
         environment. For a quick Docker-based setup without building from source, see the
         <a href="quickstart.html">Quick Start</a>.
       </p>
@@ -112,7 +112,7 @@
 
       <h3>Install the Rust toolchain</h3>
       <p>
-        Rusternetes requires Rust 2021 edition. Install via
+        Rūsternetes requires Rust 2021 edition. Install via
         <a href="https://rustup.rs/">rustup</a>:
       </p>
 
@@ -216,7 +216,7 @@ make pre-commit</code>
 
       <h2>Feature Flags</h2>
       <p>
-        Rusternetes uses Cargo feature flags to control optional functionality at compile time.
+        Rūsternetes uses Cargo feature flags to control optional functionality at compile time.
       </p>
 
       <table>
@@ -359,7 +359,7 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
       </pre>
 
       <p>
-        This is the simplest way to run a Rusternetes cluster &mdash; a single process, a single
+        This is the simplest way to run a Rūsternetes cluster &mdash; a single process, a single
         binary, no containers or external dependencies. See <a href="all-in-one.html">All-in-One Binary</a>
         for configuration options and production usage.
       </p>
@@ -375,7 +375,7 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
 
       <h2>kubectl</h2>
       <p>
-        Rusternetes includes a built-in <code>kubectl</code> implementation in the
+        Rūsternetes includes a built-in <code>kubectl</code> implementation in the
         <code>crates/kubectl</code> crate. It implements the most common kubectl commands
         natively in Rust.
       </p>
@@ -400,7 +400,7 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes-kubectl
       <h3>System kubectl</h3>
       <p>
         The standard <code>kubectl</code> from the Kubernetes project works perfectly with
-        Rusternetes. The API is fully compatible. Install it via your package manager or from
+        Rūsternetes. The API is fully compatible. Install it via your package manager or from
         the <a href="https://kubernetes.io/docs/tasks/tools/">Kubernetes docs</a>.
       </p>
 

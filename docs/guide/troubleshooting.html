@@ -11,7 +11,7 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../index.html" class="nav-logo">
-        <img src="../favicon.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
+        <img src="../favicon-colored.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
       </a>
       <div class="nav-links">
         <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
@@ -297,7 +297,7 @@ kubectl get sc <span class="flag">-o</span> jsonpath='{.items[?(@.metadata.annot
       </p>
       <p>
         <strong>Cause:</strong> Another process (minikube, kind, a real Kubernetes cluster, or
-        a previous Rusternetes instance) is already listening on the same port.
+        a previous Rūsternetes instance) is already listening on the same port.
       </p>
       <p><strong>Fix:</strong></p>
 
@@ -314,7 +314,7 @@ lsof <span class="flag">-i</span> :6443
 <span class="comment"># Find what is using port 2379 (etcd)</span>
 lsof <span class="flag">-i</span> :2379
 
-<span class="comment"># Stop a previous Rusternetes cluster</span>
+<span class="comment"># Stop a previous Rūsternetes cluster</span>
 docker compose down
 
 <span class="comment"># Or change the port mapping in docker-compose.yml</span>

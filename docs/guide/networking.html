@@ -11,7 +11,7 @@
   <nav class="nav">
     <div class="nav-inner">
       <a href="../index.html" class="nav-logo">
-        <img src="../favicon.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
+        <img src="../favicon-colored.svg" width="22" height="22" alt="" style="vertical-align: middle;"> rūsternetes
       </a>
       <div class="nav-links">
         <a href="index.html" style="color: var(--walle-yellow);">Docs</a>
@@ -103,7 +103,7 @@
     <main class="doc-content">
       <h1>Networking</h1>
       <p class="lead">
-        Rusternetes implements the Kubernetes networking model: every pod gets its own IP address,
+        Rūsternetes implements the Kubernetes networking model: every pod gets its own IP address,
         Services provide stable endpoints for sets of pods, and kube-proxy programs iptables rules
         for in-cluster routing. CoreDNS provides service discovery via DNS.
       </p>
@@ -307,7 +307,7 @@ kubectl describe endpoints <span class="value">web</span></code>
         <p>
           EndpointSlice <code>port.name</code> must always be present, even as an empty string.
           If it is null/nil, <code>kubectl describe</code> will crash with a nil pointer dereference.
-          Rusternetes always sets port names on EndpointSlices.
+          Rūsternetes always sets port names on EndpointSlices.
         </p>
       </div>
 
@@ -328,7 +328,7 @@ kubectl get endpointslices <span class="flag">-l</span> <span class="value">kube
       <!-- ───────────────────── DNS ───────────────────── -->
       <h2 id="dns">DNS (CoreDNS)</h2>
       <p>
-        Rusternetes deploys CoreDNS as a pod in <code>kube-system</code> with a pinned ClusterIP
+        Rūsternetes deploys CoreDNS as a pod in <code>kube-system</code> with a pinned ClusterIP
         of <code>10.96.0.10</code>. The kubelet configures each pod's <code>/etc/resolv.conf</code>
         to point to this address.
       </p>
@@ -727,7 +727,7 @@ kubectl get servicecidr</code>
       <!-- ───────────────────── CNI ───────────────────── -->
       <h2 id="cni">CNI (Container Network Interface)</h2>
       <p>
-        Rusternetes implements the standard CNI specification (v0.4.0+). The kubelet executes
+        Rūsternetes implements the standard CNI specification (v0.4.0+). The kubelet executes
         CNI plugin binaries from <code>/opt/cni/bin/</code> using configuration from
         <code>/etc/cni/net.d/</code> to set up pod networking.
       </p>
