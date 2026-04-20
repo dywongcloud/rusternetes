@@ -327,6 +327,205 @@ The header bar shows:
 
 ---
 
+## Managing Workloads
+
+### Deploy an Application
+
+The fastest way to deploy is the **Quick Deploy** form (sidebar > Create):
+
+1. Enter an app name (e.g., `nginx`)
+2. Enter a container image (e.g., `nginx:latest`)
+3. Set replicas and port
+4. Check "Create Service" to expose it
+5. Click **Deploy**
+
+This creates a Deployment and optionally a ClusterIP Service. View the result in **Workloads** — you'll see the deployment card with a rollout progress bar.
+
+### Scale a Deployment
+
+On the **Workloads** page, each deployment card has **+/-** buttons to adjust the replica count. Or click the deployment name to open the detail view, where the scale controls are in the header.
+
+### Rolling Restart
+
+Click the **restart** icon (circular arrow) on a deployment card. This adds a `restartedAt` annotation to the pod template, triggering a rolling restart of all pods.
+
+### Delete Resources
+
+Every resource has a trash icon. Click it and confirm. The resource is deleted via the K8s API and disappears from the view in real-time via the watch stream.
+
+### Create Any Resource from JSON
+
+Use **Create > From JSON** to create any Kubernetes resource. When you click "Create" from a resource list (e.g., from the Resource Explorer), the JSON editor is pre-populated with a template for that specific resource type.
+
+## Managing Storage
+
+### Create a StorageClass
+
+Navigate to **Storage** and click **+ StorageClass**:
+- **Name**: e.g., `fast-storage`
+- **Provisioner**: `rusternetes.io/hostpath` (auto-provisions host directories) or `kubernetes.io/no-provisioner` (manual PV binding)
+- **Reclaim Policy**: `Delete` (auto-cleanup) or `Retain` (keep data)
+- **Volume Binding Mode**: `WaitForFirstConsumer` (bind when pod uses it) or `Immediate`
+
+A default `standard` StorageClass with the hostpath provisioner is created automatically on cluster startup.
+
+### Create a PVC
+
+Click **+ Create PVC**:
+- Select a **Storage Class** from the dropdown (populated from existing classes)
+- Choose **Size** and **Access Mode** (RWO, ROX, RWX)
+- Click **Create PVC**
+
+If the StorageClass has a dynamic provisioner, a PV is automatically created and the PVC transitions from Pending to Bound.
+
+### View Storage Status
+
+The Storage page shows:
+- **Overview panel**: PVC count, PV count, StorageClass count, CSI drivers, total capacity
+- **Storage Capabilities**: supported volume types, access modes, reclaim policies
+- **Binding visualization**: PVCs show which PV they're bound to
+
+## Networking
+
+### View Cluster Network Configuration
+
+The **Networking** page always shows four configuration cards at the top:
+- **Service CIDR** — the IP range for ClusterIP allocation (e.g., `10.96.0.0/12`)
+- **Pod CIDRs** — per-node pod CIDR assignments
+- **Cluster DNS** — the kube-dns service IP (`10.96.0.10`) and its ports
+- **Kube-Proxy** — mode (`iptables`), network mode, supported service types
+
+### Understand Service Routing
+
+The **Service Routing** section shows visual diagrams of how each service connects to its target pods — service box → arrow → matched pods with their IPs and status.
+
+### Service Types
+
+Services are color-coded by type:
+- **Blue** — ClusterIP (cluster-internal only)
+- **Green** — NodePort (accessible on every node's IP)
+- **Orange** — LoadBalancer (external access via cloud provider or MetalLB)
+
+### Using Third-Party CNI Plugins
+
+Rusternetes supports standard CNI plugins on Linux. See the [CNI Guide](CNI_GUIDE.md) for setup instructions for Calico, Cilium, and Flannel.
+
+### Load Balancers
+
+For LoadBalancer services outside cloud providers, use MetalLB. See [LOADBALANCER.md](LOADBALANCER.md) and [METALLB_INTEGRATION.md](METALLB_INTEGRATION.md).
+
+## Security & Authentication
+
+### Current Auth Mode
+
+By default, `--skip-auth` is enabled — all requests are treated as admin. This is fine for development but **must be disabled** before exposing the cluster to any network.
+
+### Securing the Cluster
+
+See the [Authentication Guide](AUTHENTICATION.md) for the full walkthrough:
+1. Generate RSA signing keys for JWT tokens
+2. Create an admin ServiceAccount and ClusterRoleBinding
+3. Configure kubectl with the token
+4. Restart without `--skip-auth`
+
+### RBAC in the Console
+
+The **RBAC** page visualizes:
+- **Subjects** — who has access (ServiceAccounts, Users, Groups)
+- **Bindings** — which subjects are bound to which roles
+- **Roles** — what permissions each role grants (verbs × resources)
+- **"full access (*)"** badge on admin roles
+
+### TLS/mTLS
+
+The API server supports TLS with self-signed or custom certificates, and mTLS via `--client-ca-file` for client certificate authentication. See [TLS_GUIDE.md](TLS_GUIDE.md).
+
+## Monitoring & Metrics
+
+### Real-Time Metrics in the Console
+
+The console collects metrics from two sources:
+- **K8s metrics API** (`/apis/metrics.k8s.io/v1beta1/nodes`) — real CPU/memory usage from Docker container stats, refreshed every 5 seconds
+- **In-browser collection** — pod counts, restart rates, event frequency collected every 30 seconds with 30-minute history
+
+### Overview Dashboard
+
+Health rings show pod/node/deployment readiness. Sparkline charts track pod count, node count, restart trends, and event rates over time.
+
+### Node Metrics
+
+The **Nodes** page shows CPU and memory utilization gauges per node with actual percentages from Docker container stats. Values update every 5 seconds.
+
+### Topology Metrics
+
+The **Topology** view shows:
+- Node CPU/MEM bars with percentages
+- Pod brightness based on CPU usage (brighter = more CPU)
+- Traffic particles along service connections
+
+### Activity Timeline
+
+At the bottom of Topology, the cluster activity timeline records snapshots every 15 seconds. Click any bar to see the cluster state at that point — pod count, node count, service count, and deltas.
+
+## Custom Resource Definitions (CRDs)
+
+### Discovering CRDs
+
+The **Explore All** page auto-discovers all resource types from the API, including CRDs. CRDs appear under custom categories (grouped by API group).
+
+### Managing CRDs
+
+Click any CRD-backed resource type to see instances, create new ones (via JSON), view details, and delete. The full CRD lifecycle works through the console just like built-in resources.
+
+See [CRD_IMPLEMENTATION.md](CRD_IMPLEMENTATION.md) for how to create CRDs via kubectl.
+
+## Resource Explorer
+
+The **Explore All** page discovers every resource type in the cluster (100+, including CRDs):
+- Grouped by category (Workloads, Networking, Storage, Access Control, etc.)
+- Search by kind, plural name, or short name
+- Live resource count per type
+- Click any type to browse instances
+
+This is the universal entry point for any resource the API server knows about.
+
+## Pod Log Streaming
+
+### From Topology
+
+Click any pod in the topology SVG to immediately open a **Live Logs** panel at the bottom of the screen. Logs refresh every 5 seconds with color-coded severity.
+
+### From Resource Detail
+
+Navigate to any pod's detail view and click the **Events** tab to see events for that specific pod.
+
+## Troubleshooting
+
+### Console shows "Loading..." forever
+
+- Check that the API server is running: `curl -k https://localhost:6443/healthz`
+- Check browser console for errors (F12 > Console tab)
+- If using auth, ensure a valid token is in `sessionStorage`
+
+### Console shows stale data
+
+- The namespace filter may be set — check the dropdown in the header
+- Click the refresh icon on any resource list
+- Hard refresh the page (Cmd+Shift+R)
+
+### Resource creates succeed but don't appear
+
+- The resource may be in a different namespace — set namespace filter to "All namespaces"
+- Watch updates may not be connected — check the "Connected" indicator in the header
+
+### Metrics show 0%
+
+- CPU/memory metrics come from Docker container stats
+- Very low utilization (< 1%) shows as "0.1%" with a tiny bar
+- If metrics are stuck at exactly 0, check that the API server can reach the Docker socket
+
+---
+
 ## Architecture
 
 The console is a React single-page application served by the Axum API server at `/console/`. Because the SPA and API share the same origin, there is no CORS configuration, no nginx proxy, and no separate deployment.
