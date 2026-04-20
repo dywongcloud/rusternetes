@@ -82,6 +82,21 @@ kubectl get nodes
 kubectl create deployment nginx --image=nginx
 ```
 
+### Full cluster (Podman + etcd)
+
+```bash
+git clone https://github.com/calfonso/rusternetes.git
+cd rusternetes
+
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+podman-compose -f compose.yml build
+podman-compose -f compose.yml up -d
+bash scripts/bootstrap-cluster.sh
+
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+```
+
 ### Full cluster with SQLite (no etcd)
 
 Same cluster, but [Rhino](https://github.com/calfonso/rhino) replaces etcd. No recompilation needed — same binaries.

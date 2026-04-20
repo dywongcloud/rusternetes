@@ -102,8 +102,21 @@ podman info
 podman-compose version
 ```
 
-Podman provides a Docker-compatible socket at `/var/run/docker.sock`, so
-`docker-compose` commands work against the Podman machine as well.
+Podman uses a dedicated compose file (`compose.yml`) that mounts the
+Podman socket (`/run/podman/podman.sock`) instead of the Docker socket:
+
+```bash
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+podman-compose -f compose.yml build
+podman-compose -f compose.yml up -d
+```
+
+The Makefile auto-detects the runtime and selects the right compose file:
+
+```bash
+make build-images   # uses compose.yml if podman-compose is found
+make dev-up
+```
 
 ### Linux -- Docker Engine
 
@@ -130,13 +143,13 @@ sudo dnf install podman podman-compose docker-compose
 # Ubuntu/Debian
 sudo apt-get install podman podman-compose docker-compose
 
-# All commands must run as root
-sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose build
-sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose up -d
+# All commands must run as root and use the podman compose file
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose -f compose.yml build
+sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose -f compose.yml up -d
 ```
 
 The rest of this guide uses `docker compose` syntax. If you are using Podman,
-substitute `sudo podman-compose` wherever you see `docker compose`.
+substitute `sudo podman-compose -f compose.yml` wherever you see `docker compose`.
 
 ## Running the Cluster
 

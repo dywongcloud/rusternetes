@@ -4,6 +4,14 @@
 CONTAINER_RUNTIME := $(shell command -v podman 2> /dev/null || command -v docker 2> /dev/null)
 COMPOSE_CMD := $(shell command -v podman-compose 2> /dev/null || command -v docker-compose 2> /dev/null)
 
+# Select the right compose file for the runtime
+ifeq ($(findstring podman,$(COMPOSE_CMD)),podman)
+COMPOSE_FILE ?= compose.yml
+else
+COMPOSE_FILE ?= docker-compose.yml
+endif
+COMPOSE := $(COMPOSE_CMD) -f $(COMPOSE_FILE)
+
 # Container image configuration
 IMAGE_PREFIX ?= rusternetes
 IMAGE_TAG ?= latest
@@ -60,7 +68,7 @@ clean: ## Clean build artifacts
 # Container Development
 build-images: ## Build all container images
 	@echo "$(GREEN)Building all container images...$(NC)"
-	$(COMPOSE_CMD) build
+	$(COMPOSE) build
 
 build-image-%: ## Build a specific component image (e.g., make build-image-api-server)
 	@echo "$(GREEN)Building $* image...$(NC)"
@@ -82,7 +90,7 @@ dev-up: ## Start the development cluster
 	fi
 	@echo "$(GREEN)Starting development cluster...$(NC)"
 	@echo "Using volume path: $$KUBELET_VOLUMES_PATH"
-	$(COMPOSE_CMD) up -d
+	$(COMPOSE) up -d
 	@echo ""
 	@echo "$(BOLD)Cluster started!$(NC)"
 	@echo "API Server: http://localhost:6443"
@@ -90,33 +98,33 @@ dev-up: ## Start the development cluster
 
 dev-down: ## Stop the development cluster
 	@echo "$(GREEN)Stopping development cluster...$(NC)"
-	$(COMPOSE_CMD) down
+	$(COMPOSE) down
 
 dev-restart: ## Restart the development cluster
 	@echo "$(GREEN)Restarting development cluster...$(NC)"
-	$(COMPOSE_CMD) restart
+	$(COMPOSE) restart
 
 dev-logs: ## View logs from all services
-	$(COMPOSE_CMD) logs -f
+	$(COMPOSE) logs -f
 
 dev-logs-%: ## View logs from a specific service (e.g., make dev-logs-api-server)
-	$(COMPOSE_CMD) logs -f $*
+	$(COMPOSE) logs -f $*
 
 dev-clean: ## Clean up all containers, volumes, and networks
 	@echo "$(YELLOW)WARNING: This will remove all containers, volumes, and networks$(NC)"
 	@read -p "Continue? [y/N]: " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		$(COMPOSE_CMD) down -v; \
+		$(COMPOSE) down -v; \
 		echo "$(GREEN)Cleanup complete!$(NC)"; \
 	else \
 		echo "Cleanup cancelled."; \
 	fi
 
 dev-ps: ## Show running containers
-	$(COMPOSE_CMD) ps
+	$(COMPOSE) ps
 
 dev-exec-%: ## Execute a shell in a running container (e.g., make dev-exec-api-server)
-	$(COMPOSE_CMD) exec $* /bin/sh
+	$(COMPOSE) exec $* /bin/sh
 
 # Local Binary Execution
 run-api-server: ## Run API server locally
