@@ -134,7 +134,7 @@ docker compose version
 ### Linux -- Podman (rootful mode required)
 
 Podman works on Linux but must run in rootful mode for kube-proxy iptables access.
-All `docker compose` commands below become `sudo podman-compose` commands.
+All `docker compose` commands below become `sudo podman-compose -f compose.yml` commands.
 
 ```bash
 # Fedora/RHEL/CentOS
@@ -299,13 +299,13 @@ docker compose build
 
 # Podman
 sudo podman system prune -a
-sudo podman-compose build
+sudo podman-compose -f compose.yml build
 ```
 
 ### Podman: kube-proxy Permission Denied
 
 If kube-proxy logs show `Permission denied (you must be root)`, you are not
-running in rootful mode. Use `sudo podman-compose` for all commands.
+running in rootful mode. Use `sudo podman-compose -f compose.yml` for all commands.
 
 ### Podman Machine Fails on macOS
 

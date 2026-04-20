@@ -38,7 +38,7 @@ Docker Desktop automatically provides rootful execution, while Podman Machine on
 
 ### Linux
 - **Option 1**: Docker (standard installation)
-- **Option 2**: Podman in rootful mode (`sudo podman-compose up -d`)
+- **Option 2**: Podman in rootful mode (`sudo podman-compose -f compose.yml up -d`)
 
 ### Windows
 - **Recommended**: Docker Desktop
@@ -172,8 +172,8 @@ KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pod
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
 
 # Build and start (rootful mode)
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose build
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml build
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml up -d
 
 # Bootstrap
 cat bootstrap-cluster.yaml | envsubst > /tmp/bootstrap-expanded.yaml
@@ -199,7 +199,7 @@ docker info
 
 This indicates not running in rootful mode:
 - **Docker Desktop**: Should never happen (automatically rootful)
-- **Podman**: Use `sudo podman-compose up -d`
+- **Podman**: Use `sudo podman-compose -f compose.yml up -d`
 
 ### Podman vfkit Error on macOS
 

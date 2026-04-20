@@ -111,7 +111,7 @@ If you need to bootstrap the cluster manually:
 # 1. Ensure the cluster is running
 docker-compose up -d
 # or
-podman-compose up -d
+podman-compose -f compose.yml up -d
 
 # 2. Run the bootstrap script
 ./scripts/bootstrap-cluster.sh

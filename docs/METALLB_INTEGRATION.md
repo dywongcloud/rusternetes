@@ -329,7 +329,7 @@ For local development with Podman:
 
 ```bash
 # Start Rusternetes cluster
-podman-compose up -d
+podman-compose -f compose.yml up -d
 
 # Install MetalLB
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml

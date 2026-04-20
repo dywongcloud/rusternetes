@@ -92,8 +92,8 @@ For production environments, use proper certificates from a trusted Certificate 
 
 4. **Restart the cluster:**
    ```bash
-   podman-compose down
-   podman-compose up -d
+   podman-compose -f compose.yml down
+   podman-compose -f compose.yml up -d
    ```
 
 ### Option 2: Using cert-manager (Kubernetes-style)
@@ -327,7 +327,7 @@ For production, implement certificate rotation:
 
 1. **Generate new certificates before expiry**
 2. **Update mounted certificate files**
-3. **Restart API server:** `podman-compose restart api-server`
+3. **Restart API server:** `podman-compose -f compose.yml restart api-server`
 
 The API server will load the new certificates on restart.
 

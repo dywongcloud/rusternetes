@@ -393,7 +393,7 @@ bash scripts/bootstrap-cluster.sh</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Run with rootful Podman</span>
-sudo podman-compose up <span class="flag">-d</span>
+sudo podman-compose <span class="flag">-f</span> compose.yml up <span class="flag">-d</span>
 
 <span class="comment"># Or set Podman Machine to rootful mode</span>
 podman machine set <span class="flag">--rootful</span>

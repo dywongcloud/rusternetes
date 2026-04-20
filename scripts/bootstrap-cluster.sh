@@ -18,6 +18,16 @@ print_step() {
     echo -e "${GREEN}==>${NC} $1"
 }
 
+# Detect container runtime (docker or podman)
+if command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
+    CONTAINER_RT=podman
+elif command -v docker &>/dev/null && docker ps &>/dev/null 2>&1; then
+    CONTAINER_RT=docker
+else
+    echo "ERROR: No container runtime (docker or podman) found"
+    exit 1
+fi
+
 print_warning() {
     echo -e "${YELLOW}WARNING:${NC} $1"
 }

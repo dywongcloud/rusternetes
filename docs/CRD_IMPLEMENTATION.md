@@ -361,7 +361,7 @@ Test scenarios:
 
 ```bash
 # 1. Start the cluster
-podman-compose up -d
+podman-compose -f compose.yml up -d
 
 # 2. Create a CRD
 kubectl apply -f examples/crd-example.yaml

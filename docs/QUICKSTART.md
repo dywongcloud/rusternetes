@@ -24,7 +24,7 @@ sudo usermod -aG docker $USER
 
 ### Linux — Podman (rootful mode required)
 
-Podman works on Linux but must run in rootful mode because kube-proxy needs `CAP_NET_ADMIN` for iptables. Substitute `sudo podman-compose` wherever this guide says `docker compose`.
+Podman works on Linux but must run in rootful mode because kube-proxy needs `CAP_NET_ADMIN` for iptables. Substitute `sudo podman-compose -f compose.yml` wherever this guide says `docker compose`.
 
 ## Start the Cluster
 

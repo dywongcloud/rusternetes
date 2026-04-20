@@ -90,9 +90,9 @@ pip3 install podman-compose
 brew install podman-compose
 
 # Use it (same as docker-compose)
-podman-compose up -d
-podman-compose logs -f
-podman-compose down
+podman-compose -f compose.yml up -d
+podman-compose -f compose.yml logs -f
+podman-compose -f compose.yml down
 ```
 
 ### Podman Compose vs Docker Compose
@@ -351,7 +351,7 @@ Make Podman fully transparent:
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
 alias docker=podman
-alias docker-compose=podman-compose
+alias docker-compose='podman-compose -f compose.yml'
 
 # Or symlink (requires sudo)
 sudo ln -s $(which podman) /usr/local/bin/docker
@@ -513,5 +513,5 @@ systemctl --user start api-server
 | List images | `podman images` |
 | Remove image | `podman rmi image` |
 | Clean up | `podman system prune -a` |
-| Compose up | `podman-compose up -d` |
-| Compose down | `podman-compose down` |
+| Compose up | `podman-compose -f compose.yml up -d` |
+| Compose down | `podman-compose -f compose.yml down` |

@@ -293,7 +293,7 @@ Run integration tests (requires etcd):
 
 ```bash
 # Start etcd
-podman-compose up -d etcd
+podman-compose -f compose.yml up -d etcd
 
 # Run tests
 cargo test --test volume_expansion_test -- --ignored
@@ -309,7 +309,7 @@ Test scenarios covered:
 
 ```bash
 # 1. Start the cluster
-podman-compose up -d
+podman-compose -f compose.yml up -d
 
 # 2. Create test resources
 kubectl apply -f examples/volume-expansion-example.yaml
@@ -426,7 +426,7 @@ User updates PVC.spec.resources.requests.storage
 2. Verify PV exists and is accessible
 3. Restart controller if needed:
    ```bash
-   podman-compose restart controller-manager
+   podman-compose -f compose.yml restart controller-manager
    ```
 
 ### Filesystem Not Resized

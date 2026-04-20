@@ -196,7 +196,7 @@ echo 'export KUBELET_VOLUMES_PATH=/home/'$(whoami)'/rusternetes/.rusternetes/vol
 
 ```bash
 # Build all images with Podman (rootful)
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose build
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml build
 
 # This will build:
 # - rusternetes-api-server
@@ -231,10 +231,10 @@ Build time: 10-20 minutes depending on CPU and whether Rust cache exists.
 mkdir -p $KUBELET_VOLUMES_PATH
 
 # Start the cluster in rootful mode
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml up -d
 
 # Check status
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose ps
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml ps
 
 # Expected output: All containers in "Up" state
 # - rusternetes-etcd
@@ -262,7 +262,7 @@ docker-compose ps
 
 ```bash
 # Check logs for any errors
-sudo podman-compose logs | grep -i error
+sudo podman-compose -f compose.yml logs | grep -i error
 
 # Or for Docker
 docker-compose logs | grep -i error
@@ -333,7 +333,7 @@ KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pod
 
 ```bash
 # Check kube-proxy logs (using Podman)
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose logs kube-proxy | grep -i iptables
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml logs kube-proxy | grep -i iptables
 
 # Expected to see:
 # "Iptables chains initialized successfully"
@@ -450,7 +450,7 @@ KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pod
 
 **Solution**: Make sure you're running in rootful mode with `sudo`:
 ```bash
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml up -d
 ```
 
 ### Container Build Fails
@@ -469,7 +469,7 @@ sudo podman system prune -a -f
 docker system prune -a -f
 
 # Retry build
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose build
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml build
 ```
 
 ### etcd Won't Start
@@ -483,7 +483,7 @@ sudo podman logs rusternetes-etcd
 
 # Remove and recreate volume
 sudo podman volume rm rusternetes-etcd-data
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d etcd
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml up -d etcd
 ```
 
 ### API Server Not Responding
@@ -496,13 +496,13 @@ sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d etcd
 sudo podman ps | grep api-server
 
 # Check logs
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose logs api-server
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml logs api-server
 
 # Verify etcd is healthy
 sudo podman exec rusternetes-etcd etcdctl endpoint health
 
 # Restart API server
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose restart api-server
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml restart api-server
 ```
 
 ### CoreDNS Not Starting
@@ -512,7 +512,7 @@ sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose restart api-serve
 **Solution**:
 ```bash
 # Check kubelet logs
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose logs kubelet
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml logs kubelet
 
 # Check if volumes directory exists and is writable
 ls -la $KUBELET_VOLUMES_PATH
@@ -576,8 +576,8 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/home/$(whoami)/rusternetes
 Environment="KUBELET_VOLUMES_PATH=/home/$(whoami)/rusternetes/.rusternetes/volumes"
-ExecStart=/usr/bin/podman-compose up -d
-ExecStop=/usr/bin/podman-compose down
+ExecStart=/usr/bin/podman-compose -f compose.yml up -d
+ExecStop=/usr/bin/podman-compose -f compose.yml down
 User=root
 
 [Install]
@@ -668,28 +668,28 @@ For production HA setup:
 
 ```bash
 # Start cluster
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml up -d
 
 # Stop cluster
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose down
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml down
 
 # View logs (all services)
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose logs -f
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml logs -f
 
 # View logs (specific service)
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose logs -f api-server
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml logs -f api-server
 
 # Restart service
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose restart api-server
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml restart api-server
 
 # Check cluster status
 KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get nodes
 KUBECONFIG=/dev/null ./target/release/kubectl --insecure-skip-tls-verify get pods -A
 
 # Clean restart
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose down -v
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml down -v
 sudo podman system prune -a -f
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose up -d
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml up -d
 ```
 
 ### Environment Variables
@@ -701,7 +701,7 @@ export KUBELET_VOLUMES_PATH=/home/$(whoami)/rusternetes/.rusternetes/volumes
 
 Or use inline:
 ```bash
-sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose [command]
+sudo KUBELET_VOLUMES_PATH=$KUBELET_VOLUMES_PATH podman-compose -f compose.yml [command]
 ```
 
 ## Next Steps

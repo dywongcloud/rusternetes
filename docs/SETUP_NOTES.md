@@ -75,7 +75,7 @@ None - all components are fully operational!
 
 ```bash
 # Start the cluster
-podman-compose up -d
+podman-compose -f compose.yml up -d
 
 # Check status
 podman ps
@@ -84,7 +84,7 @@ podman ps
 podman logs -f rusternetes-api-server
 
 # Stop the cluster
-podman-compose down
+podman-compose -f compose.yml down
 ```
 
 ## Testing the Setup
