@@ -198,14 +198,16 @@ pub async fn get_openapi_spec_path(
                         .unwrap_or(false);
 
                     if crd_preserves || schema_preserves {
-                        serde_json::json!({
+                        let mut def = serde_json::json!({
                             "type": "object",
                             "x-kubernetes-group-version-kind": [{
                                 "group": group,
                                 "kind": kind,
                                 "version": ver,
                             }],
-                        })
+                        });
+                        add_standard_crd_properties(&mut def);
+                        def
                     } else {
                         let mut cleaned = schema_val.clone();
                         strip_false_extensions(&mut cleaned);
@@ -219,18 +221,21 @@ pub async fn get_openapi_spec_path(
                                 }]),
                             );
                         }
+                        add_standard_crd_properties(&mut cleaned);
                         cleaned
                     }
                 } else {
                     // No schema — CRD without validation, treat as preserveUnknownFields
-                    serde_json::json!({
+                    let mut def = serde_json::json!({
                         "type": "object",
                         "x-kubernetes-group-version-kind": [{
                             "group": group,
                             "kind": kind,
                             "version": ver,
                         }],
-                    })
+                    });
+                    add_standard_crd_properties(&mut def);
+                    def
                 };
 
                 // Insert into components/schemas
@@ -379,14 +384,17 @@ pub async fn get_swagger_spec(
                     if crd_preserves || schema_preserves {
                         // Replace entire schema with just {type: object}
                         // K8s ref: builder.go:393-395
-                        definitions.insert(def_key.clone(), serde_json::json!({
+                        let mut def = serde_json::json!({
                             "type": "object",
                             "x-kubernetes-group-version-kind": [{
                                 "group": group,
                                 "kind": kind,
                                 "version": ver,
                             }],
-                        }));
+                        });
+                        // Add metadata/apiVersion/kind properties (K8s always adds these)
+                        add_standard_crd_properties(&mut def);
+                        definitions.insert(def_key.clone(), def);
                     } else {
                         // Apply v2 conversion: strip extensions, omitempty defaults
                         let mut cleaned = schema_val.clone();
@@ -404,6 +412,8 @@ pub async fn get_swagger_spec(
                                 }]),
                             );
                         }
+                        // Add metadata/apiVersion/kind properties (K8s always adds these)
+                        add_standard_crd_properties(&mut cleaned);
                         definitions.insert(def_key.clone(), cleaned);
                     }
                 }
@@ -504,6 +514,37 @@ pub async fn get_swagger_spec(
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json_bytes))
         .unwrap()
+}
+
+/// Add standard K8s properties (metadata, apiVersion, kind) to a CRD schema definition.
+/// K8s always adds these to CRD OpenAPI definitions.
+/// K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
+fn add_standard_crd_properties(schema: &mut serde_json::Value) {
+    if let Some(obj) = schema.as_object_mut() {
+        let properties = obj
+            .entry("properties")
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(props) = properties.as_object_mut() {
+            props.entry("metadata".to_string()).or_insert_with(|| {
+                serde_json::json!({
+                    "description": "Standard object's metadata. More info: https://git.k8s.io/community/contributors/dede/sig-architecture/api-conventions.md#metadata",
+                    "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+                })
+            });
+            props.entry("apiVersion".to_string()).or_insert_with(|| {
+                serde_json::json!({
+                    "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/dede/sig-architecture/api-conventions.md#resources",
+                    "type": "string"
+                })
+            });
+            props.entry("kind".to_string()).or_insert_with(|| {
+                serde_json::json!({
+                    "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/dede/sig-architecture/api-conventions.md#types-kinds",
+                    "type": "string"
+                })
+            });
+        }
+    }
 }
 
 /// Recursively strip default/empty values from a CRD JSON schema to match

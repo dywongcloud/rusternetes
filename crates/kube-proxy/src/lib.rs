@@ -52,36 +52,87 @@ pub async fn run(storage: Arc<StorageBackend>, config: KubeProxyConfig) -> anyho
     loop {
         queue.add(RECONCILE_ALL_SENTINEL.into()).await;
 
-        // Watch services (primary trigger for iptables changes)
-        let watch_result = storage.watch("/registry/services/").await;
-        let mut watch = match watch_result {
+        // Watch services, endpoints, AND endpointslices for fast iptables updates.
+        // K8s kube-proxy watches all three resource types to react immediately
+        // when backends change.
+        let svc_watch = storage.watch("/registry/services/").await;
+        let ep_watch = storage.watch("/registry/endpoints/").await;
+        let es_watch = storage.watch("/registry/endpointslices/").await;
+
+        let mut svc_watch = match svc_watch {
             Ok(w) => w,
             Err(e) => {
-                tracing::error!("Failed to establish watch: {}, retrying", e);
+                tracing::error!("Failed to establish service watch: {}, retrying", e);
+                tokio::time::sleep(sync_interval).await;
+                continue;
+            }
+        };
+        let mut ep_watch = match ep_watch {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::error!("Failed to establish endpoints watch: {}, retrying", e);
+                tokio::time::sleep(sync_interval).await;
+                continue;
+            }
+        };
+        let mut es_watch = match es_watch {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::error!("Failed to establish endpointslice watch: {}, retrying", e);
                 tokio::time::sleep(sync_interval).await;
                 continue;
             }
         };
 
-        // Periodic resync as a safety net — 15s keeps iptables fresh even if
-        // watch events are missed or endpoints change without a service change.
-        let mut resync = tokio::time::interval(std::time::Duration::from_secs(15));
+        // Periodic resync as a safety net — 10s keeps iptables fresh even if
+        // watch events are missed.
+        let mut resync = tokio::time::interval(std::time::Duration::from_secs(10));
         resync.tick().await; // consume the immediate first tick
 
         let mut watch_broken = false;
         while !watch_broken {
             tokio::select! {
-                event = watch.next() => {
+                event = svc_watch.next() => {
                     match event {
                         Some(Ok(_)) => {
                             queue.add(RECONCILE_ALL_SENTINEL.into()).await;
                         }
                         Some(Err(e)) => {
-                            tracing::warn!("Watch error: {}, reconnecting", e);
+                            tracing::warn!("Service watch error: {}, reconnecting", e);
                             watch_broken = true;
                         }
                         None => {
-                            tracing::warn!("Watch stream ended, reconnecting");
+                            tracing::warn!("Service watch stream ended, reconnecting");
+                            watch_broken = true;
+                        }
+                    }
+                }
+                event = ep_watch.next() => {
+                    match event {
+                        Some(Ok(_)) => {
+                            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!("Endpoints watch error: {}, reconnecting", e);
+                            watch_broken = true;
+                        }
+                        None => {
+                            tracing::warn!("Endpoints watch stream ended, reconnecting");
+                            watch_broken = true;
+                        }
+                    }
+                }
+                event = es_watch.next() => {
+                    match event {
+                        Some(Ok(_)) => {
+                            queue.add(RECONCILE_ALL_SENTINEL.into()).await;
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!("EndpointSlice watch error: {}, reconnecting", e);
+                            watch_broken = true;
+                        }
+                        None => {
+                            tracing::warn!("EndpointSlice watch stream ended, reconnecting");
                             watch_broken = true;
                         }
                     }

@@ -5029,23 +5029,11 @@ impl ContainerRuntime {
                                 finished_at: ds.finished_at.clone(),
                                 container_id: cid.clone(),
                             };
-                            // For non-zero exit with restartPolicy=Always, show CrashLoopBackOff
-                            let restart_always = pod
-                                .spec
-                                .as_ref()
-                                .and_then(|s| s.restart_policy.as_deref())
-                                .unwrap_or("Always")
-                                == "Always";
-                            if code != 0 && restart_always {
-                                // Store terminated as lastState, show Waiting/CrashLoopBackOff as current
-                                // We'll handle lastState below
-                                (ContainerState::Waiting {
-                                reason: Some("CrashLoopBackOff".to_string()),
-                                message: Some(format!("back-off restarting failed container init container \"{}\" exited with {}", ic.name, code)),
-                            }, cid, iid)
-                            } else {
-                                (terminated, cid, iid)
-                            }
+                            // Keep the Terminated state as-is — K8s shows the actual
+                            // container state (Terminated) with the exit code. The
+                            // CrashLoopBackOff reason is only shown when the container
+                            // has been removed and the kubelet is waiting to restart it.
+                            (terminated, cid, iid)
                         } else {
                             (
                                 ContainerState::Waiting {
@@ -5059,10 +5047,8 @@ impl ContainerRuntime {
                     }
                     Err(_) => {
                         // Container doesn't exist in Docker — it may have been removed
-                        // after successful completion. Check the pod's existing status
-                        // to preserve Terminated state for init containers that already
-                        // finished successfully (exit code 0). Without this, the status
-                        // resets to Waiting/PodInitializing and ready becomes false.
+                        // after successful completion or for restart.
+                        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go
                         let prev = pod
                             .status
                             .as_ref()
@@ -5081,18 +5067,44 @@ impl ContainerRuntime {
                                         prev_status.image_id.clone(),
                                     )
                                 } else {
-                                    // Previously terminated with error — fall back to Waiting
-                                    (
-                                        ContainerState::Waiting {
-                                            reason: Some("PodInitializing".to_string()),
-                                            message: None,
-                                        },
-                                        None,
-                                        None,
-                                    )
+                                    // Previously terminated with error — container was
+                                    // removed for restart. Show CrashLoopBackOff.
+                                    let restart_always = pod
+                                        .spec
+                                        .as_ref()
+                                        .and_then(|s| s.restart_policy.as_deref())
+                                        .unwrap_or("Always")
+                                        == "Always";
+                                    if restart_always {
+                                        (
+                                            ContainerState::Waiting {
+                                                reason: Some("CrashLoopBackOff".to_string()),
+                                                message: Some(format!("back-off restarting failed container init container \"{}\" exited with {}", ic.name, exit_code)),
+                                            },
+                                            None,
+                                            None,
+                                        )
+                                    } else {
+                                        (
+                                            ContainerState::Waiting {
+                                                reason: Some("PodInitializing".to_string()),
+                                                message: None,
+                                            },
+                                            None,
+                                            None,
+                                        )
+                                    }
                                 }
+                            } else if matches!(&prev_status.state, Some(ContainerState::Waiting { reason, .. }) if reason.as_deref() == Some("CrashLoopBackOff")) {
+                                // Previous state was CrashLoopBackOff — container was
+                                // removed and being restarted. Preserve the state.
+                                (
+                                    prev_status.state.clone().unwrap(),
+                                    None,
+                                    None,
+                                )
                             } else {
-                                // Previous state wasn't Terminated — fall back to Waiting
+                                // Previous state wasn't Terminated or CrashLoopBackOff — fall back
                                 (
                                     ContainerState::Waiting {
                                         reason: Some("PodInitializing".to_string()),
@@ -5121,6 +5133,7 @@ impl ContainerRuntime {
             // Preserve restart_count and last_state from the pod's existing status.
             // When we remove and recreate a failed init container, the Docker state
             // resets, but K8s tracks restarts across container recreations.
+            // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go — calcRestartCountByLogDir
             let existing_status = pod
                 .status
                 .as_ref()
@@ -5130,30 +5143,62 @@ impl ContainerRuntime {
             let mut restart_count = existing_status.map(|s| s.restart_count).unwrap_or(0);
             let mut last_state = existing_status.and_then(|s| s.last_state.clone());
 
-            // If the container failed (non-zero exit) and the previous state was also
-            // terminated, increment restart_count and move current to last_state.
-            if let ContainerState::Terminated { exit_code, .. } = &state {
-                if *exit_code != 0 {
+            // Track restarts based on the current and previous states.
+            // K8s increments restart_count each time a container is restarted.
+            match &state {
+                ContainerState::Terminated { exit_code, .. } if *exit_code != 0 => {
+                    // Container failed. Check if this is a NEW failure by comparing
+                    // with the existing status. If existing was Terminated with a
+                    // different container_id, or was Waiting (removed for restart),
+                    // this is a restart.
+                    let is_new_failure = existing_status
+                        .map(|prev| {
+                            // If previous state was Waiting (CrashLoopBackOff or
+                            // PodInitializing), the container was recreated → restart
+                            matches!(&prev.state, Some(ContainerState::Waiting { .. }))
+                            // If previous was also Terminated, check container_id
+                            || matches!(&prev.state, Some(ContainerState::Terminated { .. }) if prev.container_id != container_id)
+                        })
+                        .unwrap_or(false);
+
+                    if is_new_failure {
+                        restart_count += 1;
+                    }
+                    // Move existing terminated to last_state
                     if let Some(prev) = existing_status {
-                        if let Some(ContainerState::Terminated { .. }) = &prev.state {
-                            // Container was previously terminated too — this is a restart
-                        } else if matches!(prev.state, Some(ContainerState::Waiting { .. })) {
-                            // Previous was Waiting (after removal) — count the restart
-                            restart_count += 1;
+                        if let Some(ContainerState::Terminated { exit_code, .. }) = &prev.state {
+                            if *exit_code != 0 {
+                                last_state = prev.state.clone();
+                            }
                         }
                     }
-                    // Set last_state to the current terminated state for CrashLoopBackOff
-                    last_state = Some(state.clone());
                 }
-            } else if matches!(state, ContainerState::Waiting { .. }) {
-                // Waiting after a failure — keep last_state from existing
-                if existing_status
-                    .and_then(|s| s.state.as_ref())
-                    .map(|s| matches!(s, ContainerState::Terminated { exit_code, .. } if *exit_code != 0))
-                    .unwrap_or(false)
+                ContainerState::Waiting { reason, .. }
+                    if reason.as_deref() == Some("CrashLoopBackOff") =>
                 {
-                    restart_count += 1;
-                    last_state = existing_status.and_then(|s| s.state.clone());
+                    // Container was removed for restart — preserve last_state from
+                    // existing. If existing had a Terminated state, that becomes last_state.
+                    if let Some(prev) = existing_status {
+                        match &prev.state {
+                            Some(ContainerState::Terminated { exit_code, .. }) if *exit_code != 0 => {
+                                // Transition from Terminated → CrashLoopBackOff (removal)
+                                // The terminated state becomes last_state
+                                last_state = prev.state.clone();
+                                restart_count += 1;
+                            }
+                            Some(ContainerState::Waiting { reason: prev_reason, .. })
+                                if prev_reason.as_deref() == Some("CrashLoopBackOff") =>
+                            {
+                                // Already in CrashLoopBackOff — keep existing last_state
+                                // and don't double-count
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {
+                    // Running, Waiting/PodInitializing, or successful termination
+                    // — no restart count change needed
                 }
             }
 

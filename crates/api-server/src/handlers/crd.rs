@@ -264,9 +264,13 @@ pub async fn create_crd(
             meta.insert("name".to_string(), serde_json::json!(crd.metadata.name));
         }
     }
-    if let Some(status) = crd_value.get_mut("status") {
-        if let Some(obj) = status.as_object_mut() {
-            obj.insert("observedGeneration".to_string(), serde_json::json!(1));
+    // Merge the typed struct's status into the raw JSON value.
+    // The original body from the client usually lacks status, but our typed
+    // `crd` struct has the Established/NamesAccepted conditions set above.
+    // K8s always returns status in the CRD response and stores it.
+    if let Ok(status_json) = serde_json::to_value(&crd.status) {
+        if let Some(obj) = crd_value.as_object_mut() {
+            obj.insert("status".to_string(), status_json);
         }
     }
 

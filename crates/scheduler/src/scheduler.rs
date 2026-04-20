@@ -220,7 +220,28 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         // Schedule each pod with a timeout to prevent one slow pod from
         // blocking all others. K8s processes pods concurrently in the
         // scheduling queue; we process sequentially but with a per-pod timeout.
-        for pod in pending_pods {
+        for mut pod in pending_pods {
+            // Resolve priority from PriorityClass if not explicitly set.
+            // K8s admission controller sets spec.priority from priorityClassName,
+            // but our admission doesn't always do this. Ensure it's set so
+            // preemption can check the priority correctly.
+            if pod.spec.as_ref().and_then(|s| s.priority).is_none() {
+                let resolved = self.get_pod_priority_sync(&pod, &priority_classes);
+                if resolved != 0 {
+                    if let Some(ref mut spec) = pod.spec {
+                        spec.priority = Some(resolved);
+                    }
+                    // Also update in storage so preemption picks up the priority
+                    let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+                    let pod_key = rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
+                    if let Ok(mut stored_pod) = self.storage.get::<Pod>(&pod_key).await {
+                        if let Some(ref mut spec) = stored_pod.spec {
+                            spec.priority = Some(resolved);
+                        }
+                        let _ = self.storage.update(&pod_key, &stored_pod).await;
+                    }
+                }
+            }
             // 5-second timeout per pod — if scheduling takes longer (e.g.,
             // complex preemption calculation), skip and retry next cycle.
             let schedule_result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -275,25 +296,66 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
                         }
                     }
 
-                    // Set nominatedNodeName on the pod instead of binding immediately.
-                    // K8s doesn't bind the preemptor right away — it waits for victims
-                    // to terminate, then the next scheduling cycle picks up the pod.
-                    // The resource counting fix (only count Running non-terminating pods)
-                    // ensures the preemptor will be schedulable once victims stop running.
+                    // After evicting victims, try to bind the preemptor immediately.
+                    // K8s sets nominatedNodeName and waits for the next cycle, but in
+                    // our architecture the RS controller may create replacement pods
+                    // that steal the freed resources before the next scheduling cycle.
+                    // To avoid this race, re-read cluster state and attempt binding now.
+                    all_pods = self.storage.list(&prefix).await.unwrap_or_default();
+                    let fresh_nodes: Vec<Node> = self.storage.list(&nodes_prefix).await.unwrap_or_default();
+
+                    // Re-read the pod for fresh state
                     let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
                     let pod_key =
                         rusternetes_storage::build_key("pods", Some(pod_ns), &pod.metadata.name);
-                    if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
-                        if let Some(ref mut status) = p.status {
-                            status.nominated_node_name = Some(node_name.clone());
+                    let fresh_pod = self.storage.get::<Pod>(&pod_key).await.ok();
+
+                    if let Some(fresh_pod) = fresh_pod {
+                        // Try to schedule directly to the nominated node first
+                        if let Some(target_node) = fresh_nodes.iter().find(|n| n.metadata.name == node_name) {
+                            let resource_score = self.calculate_resource_score_with_overhead(target_node, &fresh_pod, &all_pods);
+                            if resource_score > 0 {
+                                // Resources are free — bind immediately
+                                if let Err(e) = self.bind_pod_to_node(fresh_pod, &node_name).await {
+                                    error!("Failed to bind preemptor to nominated node: {}", e);
+                                    // Fall back to setting nominatedNodeName
+                                    if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
+                                        if let Some(ref mut status) = p.status {
+                                            status.nominated_node_name = Some(node_name.clone());
+                                        }
+                                        let _ = self.storage.update(&pod_key, &p).await;
+                                    }
+                                } else {
+                                    info!(
+                                        "Immediately bound preemptor pod {} to node {}",
+                                        pod.metadata.name, node_name
+                                    );
+                                }
+                            } else {
+                                // Resources not yet free (victims still running) — set nominatedNodeName
+                                if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
+                                    if let Some(ref mut status) = p.status {
+                                        status.nominated_node_name = Some(node_name.clone());
+                                    }
+                                    let _ = self.storage.update(&pod_key, &p).await;
+                                    info!(
+                                        "Set nominatedNodeName={} on preempting pod {} (resources not yet free)",
+                                        node_name, pod.metadata.name
+                                    );
+                                }
+                            }
+                        } else {
+                            // Node not found — set nominatedNodeName anyway
+                            if let Ok(mut p) = self.storage.get::<Pod>(&pod_key).await {
+                                if let Some(ref mut status) = p.status {
+                                    status.nominated_node_name = Some(node_name.clone());
+                                }
+                                let _ = self.storage.update(&pod_key, &p).await;
+                            }
                         }
-                        let _ = self.storage.update(&pod_key, &p).await;
-                        info!(
-                            "Set nominatedNodeName={} on preempting pod {}",
-                            node_name, pod.metadata.name
-                        );
                     }
-                    // Re-read all_pods after preemption so next pod sees evictions
+
+                    // Re-read all_pods after potential binding so next pod sees updated state
                     all_pods = self.storage.list(&prefix).await.unwrap_or_default();
                 } else {
                     warn!(

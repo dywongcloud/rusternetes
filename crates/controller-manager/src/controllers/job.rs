@@ -942,8 +942,10 @@ impl<S: Storage + 'static> JobController<S> {
                 }]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
-                ready: Some(ready),
-                terminating: None,
+                // K8s sets ready and terminating to 0 when a job completes.
+                // The test expects non-nil pointer to 0, not nil (omitted).
+                ready: Some(0),
+                terminating: Some(0),
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
@@ -992,8 +994,9 @@ impl<S: Storage + 'static> JobController<S> {
                 }]),
                 start_time,
                 completion_time: Some(chrono::Utc::now()),
-                ready: Some(ready),
-                terminating: None,
+                // K8s sets ready and terminating to 0 when a job is terminal.
+                ready: Some(0),
+                terminating: Some(0),
                 completed_indexes: completed_indexes.clone(),
                 failed_indexes: failed_indexes.clone(),
                 uncounted_terminated_pods: None,
@@ -2877,8 +2880,9 @@ mod tests {
                 .any(|c| c.condition_type == "Complete" && c.status == "True"),
             "Complete condition should be set"
         );
-        // Terminating should reflect the 2 active pods that were terminated
-        assert_eq!(status.terminating, Some(2));
+        // K8s sets terminating to 0 when the job completes, even if pods
+        // are still being cleaned up. The job status reflects the final state.
+        assert_eq!(status.terminating, Some(0));
         assert_eq!(status.active, Some(0));
     }
 
@@ -2965,8 +2969,8 @@ mod tests {
                 && c.reason.as_deref() == Some("SuccessPolicy")),
             "Complete condition should have reason SuccessPolicy"
         );
-        // The 3 running pods should be terminating
-        assert_eq!(status.terminating, Some(3));
+        // K8s sets terminating to 0 when the job completes
+        assert_eq!(status.terminating, Some(0));
         assert_eq!(status.active, Some(0));
         assert_eq!(status.succeeded, Some(2));
         assert!(status.completion_time.is_some());

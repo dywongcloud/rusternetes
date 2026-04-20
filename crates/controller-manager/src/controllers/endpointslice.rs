@@ -33,12 +33,15 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
         Self { storage }
     }
 
-    /// Watch-based run loop. Watches services AND pods as primary resources.
+    /// Watch-based run loop. Watches services, pods, AND endpoints as primary resources.
     /// When a pod changes, we find services whose selector matches the pod
     /// and enqueue them for reconciliation.
+    /// When an endpoint changes, we enqueue it for mirroring (services without selectors).
     pub async fn run(self: Arc<Self>) -> Result<()> {
 
         let queue = WorkQueue::new();
+        // Separate queue for endpoints mirroring
+        let mirror_queue = WorkQueue::new();
 
         let worker_queue = queue.clone();
         let worker_self = Arc::clone(&self);
@@ -46,11 +49,19 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
             worker_self.worker(worker_queue).await;
         });
 
+        let mirror_worker_queue = mirror_queue.clone();
+        let mirror_worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            mirror_worker_self.mirror_worker(mirror_worker_queue).await;
+        });
+
         loop {
             self.enqueue_all(&queue).await;
+            self.enqueue_all_endpoints(&mirror_queue).await;
 
             let svc_prefix = build_prefix("services", None);
             let pod_prefix = build_prefix("pods", None);
+            let ep_prefix = build_prefix("endpoints", None);
 
             let svc_watch = match self.storage.watch(&svc_prefix).await {
                 Ok(w) => w,
@@ -68,9 +79,18 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
                     continue;
                 }
             };
+            let ep_watch = match self.storage.watch(&ep_prefix).await {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!("Failed to establish endpoints watch: {}, retrying", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
 
             let mut svc_watch = svc_watch;
             let mut pod_watch = pod_watch;
+            let mut ep_watch = ep_watch;
             let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
             resync.tick().await;
 
@@ -108,8 +128,27 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
                             }
                         }
                     }
+                    event = ep_watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                // Enqueue the endpoint for mirroring
+                                let key = extract_key(&ev);
+                                // Convert endpoints/ns/name to same format
+                                mirror_queue.add(key).await;
+                            }
+                            Some(Err(e)) => {
+                                tracing::warn!("Endpoints watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                tracing::warn!("Endpoints watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
                     _ = resync.tick() => {
                         self.enqueue_all(&queue).await;
+                        self.enqueue_all_endpoints(&mirror_queue).await;
                     }
                 }
             }
@@ -190,6 +229,158 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
         }
     }
 
+    /// Worker for mirroring Endpoints to EndpointSlices.
+    /// K8s has a separate endpointslice-mirroring-controller that watches Endpoints
+    /// and creates EndpointSlices for services without selectors and standalone Endpoints.
+    async fn mirror_worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            let parts: Vec<&str> = key.splitn(3, '/').collect();
+            let (ns, name) = match parts.len() {
+                3 => (parts[1], parts[2]),
+                _ => { queue.done(&key).await; continue; }
+            };
+            match self.mirror_endpoint(ns, name).await {
+                Ok(()) => queue.forget(&key).await,
+                Err(e) => {
+                    tracing::error!("Failed to mirror endpoint {}/{}: {}", ns, name, e);
+                    queue.requeue_rate_limited(key.clone()).await;
+                }
+            }
+            queue.done(&key).await;
+        }
+    }
+
+    /// Mirror a single Endpoints resource into an EndpointSlice.
+    /// Only mirrors Endpoints for services without selectors or standalone Endpoints.
+    /// K8s ref: pkg/controller/endpointslicemirroring/reconciler.go
+    async fn mirror_endpoint(&self, ns: &str, name: &str) -> Result<()> {
+        let ep_key = build_key("endpoints", Some(ns), name);
+
+        // Check if the Endpoints resource still exists
+        let ep: Endpoints = match self.storage.get(&ep_key).await {
+            Ok(ep) => ep,
+            Err(_) => {
+                // Endpoints deleted — clean up mirrored EndpointSlices
+                let es_prefix = build_prefix("endpointslices", Some(ns));
+                let existing_slices: Vec<EndpointSlice> =
+                    self.storage.list(&es_prefix).await.unwrap_or_default();
+                for slice in &existing_slices {
+                    let managed = slice.metadata.labels.as_ref()
+                        .and_then(|l| l.get("endpointslice.kubernetes.io/managed-by"))
+                        .map(|m| m == "endpointslice-mirroring-controller.k8s.io")
+                        .unwrap_or(false);
+                    let owned = slice.metadata.labels.as_ref()
+                        .and_then(|l| l.get("kubernetes.io/service-name"))
+                        .map(|n| n == name)
+                        .unwrap_or(false);
+                    if managed && owned {
+                        let slice_key = build_key("endpointslices", Some(ns), &slice.metadata.name);
+                        let _ = self.storage.delete(&slice_key).await;
+                        debug!("Deleted mirrored EndpointSlice {}/{} (source Endpoints deleted)", ns, slice.metadata.name);
+                    }
+                }
+                return Ok(());
+            }
+        };
+
+        // Skip Endpoints that have the skip-mirror label
+        // K8s ref: endpointslicemirroring/utils.go — shouldMirror()
+        if let Some(ref labels) = ep.metadata.labels {
+            if labels.get("endpointslice.kubernetes.io/skip-mirror") == Some(&"true".to_string()) {
+                return Ok(());
+            }
+        }
+
+        // Check if a Service with a SELECTOR exists for this name.
+        // If so, the main endpointslice controller handles it, skip mirroring.
+        let svc_key = build_key("services", Some(ns), name);
+        if let Ok(svc) = self.storage.get::<Service>(&svc_key).await {
+            let has_selector = svc.spec.selector.as_ref()
+                .map(|sel| !sel.is_empty())
+                .unwrap_or(false);
+            if has_selector {
+                return Ok(());
+            }
+        }
+
+        // Mirror the Endpoints to EndpointSlice(s).
+        // Use a unique slice name with "-mirror" suffix to avoid conflicts
+        // with selector-based EndpointSlices that use the service name directly.
+        let endpointslices = EndpointSlice::from_endpoints(&ep);
+
+        // If Endpoints has empty subsets, still create at least one empty EndpointSlice
+        // so the test can find it. K8s mirroring controller always creates at least
+        // one EndpointSlice per mirrored Endpoints object.
+        let slices_to_create = if endpointslices.is_empty() {
+            let mut empty_slice = EndpointSlice::new(name, "IPv4");
+            empty_slice.metadata.namespace = Some(ns.to_string());
+            vec![empty_slice]
+        } else {
+            endpointslices
+        };
+
+        for (idx, mut slice) in slices_to_create.into_iter().enumerate() {
+            // K8s mirroring controller generates names like "<ep-name>-<hash>"
+            // We use a deterministic suffix to avoid conflicts with selector-based slices
+            let slice_name = if idx == 0 {
+                format!("{}-mirrored", name)
+            } else {
+                format!("{}-mirrored-{}", name, idx)
+            };
+            slice.metadata.name = slice_name.clone();
+            slice.metadata.namespace = Some(ns.to_string());
+
+            let labels = slice.metadata.labels.get_or_insert_with(Default::default);
+            labels.insert("kubernetes.io/service-name".to_string(), name.to_string());
+            labels.insert(
+                "endpointslice.kubernetes.io/managed-by".to_string(),
+                "endpointslice-mirroring-controller.k8s.io".to_string(),
+            );
+
+            slice.metadata.owner_references =
+                Some(vec![rusternetes_common::types::OwnerReference {
+                    api_version: "v1".to_string(),
+                    kind: "Endpoints".to_string(),
+                    name: name.to_string(),
+                    uid: ep.metadata.uid.clone(),
+                    controller: Some(true),
+                    block_owner_deletion: Some(true),
+                }]);
+
+            let slice_key = build_key("endpointslices", Some(ns), &slice_name);
+            match self.storage.get::<EndpointSlice>(&slice_key).await {
+                Ok(existing) => {
+                    if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
+                        continue;
+                    }
+                    slice.metadata.resource_version = existing.metadata.resource_version;
+                    match self.storage.update(&slice_key, &slice).await {
+                        Ok(_) => {
+                            debug!("Updated mirrored EndpointSlice {}/{}", ns, slice_name);
+                        }
+                        Err(e) => {
+                            debug!("Failed to update mirrored EndpointSlice {}/{}: {}", ns, slice_name, e);
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Slice doesn't exist — create it
+                    slice.metadata.resource_version = None;
+                    match self.storage.create(&slice_key, &slice).await {
+                        Ok(_) => {
+                            info!("Created mirrored EndpointSlice {}/{}", ns, slice_name);
+                        }
+                        Err(e) => {
+                            debug!("Failed to create mirrored EndpointSlice {}/{}: {}", ns, slice_name, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn enqueue_all(&self, queue: &WorkQueue) {
         match self.storage.list::<Service>("/registry/services/").await {
             Ok(items) => {
@@ -201,6 +392,22 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
             }
             Err(e) => {
                 tracing::error!("Failed to list services for enqueue: {}", e);
+            }
+        }
+    }
+
+    /// Enqueue all Endpoints for mirroring
+    async fn enqueue_all_endpoints(&self, queue: &WorkQueue) {
+        match self.storage.list::<Endpoints>("/registry/endpoints/").await {
+            Ok(items) => {
+                for item in &items {
+                    let ns = item.metadata.namespace.as_deref().unwrap_or("");
+                    let key = format!("endpoints/{}/{}", ns, item.metadata.name);
+                    queue.add(key).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to list endpoints for enqueue: {}", e);
             }
         }
     }
@@ -264,11 +471,21 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
 
             // Mirror this Endpoints object to an EndpointSlice
             let endpointslices = EndpointSlice::from_endpoints(ep);
-            for (idx, mut slice) in endpointslices.into_iter().enumerate() {
+
+            // If Endpoints has empty subsets, create at least one empty EndpointSlice
+            let slices_to_create = if endpointslices.is_empty() {
+                let mut empty_slice = EndpointSlice::new(ep_name, "IPv4");
+                empty_slice.metadata.namespace = Some(ns.to_string());
+                vec![empty_slice]
+            } else {
+                endpointslices
+            };
+
+            for (idx, mut slice) in slices_to_create.into_iter().enumerate() {
                 let slice_name = if idx == 0 {
-                    ep_name.clone()
+                    format!("{}-mirrored", ep_name)
                 } else {
-                    format!("{}-{}", ep_name, idx)
+                    format!("{}-mirrored-{}", ep_name, idx)
                 };
                 slice.metadata.name = slice_name.clone();
                 slice.metadata.namespace = Some(ns.to_string());
@@ -291,18 +508,18 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
                     }]);
 
                 let slice_key = build_key("endpointslices", Some(ns), &slice_name);
-                if let Ok(existing) = self.storage.get::<EndpointSlice>(&slice_key).await {
-                    if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
-                        continue;
+                match self.storage.get::<EndpointSlice>(&slice_key).await {
+                    Ok(existing) => {
+                        if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
+                            continue;
+                        }
+                        slice.metadata.resource_version = existing.metadata.resource_version;
+                        let _ = self.storage.update(&slice_key, &slice).await;
                     }
-                    slice.metadata.resource_version = existing.metadata.resource_version;
-                }
-                match self.storage.update(&slice_key, &slice).await {
-                    Ok(_) => {}
-                    Err(rusternetes_common::Error::NotFound(_)) => {
+                    Err(_) => {
+                        slice.metadata.resource_version = None;
                         let _ = self.storage.create(&slice_key, &slice).await;
                     }
-                    Err(_) => {}
                 }
             }
         }
@@ -543,28 +760,30 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
             let slice_key = build_key("endpointslices", Some(namespace), &slice_name);
 
             // Check if existing slice matches — skip write if nothing changed
-            if let Ok(existing) = self.storage.get::<EndpointSlice>(&slice_key).await {
-                if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
-                    continue;
+            match self.storage.get::<EndpointSlice>(&slice_key).await {
+                Ok(existing) => {
+                    if existing.endpoints == slice.endpoints && existing.ports == slice.ports {
+                        continue;
+                    }
+                    slice.metadata.resource_version = existing.metadata.resource_version;
+                    match self.storage.update(&slice_key, &slice).await {
+                        Ok(_) => {
+                            debug!(
+                                "Updated endpointslice {}/{} for service",
+                                namespace, slice_name
+                            );
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
                 }
-                slice.metadata.resource_version = existing.metadata.resource_version;
-            }
-
-            match self.storage.update(&slice_key, &slice).await {
-                Ok(_) => {
-                    debug!(
-                        "Updated endpointslice {}/{} for service",
-                        namespace, slice_name
-                    );
-                }
-                Err(rusternetes_common::Error::NotFound(_)) => {
+                Err(_) => {
+                    slice.metadata.resource_version = None;
                     self.storage.create(&slice_key, &slice).await?;
                     info!(
                         "Created endpointslice {}/{} for service",
                         namespace, slice_name
                     );
                 }
-                Err(e) => return Err(e.into()),
             }
         }
 
