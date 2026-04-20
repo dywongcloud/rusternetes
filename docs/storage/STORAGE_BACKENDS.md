@@ -1,5 +1,7 @@
 # Storage Backends
 
+
+> **Tip:** Storage configuration, classes, and PVCs are manageable through the [web console](CONSOLE_USER_GUIDE.md) Storage page.
 Rusternetes supports three deployment modes with different storage backends.
 The same component binaries work in all modes — the only difference is
 configuration flags and which compose file you use.

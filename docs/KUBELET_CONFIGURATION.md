@@ -1,5 +1,7 @@
 # Kubelet Configuration Guide
 
+
+> **Tip:** Node status, CPU/memory utilization, and pod assignments are visible in the [web console](CONSOLE_USER_GUIDE.md) Nodes and Topology pages.
 This guide explains how to configure the Rusternetes Kubelet using production-grade configuration methods.
 
 ## Table of Contents

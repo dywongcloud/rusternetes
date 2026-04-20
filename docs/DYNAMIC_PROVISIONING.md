@@ -4,6 +4,10 @@
 
 Rusternetes now supports **dynamic volume provisioning**, which automatically creates PersistentVolumes (PVs) when PersistentVolumeClaims (PVCs) are created with a StorageClass specified. This eliminates the need to manually pre-create PVs.
 
+## Default StorageClass
+
+Rusternetes bootstraps a default `standard` StorageClass on API server startup with the `rusternetes.io/hostpath` provisioner. PVCs that don't specify a StorageClass use this default. You can create additional StorageClasses or manage them via the [web console](CONSOLE_USER_GUIDE.md) Storage page.
+
 ## How It Works
 
 1. **User creates a StorageClass** - Defines the provisioner and parameters

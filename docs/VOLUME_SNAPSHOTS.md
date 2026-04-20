@@ -1,5 +1,7 @@
 # Volume Snapshots in Rusternetes
 
+
+> **Tip:** Volume snapshots and PVC status are visible in the [web console](CONSOLE_USER_GUIDE.md) Storage page.
 ## Overview
 
 Rusternetes now supports **volume snapshots**, which allow you to capture the state of a PersistentVolumeClaim (PVC) at a specific point in time. This feature enables:

@@ -1,5 +1,7 @@
 # LoadBalancer Services in Rusternetes
 
+
+> **Tip:** You can view and manage services including LoadBalancers in the [web console](CONSOLE_USER_GUIDE.md) Networking page.
 Rusternetes supports LoadBalancer-type Services through two approaches:
 
 1. **MetalLB** - For local development, bare-metal, and on-premises deployments (recommended for non-cloud environments)

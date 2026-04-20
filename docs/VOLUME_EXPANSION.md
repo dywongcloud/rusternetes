@@ -1,5 +1,7 @@
 # Volume Expansion in Rusternetes
 
+
+> **Tip:** PVC status and capacity are visible in the [web console](CONSOLE_USER_GUIDE.md) Storage page.
 ## Overview
 
 Volume expansion allows you to increase the size of a PersistentVolumeClaim (PVC) after it has been created and bound to a PersistentVolume (PV). This feature is useful when your application needs more storage without having to create a new volume and migrate data.

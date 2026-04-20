@@ -1,5 +1,7 @@
 # High Availability (HA) in Rusternetes
 
+
+> **Tip:** The web console deploys on all API server instances in HA mode. Access it via any API server or the HAProxy load balancer.
 This document describes the High Availability features implemented in Rusternetes, providing production-grade reliability and fault tolerance.
 
 ## Overview
