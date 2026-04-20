@@ -1,5 +1,7 @@
 # MetalLB Integration with Rusternetes
 
+
+> **Tip:** You can manage related resources through the [web console](../CONSOLE_USER_GUIDE.md).
 This guide explains how to use MetalLB with Rusternetes to provide LoadBalancer services without requiring a cloud provider. MetalLB is a production-ready, battle-tested load balancer implementation for bare-metal and on-premises Kubernetes clusters.
 
 ## Overview

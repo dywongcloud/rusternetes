@@ -461,8 +461,8 @@ Common issues:
 ## Related Documentation
 
 - **[MetalLB Integration Guide](docs/METALLB_INTEGRATION.md)** - Complete guide for local/bare-metal deployments
-- [Service Networking](STATUS.md#networking--service-discovery-features)
-- [Kube-Proxy](STATUS.md#networking--service-discovery-features)
+- [Service Networking](ARCHITECTURE.md)
+- [Kube-Proxy](ARCHITECTURE.md)
 - [Cloud Provider Architecture](crates/common/src/cloud_provider.rs)
 - [AWS Provider Implementation](crates/cloud-providers/src/aws.rs)
 - [LoadBalancer Controller](crates/controller-manager/src/controllers/loadbalancer.rs)

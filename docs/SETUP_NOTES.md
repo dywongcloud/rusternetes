@@ -118,7 +118,7 @@ cargo build --release --bin kubectl
 
 ## Next Steps
 
-See STATUS.md "Critical Missing Features" section for the complete roadmap. Priority items:
+See ARCHITECTURE.md for the system overview. Priority items:
 
 1. **Networking (CRITICAL)**:
    - Implement kube-proxy with iptables/ipvs

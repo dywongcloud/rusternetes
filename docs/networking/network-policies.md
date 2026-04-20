@@ -1,5 +1,7 @@
 # Network Policies in Rusternetes
 
+
+> **Tip:** You can manage related resources through the [web console](../CONSOLE_USER_GUIDE.md).
 ## Overview
 
 Rusternetes implements Kubernetes NetworkPolicy resources following the standard Kubernetes networking model. Network policies are enforced by **CNI (Container Network Interface) plugins** that support the NetworkPolicy API.

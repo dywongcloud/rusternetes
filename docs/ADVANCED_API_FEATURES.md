@@ -1,5 +1,7 @@
 # Advanced API Features Implementation
 
+
+> **Tip:** You can manage related resources through the [web console](../CONSOLE_USER_GUIDE.md).
 This document describes the advanced Kubernetes API features that have been implemented in Rusternetes.
 
 ## Overview

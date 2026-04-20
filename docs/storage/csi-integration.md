@@ -1,5 +1,7 @@
 # CSI (Container Storage Interface) Integration Guide
 
+
+> **Tip:** You can manage related resources through the [web console](../CONSOLE_USER_GUIDE.md).
 **Last Updated**: 2026-03-13
 **Status**: Production Pattern Documentation
 **CSI Specification**: v1.9.0

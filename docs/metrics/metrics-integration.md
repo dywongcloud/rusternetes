@@ -1,5 +1,7 @@
 # Custom Metrics Integration Guide
 
+
+> **Tip:** You can manage related resources through the [web console](../CONSOLE_USER_GUIDE.md).
 **Last Updated**: 2026-03-13
 **Status**: Production Ready
 **API Version**: custom.metrics.k8s.io/v1beta2

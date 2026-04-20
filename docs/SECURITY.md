@@ -760,7 +760,7 @@ Before going to production:
 
 ## Related Documentation
 
-- [STATUS.md](STATUS.md) - Overall implementation status
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Cluster deployment guide
 - [RBAC.md](RBAC.md) - Role-Based Access Control
 - [TLS_GUIDE.md](TLS_GUIDE.md) - TLS configuration
