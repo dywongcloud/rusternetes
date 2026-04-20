@@ -154,13 +154,36 @@ kubectl-create-example-deployment: ## Create example deployment
 	cargo run --bin kubectl -- --server http://localhost:6443 create -f examples/deployment.yaml
 
 # Dependencies
-install-deps: ## Install required system dependencies (macOS)
+install-deps: ## Install required system dependencies (macOS/Linux)
 	@echo "$(GREEN)Installing dependencies...$(NC)"
 	@if [ "$$(uname)" = "Darwin" ]; then \
-		brew install podman podman-compose; \
+		echo "$(GREEN)Detecting Homebrew...$(NC)"; \
+		if [ -x /opt/homebrew/bin/brew ]; then \
+			BREW=/opt/homebrew/bin/brew; \
+		elif [ -x /usr/local/bin/brew ]; then \
+			BREW=/usr/local/bin/brew; \
+		else \
+			echo "$(YELLOW)Homebrew not found. Install it from https://brew.sh$(NC)"; \
+			exit 1; \
+		fi; \
+		echo "Using $$BREW"; \
+		$$BREW install podman podman-compose docker-compose; \
+		echo "$(GREEN)Dependencies installed!$(NC)"; \
+		echo ""; \
+		echo "$(BOLD)Next steps:$(NC)"; \
+		echo "  1. podman machine init"; \
+		echo "  2. podman machine set --rootful"; \
+		echo "  3. podman machine start"; \
+	elif [ -f /etc/debian_version ]; then \
+		echo "$(GREEN)Installing via apt...$(NC)"; \
+		sudo apt-get update && sudo apt-get install -y podman podman-compose docker-compose; \
+		echo "$(GREEN)Dependencies installed!$(NC)"; \
+	elif [ -f /etc/redhat-release ]; then \
+		echo "$(GREEN)Installing via dnf...$(NC)"; \
+		sudo dnf install -y podman podman-compose docker-compose; \
 		echo "$(GREEN)Dependencies installed!$(NC)"; \
 	else \
-		echo "$(YELLOW)Please install podman and podman-compose manually for your system$(NC)"; \
+		echo "$(YELLOW)Unsupported OS. Please install podman, podman-compose, and docker-compose manually.$(NC)"; \
 	fi
 
 # Full Development Workflow

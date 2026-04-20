@@ -5,7 +5,16 @@ How to build, test, and run Rusternetes locally.
 ## Prerequisites
 
 - **Rust** (latest stable, via [rustup](https://rustup.rs))
-- **Container runtime** -- see [Container Runtime Setup](#container-runtime-setup) below
+- **Container runtime** — Docker or Podman (see [Container Runtime Setup](#container-runtime-setup) below)
+- **Compose tool** — `docker-compose` and/or `podman-compose` for orchestrating the cluster
+
+On macOS, install everything with:
+
+```bash
+make install-deps
+```
+
+This installs `podman`, `podman-compose`, and `docker-compose` via Homebrew.
 
 ## Project Structure
 
@@ -53,19 +62,44 @@ requires `CAP_NET_ADMIN` for iptables, which means rootful container execution.
 
 ### macOS -- Docker Desktop
 
-Docker Desktop is the recommended runtime on macOS. Podman Machine has known
-issues with macOS Sequoia 15.7+ where the Apple Virtualization Framework
-prevents VMs from starting.
-
 ```bash
 # Install Docker Desktop
 brew install --cask docker
 # Then start Docker Desktop from Applications
 
+# Install compose tool
+brew install docker-compose
+
 # Verify
 docker info
 docker compose version
 ```
+
+### macOS -- Podman Machine
+
+Podman Machine works on macOS with Apple Silicon (M1+) and Intel Macs.
+
+> **Important:** On Apple Silicon, you must use the ARM-native Homebrew
+> (`/opt/homebrew/bin/brew`), not the Intel/Rosetta one (`/usr/local/bin/brew`).
+> An x86_64 `vfkit` binary cannot start VMs via Apple's Virtualization Framework
+> on ARM hardware.
+
+```bash
+# Install via Homebrew (use /opt/homebrew/bin/brew on Apple Silicon)
+brew install podman podman-compose docker-compose
+
+# Initialize and start the VM in rootful mode (required for kube-proxy iptables)
+podman machine init
+podman machine set --rootful
+podman machine start
+
+# Verify
+podman info
+podman-compose version
+```
+
+Podman provides a Docker-compatible socket at `/var/run/docker.sock`, so
+`docker-compose` commands work against the Podman machine as well.
 
 ### Linux -- Docker Engine
 
@@ -87,10 +121,10 @@ All `docker compose` commands below become `sudo podman-compose` commands.
 
 ```bash
 # Fedora/RHEL/CentOS
-sudo dnf install podman podman-compose
+sudo dnf install podman podman-compose docker-compose
 
 # Ubuntu/Debian
-sudo apt-get install podman podman-compose
+sudo apt-get install podman podman-compose docker-compose
 
 # All commands must run as root
 sudo KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes podman-compose build
@@ -258,8 +292,27 @@ running in rootful mode. Use `sudo podman-compose` for all commands.
 
 ### Podman Machine Fails on macOS
 
-If you see `VZErrorDomain Code=1` or `vfkit exited unexpectedly`, this is a
-known issue with macOS Sequoia 15.7+. Use Docker Desktop instead.
+If you see `VZErrorDomain Code=1` or `vfkit exited unexpectedly`:
+
+1. **Apple Silicon with Intel Homebrew:** If you have `/usr/local/bin/brew`
+   (Intel) and `/opt/homebrew/bin/brew` (ARM), make sure podman was installed
+   via the ARM Homebrew. An x86_64 `vfkit` binary cannot use Apple's
+   Virtualization Framework on ARM. Reinstall:
+   ```bash
+   /opt/homebrew/bin/brew install podman podman-compose
+   podman machine rm -f
+   podman machine init
+   podman machine set --rootful
+   podman machine start
+   ```
+2. **Rosetta error:** If the log contains `rosetta is unsupported on non-arm64
+   platforms`, the same Intel/ARM mismatch is the cause — see above.
+3. **Other `VZErrorDomain` errors:** Try removing and recreating the machine:
+   ```bash
+   podman machine rm -f
+   podman machine init
+   podman machine start
+   ```
 
 ### etcd Issues
 

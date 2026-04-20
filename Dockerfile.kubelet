@@ -36,9 +36,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install CNI plugins
+# Install CNI plugins (detect architecture for multi-platform support)
 RUN mkdir -p /opt/cni/bin && \
-    curl -L https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz | \
+    ARCH=$(dpkg --print-architecture) && \
+    curl -L https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-${ARCH}-v1.4.0.tgz | \
     tar -C /opt/cni/bin -xz
 
 # Create CNI config directory and copy configuration
