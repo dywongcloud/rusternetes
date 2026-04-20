@@ -1,50 +1,46 @@
 # Conformance Failure Tracker
 
-## Current Run (Round 152 — release builds, etcd, work queue + all fixes)
+## Fixes Applied (ready for next run)
 
-**Status at 125min: 220 passed, 29 failed, 249/441 done (88.4%)**
+| # | Test(s) | Fix | Commit |
+|---|---------|-----|--------|
+| 1 | node_lifecycle.go:95 | 60s startup grace period + not-ready taint | 79fde16 |
+| 2 | statefulset.go:1205 | SS condition merge — preserves custom conditions | 9344dec |
+| 3 | rc.go:212 | RC status write reduction + condition merge | 9344dec |
+| 4 | resource_quota.go:1047 | RQ status comparison + fresh resourceVersion | ffeb5c6 |
+| 5 | disruption.go:187 | PDB status comparison + condition preservation | ffeb5c6 |
+| 6 | deployment.go:883 | Old RS cleanup (revisionHistoryLimit) + idempotent RS | ffeb5c6 |
+| 7 | aggregator.go:359 | New APIService availability controller | 7ea342d |
+| 8 | daemon_set.go:332 | DS retry failed pods in same cycle + pod watch | 7ea342d |
+| 9 | init_container.go:241 | Kubelet refreshes init container status on terminal | 7ea342d |
+| 10 | job.go:1192 | Job status guards on early-return paths | 7ea342d |
+| 11 | rc.go:453 | RC CAS retry guard — skip if status matches | 7ea342d |
+| 12 | replica_set.go:534 | RS CAS retry guard — skip if status matches | 7ea342d |
+| 13 | deployment status tests | Deployment condition merge + fresh resourceVersion | ffeb5c6 |
+| 14 | DaemonSet status tests | DS condition preservation | earlier |
+| 15 | kubelet orphans | Startup cleanup + fast-path deletion | earlier |
 
-### All 29 Failures
+## Critical Infrastructure Issues
 
-| # | Test | Pre-existing? | Category |
-|---|------|---------------|----------|
-| 1 | aggregator.go:359 | Yes | Aggregator proxy — deployment not ready |
-| 2 | crd_publish_openapi.go:285 | Yes | CRD OpenAPI schema not dynamic |
-| 3 | crd_publish_openapi.go:318 | Yes | CRD OpenAPI schema |
-| 4 | crd_publish_openapi.go:451 | Yes | CRD OpenAPI schema |
-| 5 | garbage_collector.go:635 | Yes | GC orphan RS propagation |
-| 6 | resource_quota.go:1047 | **New?** | ResourceQuota — investigate |
-| 7 | daemon_set.go:1276 | Yes | GC deletes DS pod |
-| 8 | daemon_set.go:332 | Yes | DS retry failed pods |
-| 9 | deployment.go:1259 | Yes | Deployment proportional scaling |
-| 10 | deployment.go:883 | Yes | Deployment delete old RS |
-| 11 | disruption.go:187 | **New?** | PDB eviction — investigate |
-| 12 | job.go:1192 | **New** | Job PATCH conflict — controller writes status 12x during reconcile |
-| 13 | rc.go:212 | **New** | RC PATCH conflict — controller writes status 8x during reconcile. Fix committed. |
-| 14 | rc.go:453 | **New?** | RC test — investigate |
-| 15 | replica_set.go:232 | Yes | RS serve image — pod proxy |
-| 16 | replica_set.go:534 | **New?** | RS test — investigate |
-| 17 | statefulset.go:1205 | **New** | SS status endpoints — custom condition overwritten. Fix committed. |
-| 18 | init_container.go:241 | Yes | Init container ready |
-| 19 | pod_resize.go:857 | **New?** | Pod resize — investigate |
-| 20 | runtime.go:129 | Yes | Container state after restart |
-| 21-25 | output.go:263 x5 | Yes | EmptyDir perms |
-| 26 | hostport.go:219 | Yes | HostPort conflict |
-| 27 | proxy.go:271 | Yes | Service proxy unreachable |
-| 28 | service.go:3459 | Yes | Service delete timeout |
-| 29 | service.go:768 | Yes | Service endpoint unreachable |
+| # | Issue | Root Cause |
+|---|-------|------------|
+| 1 | Namespace deletion hangs on stale pods | Namespace controller can't finalize namespaces with Succeeded/Failed pods. GC or kubelet doesn't delete terminal pod records from storage. Blocks conformance restarts. |
+| 2 | Stale etcd state across cluster restarts | Pod records persist in etcd after cluster restart but Docker containers are gone. Kubelet startup cleanup only removes Docker containers, doesn't clean API-side pod records. |
+| 3 | run-conformance.sh hangs on stuck cleanup | Script waits indefinitely for sonobuoy namespace deletion. Needs timeout and force-delete fallback. |
 
-### Summary
+## Remaining Pre-existing (not yet fixed)
 
-- **Pre-existing (same as 90.2% baseline):** ~22 failures
-- **New from work queue / status writes:** ~3 (job, rc, statefulset — all resourceVersion conflicts from controllers writing status too frequently)
-- **Needs investigation:** ~4 (resource_quota, disruption, rc:453, replica_set:534, pod_resize)
-- **Already fixed (committed, not deployed):** SS condition merge, RC status reduction, kubelet startup cleanup
-
-### Root Cause: Controller status write frequency
-
-The systematic issue causing NEW failures: controllers write to storage multiple times during a single reconcile (status updates, pod creation, adoption). Each write increments resourceVersion. Conformance tests that GET→PATCH a resource hit conflicts because the controller modified it between the GET and PATCH.
-
-K8s pattern: controllers batch changes and do ONE status update at the end of reconciliation. Our controllers do multiple mid-reconcile writes.
-
-Fix: each controller should accumulate status changes and write once at the end of reconcile, not after each sub-operation.
+| # | Test(s) | Root Cause | Priority |
+|---|---------|------------|----------|
+| 1 | deployment.go:1259 | Proportional scaling — RS availableReplicas convergence | Medium |
+| 2 | crd_publish_openapi.go x3 | CRD OpenAPI schema not served dynamically | Low |
+| 3 | output.go:263 x5 | EmptyDir POSIX permissions — needs container-local path | Low |
+| 4 | hostport.go:219 | HostPort conflict detection | Low |
+| 5 | service.go:768 | Service endpoint unreachable — networking | Medium |
+| 6 | service.go:3459 | Service delete timeout | Low |
+| 7 | proxy.go:271 | Service proxy unreachable — networking | Medium |
+| 8 | replica_set.go:232 | RS pod proxy — networking | Medium |
+| 9 | runtime.go:129 | Container state after restart | Low |
+| 10 | daemon_set.go:1276 | GC deletes DS pod | Low |
+| 11 | garbage_collector.go:635 | GC orphan RS propagation | Low |
+| 12 | pod_resize.go:857 | Pod resize cgroup — not implemented | Low |

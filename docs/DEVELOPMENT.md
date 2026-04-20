@@ -9,7 +9,7 @@ How to build, test, and run Rusternetes locally.
 
 ## Project Structure
 
-Rusternetes is a Cargo workspace with 10 crates (161,000+ lines of Rust, 929 tests):
+Rusternetes is a Cargo workspace with 10 crates (216,000+ lines of Rust, 3,100+ tests):
 
 | Crate | Purpose |
 |-------|---------|

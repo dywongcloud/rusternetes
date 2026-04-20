@@ -1,31 +1,116 @@
-# Development Process
+# Development Processes
 
-## Clean Redeploy Process
-1. rebuild the project with docker compose build (do not set a timeout because this takes a long time)
-2. kill the conformance run and clean up any running containers that aren't part of this project cluster
-3. remove any etcd data related to non project clusters
-4. tear down the cluster with docker compose down
-5. bring up the new cluster with docker compose up
+## Building and Deploying
 
+### Build the cluster
 
-## Fix Conformance Issues Process Loop
-1. Clean up the CONFORMANCE_FAILURES.md file content from the last run since we are starting a new run.
-2. Write down all known issues into CONFORMANCE_FAILURES.md file
-3. Continually do a deep analysis of the root cause for each issue, and come up with a thorough plan to fix the issue. Then fix the issue according to that plan, do not take shortcuts, do not ignore them even if they are architectural issues. You must implement a test to prove your fix actually fixes the problem.
-4. As you fix issues implement a test that verifies your fix was correct and that the fix adheres to expected kubernetes runtime behavior. If you aren't sure how to fix an issue, consult the kubernetes source code which has already been saved to ~/Downloads.
-5. Make sure the component build works and tests pass, use the kubernetes source as a reference implementation, don't guess.
-6. Make a git commit for this issue
-7. Update the CONFORMANCE_FAILURES.md with the status of this fix
-8. Do NOT arbitrarily go to the Clean Redeploy Process as this will delete the test results you need to reference for research fixing issues
-9. Move on to the next known issue fix, using these process steps.
-10. Do not stop this loop until all issues are fixed.
+```bash
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+docker compose build                              # Full cluster with etcd
+docker compose -f docker-compose.sqlite.yml build # SQLite cluster (no etcd)
+```
 
-## Start Conformance Testing and monitor for errors
-1. Start the conformance testing using the script
-2. Monitor all container logs noting any errors.
-3. Analyze any errors and track them in the CONFORMANCE_FAILURES.md
-4. Start the Fix Conformance Issues Process Loop to start fixing while you monitor for more errors using the Fix Conformance Issues Process Loop
+### Deploy the cluster
 
-## Initialize
-1. We are using the docs/DEV_PROCESSES.md for work processes
-2. We are using the docs/CONFORMANCE_FAILURES.md to track conformance test failures
+```bash
+docker compose up -d
+bash scripts/bootstrap-cluster.sh
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+```
+
+### Rebuild a single component
+
+To rebuild and redeploy just the API server (e.g., after console changes):
+
+```bash
+docker compose -f docker-compose.sqlite.yml build api-server
+docker compose -f docker-compose.sqlite.yml up -d api-server
+```
+
+### Clean redeploy
+
+When you need a fresh start:
+
+```bash
+docker compose down
+docker compose build
+docker compose up -d
+bash scripts/bootstrap-cluster.sh
+```
+
+**Important:** Do not redeploy while conformance tests are running — it destroys the test evidence.
+
+## Pre-Commit Checks
+
+Run before every commit:
+
+```bash
+make pre-commit   # Format + clippy + test
+```
+
+Or individually:
+
+```bash
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+```
+
+## Conformance Testing
+
+### Run conformance tests
+
+```bash
+bash scripts/run-conformance.sh
+```
+
+### Monitor progress
+
+```bash
+bash scripts/conformance-progress.sh
+```
+
+### View test results
+
+The e2e output is inside the e2e container:
+
+```bash
+docker exec sonobuoy-e2e-job-*_e2e cat /tmp/sonobuoy/results/e2e.log | tail -50
+```
+
+### Fix conformance issues
+
+1. Analyze the failure in the e2e log — identify the exact test and error
+2. Research the expected behavior in the Kubernetes source code
+3. Implement the fix with a test that verifies correctness
+4. Commit the fix: `git commit -m "fix: description of what was fixed"`
+5. Update `docs/CONFORMANCE_FAILURES.md` with the status
+6. Do not redeploy until you've fixed multiple issues — batch them
+
+## Console Development
+
+### Hot reload development
+
+```bash
+# Terminal 1: cluster running
+docker compose up -d
+
+# Terminal 2: console dev server
+cd console
+npm run dev
+# Open http://localhost:3000/console/
+```
+
+### Rebuild console in Docker
+
+```bash
+docker compose -f docker-compose.sqlite.yml build api-server
+docker compose -f docker-compose.sqlite.yml up -d --force-recreate api-server
+```
+
+## Package Names
+
+Cargo package names use hyphens: `cargo test -p rusternetes-kubelet` (not underscores).
+
+The api-server crate takes 5-10 minutes to compile test binaries. Use `cargo check` for fast iteration.

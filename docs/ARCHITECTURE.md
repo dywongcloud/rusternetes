@@ -5,8 +5,8 @@ server, scheduler, controller manager, kubelet, kube-proxy -- is written from
 scratch, implementing the real Kubernetes API surface, wire format, and
 behavioral semantics.
 
-**By the numbers:** 161,000+ lines of Rust across 10 crates. 31 controllers.
-75 API handler files. 307 registered routes. 929 tests. 328 conformance fixes
+**By the numbers:** 216,000+ lines of Rust across 10 crates. 31 controllers.
+75 API handler files. 307 registered routes. 3,100+ tests. 328 conformance fixes
 applied across 8 rounds of testing against the official K8s e2e suite.
 
 ---
@@ -425,7 +425,7 @@ All components use Tokio for async I/O:
 
 ## Testing
 
-929 test functions across the workspace. All async tests use `#[tokio::test]`.
+3,100+ test functions across the workspace. All async tests use `#[tokio::test]`.
 Unit tests use `MemoryStorage` instead of requiring a running etcd instance.
 Tests that share mutable state use `#[serial_test::serial]`.
 

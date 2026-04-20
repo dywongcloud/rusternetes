@@ -1,6 +1,6 @@
-# Rusternetes Console User Guide
+# Rusternetes Console
 
-The rusternetes console is a web-based cluster management dashboard served directly from the API server. This guide covers every feature and how to use it.
+The rusternetes console is a web-based cluster management dashboard served directly from the API server. It provides real-time topology visualization, live metrics, pod log streaming, and full resource management — with zero external dependencies.
 
 ## Accessing the Console
 
@@ -324,3 +324,68 @@ The header bar shows:
 - **Fleet cluster switcher** — switch between clusters (when enabled)
 - **Resource type count** — how many API resource types were discovered
 - **Connection status** — green dot with "Connected" indicator
+
+---
+
+## Architecture
+
+The console is a React single-page application served by the Axum API server at `/console/`. Because the SPA and API share the same origin, there is no CORS configuration, no nginx proxy, and no separate deployment.
+
+```
+Browser ─── https://localhost:6443/console/
+                │
+                ├── /console/              Static SPA (Axum ServeDir)
+                ├── /api/v1/pods           K8s REST API (same server)
+                ├── /api/v1/pods?watch=1   Watch stream (chunked HTTP)
+                └── /apis/apps/v1/...      API group resources
+```
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, TypeScript 5.9 |
+| Bundler | Vite |
+| State | Zustand (UI state) + TanStack Query (server state) |
+| Styling | Tailwind CSS + Radix UI |
+| Charts | Recharts |
+| Serving | Axum `tower-http::ServeDir` |
+
+### K8s API Client
+
+The console communicates with the API server using the standard Kubernetes REST protocol. No custom endpoints are needed.
+
+- **Resource Discovery** — fetches `/api/v1` and `/apis` to discover all resource types (including CRDs), cached for 5 minutes
+- **Watch Streams** — chunked HTTP with newline-delimited JSON, `resourceVersion` tracking, bookmark support, exponential backoff reconnection (1s to 30s), 410 Gone recovery
+- **Authentication** — reads JWT from `sessionStorage`, passes as `Authorization: Bearer`. No token needed in `--skip-auth` mode.
+
+### CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--console-dir` | *(disabled)* | Path to the console SPA build directory. Enables the web console at `/console/`. |
+
+The console auto-deploys in Docker Compose — the Dockerfile builds the SPA and bakes it into the API server image at `/app/console`.
+
+### Development
+
+```bash
+# Terminal 1: start the API server
+./target/release/rusternetes
+
+# Terminal 2: start the console dev server (hot reload)
+cd console
+npm install
+npm run dev
+# Open http://localhost:3000/console/
+# Vite proxies /api and /apis to localhost:6443
+```
+
+### Building
+
+```bash
+cd console
+npm install
+npm run build
+# Output: console/dist/ (~800KB JS + ~18KB CSS, gzipped ~230KB)
+```

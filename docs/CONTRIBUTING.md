@@ -1,6 +1,6 @@
 # Contributing to Rusternetes
 
-Thank you for your interest in contributing to Rusternetes. This is a Rust reimplementation of Kubernetes spanning 10 crates, 161,000+ lines of code, and 929 tests. This document covers everything you need to get started.
+Thank you for your interest in contributing to Rusternetes. This is a Rust reimplementation of Kubernetes spanning 10 crates, 216,000+ lines of code, and 3,100+ tests. This document covers everything you need to get started.
 
 ## Prerequisites
 
