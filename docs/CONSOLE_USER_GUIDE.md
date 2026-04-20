@@ -8,527 +8,661 @@ Open your browser to `https://localhost:6443/console/`. You'll need to accept th
 
 The console auto-deploys with the cluster — no separate setup needed. It's baked into the API server Docker image and served at `/console/`.
 
+---
+
 ## Overview Dashboard
 
 [![Overview Dashboard](screenshots/thumbs/console-overview.png)](screenshots/console-overview.png)
 
 The Overview is the landing page showing real-time cluster health at a glance.
 
-**Health Rings** — Three animated circular gauges at the top showing:
+**Health Rings** — Three animated circular gauges at the top:
 - **Pods Running** (green) — running pods vs total pods
 - **Nodes Ready** (blue) — ready nodes vs total nodes
 - **Deploys Available** (orange) — available deployments vs total
 
-**Metrics Cards** — Four cards below the rings with live sparkline charts:
-- **Total Pods** — count with trend over time. Click to browse all pods.
+**Metrics Cards** — Four cards with live sparkline charts that collect data every 30 seconds and show the last 30 minutes of history:
+- **Total Pods** — count with trend. Click to browse all pods.
 - **Nodes** — count with ready count. Click to go to Nodes view.
 - **Restarts** — total container restart count. Color changes to red when high.
 - **Resource Types** — how many API resource types were discovered. Click to open the Resource Explorer.
 
-The sparklines collect data every 30 seconds and show the last 30 minutes of history.
+**Deployments** — Rollout progress bars color-coded by status:
+- Green = fully available, Yellow = partially ready, Red = no ready replicas
+- Click "View all" to see all deployments
 
-**Deployments** — Shows deployment rollout progress with color-coded bars:
-- Green = fully available
-- Yellow = partially ready
-- Red = no ready replicas
+**Recent Events** — Live event feed. Warning events highlighted in yellow. Click "View all" for the full Events view.
 
-Click "View all" to see all deployments.
-
-**Recent Events** — Live event feed showing the latest cluster activity. Warning events are highlighted in yellow. Click "View all" to go to the full Events view.
+---
 
 ## Cluster Topology
 
 [![Cluster Topology](screenshots/thumbs/console-topology.png)](screenshots/console-topology.png)
 
-The Topology view is an animated visual map of your entire cluster.
+The Topology view is an animated visual map of your entire cluster showing nodes, pods, services, and the network connections between them.
 
 **Nodes** — Shown as containers with:
 - Node name and pod count
-- CPU and Memory utilization bars with percentages (from real Docker stats)
+- CPU and Memory utilization bars with percentages (from real Docker/Podman container stats, updated every 5 seconds)
 - Green dot = Ready, pulsing red dot = NotReady
 
 **Pods** — Colored squares inside their node:
-- Green = Running
-- Yellow = Pending
-- Red = Failed
+- Green = Running, Yellow = Pending, Red = Failed
 - Brightness indicates CPU usage — brighter pods are using more CPU
+- Hover to see pod name, phase, CPU/memory usage, containers, IP, and ports
 
 **Services** — Orange boxes across the top showing:
-- Service name and ClusterIP
-- Service type (ClusterIP, NodePort, LoadBalancer)
-- Protocol/port badges (TCP, UDP, etc.)
+- Service name, ClusterIP, and type (ClusterIP, NodePort, LoadBalancer)
+- Protocol/port badges (e.g., 80/TCP, 53/UDP)
 - Endpoint count
 
-**Network Connections** — Animated dashed lines connecting services to their target pods. Tiny particles flow along the lines showing traffic direction. Lines fan out from the service bottom edge.
+**Network Connections** — Animated dashed lines connecting services to their target pods. Tiny particles flow along the lines showing traffic direction, colored by protocol (TCP=blue, UDP=green, HTTP=orange, gRPC=red). Lines fan out from the service bottom edge so individual connections are visible.
 
 **Controls:**
-- **Namespaces** toggle — shows/hides namespace color zones around pod groups
+- **Namespaces** toggle — shows/hides colored zones around pods grouped by namespace
 - **Protocols** toggle — shows/hides port/protocol badges on services
 - **Zoom** — in/out/reset controls
 
-**Click a Pod** to:
-- See its detail panel (phase, CPU, memory, restarts, IP, ports)
-- Automatically open live logs in a bottom overlay
+### Clicking a Pod
+
+Click any pod square to:
+- See its detail panel below the SVG (phase, CPU, memory, restarts, IP, ports)
+- Automatically open live logs in a fixed overlay at the bottom of the screen
 - Highlight its service connections
 
-**Click a Service** to see its detail panel (type, ClusterIP, endpoints, port mappings).
+### Clicking a Service
 
-### Live Logs
+Click a service to see its detail panel (type, ClusterIP, endpoints, port mappings with protocol colors).
+
+### Live Pod Logs
 
 [![Topology with Live Logs](screenshots/thumbs/console-topology-logs.png)](screenshots/console-topology-logs.png)
 
-When you click a pod in the topology, a **Live Logs** panel slides up from the bottom of the screen showing the pod's recent log output.
-
-- Timestamps are dimmed for readability
-- Log levels are color-coded: ERROR (red), WARN (yellow), INFO (blue)
-- Green pulsing dot indicates logs are streaming (refreshes every 5 seconds)
-- Click "Close" or click the pod again to dismiss
+When you click a pod, a **Live Logs** panel slides up from the bottom of the screen:
+- Timestamps dimmed, log content highlighted
+- Log levels color-coded: ERROR (red), WARN (yellow), INFO (blue)
+- Green pulsing dot indicates streaming (refreshes every 5 seconds)
+- Click the pod again or "Close" to dismiss
 
 ### Activity Timeline
 
-At the bottom of the topology view, the **Cluster Activity** timeline shows:
-- A bar chart of pod count history over the last 30 minutes
-- Green bars = pods added, red bars = pods removed
+At the bottom of the topology, the **Cluster Activity** timeline records snapshots every 15 seconds:
+- Bar chart of pod count history (green = pods added, red = pods removed)
 - Live indicator (pulsing green dot) when viewing current state
-- Click any bar to see the cluster state at that point in time
-- Pod count, node count, and service count for the selected time
+- Click any bar to see pod/node/service count and deltas at that point
+- Time range label shows how many minutes of history are recorded
 
-## Resource Explorer
-
-Navigate to **Explore All** in the sidebar to see every resource type in the cluster.
-
-The explorer auto-discovers all resource types from the API server, including CRDs. Resources are grouped into categories:
-- Workloads, Networking, Storage, Access Control, Configuration, Cluster, Extensions, etc.
-
-**Search** — Type in the search bar to filter by kind, plural name, or short name (e.g., "po", "deploy", "svc").
-
-**Resource Cards** — Each resource type shows:
-- Kind name and API group/version
-- Short names (e.g., "po" for pods)
-- "ns" badge if namespaced
-- Live resource count
-
-Click any resource type to open its list view.
-
-## Resource List View
-
-When you click a resource type in the Explorer, you see a table of all instances:
-- Name (clickable to view details), Namespace, Status, Age
-- **Search** bar to filter by name or namespace
-- **Create** button opens the create form pre-populated for this resource type
-- **Refresh** button to re-fetch data
-- **Delete** button (trash icon) on each row with confirmation
-- **View** button (eye icon) to open the detail view
-
-The list updates in real-time via K8s watch streams — resources appear and disappear live.
-
-## Resource Detail View
-
-Click any resource name to see its full details:
-
-**Overview Tab:**
-- Metadata: UID, generation, deletion timestamp, finalizers
-- Labels displayed as colored chips
-- Conditions table with status badges, reasons, messages, and age
-- Owner references with controller badges
-- Annotations
-
-**YAML/JSON Tab:**
-- Full resource JSON in an editor
-- Edit the JSON and click **Save** to apply changes
-- **Reset** to revert to the server version
-- Changes are applied via PUT to the K8s API
-
-**Events Tab:**
-- Events filtered to this specific resource
-- Auto-refreshes every 15 seconds
-
-**Actions (in header):**
-- **Scale** (Deployments/StatefulSets) — +/- buttons to adjust replica count
-- **Restart** (Deployments/StatefulSets/DaemonSets) — rolling restart via annotation
-- **Copy** — copy the full JSON to clipboard
-- **Delete** — delete the resource with confirmation
+---
 
 ## Workloads
 
 [![Workloads](screenshots/thumbs/console-workloads.png)](screenshots/console-workloads.png)
 
-Navigate to **Workloads** in the sidebar.
+The Workloads page gives you full visibility and control over your running applications.
 
-**Pod Phase Chart** — Donut chart showing the breakdown of pod phases (Running, Pending, Failed, Succeeded).
+**Pod Phase Chart** — Donut chart showing the breakdown of pod phases (Running, Pending, Failed, Succeeded) with counts.
 
 **Deployment Cards** — Each deployment shows:
 - Name and namespace
-- Rollout progress bar (green/yellow/red based on readiness)
-- Ready/desired replica count
-- Scale controls (+/- buttons)
-- Restart button for rolling restart
-- View and delete actions
+- Rollout progress bar (green = ready, yellow = progressing, red = failing)
+- Ready/desired replica count and updated count
+- **Scale controls** — click +/- to adjust replica count instantly
+- **Restart** — rolling restart via annotation
+- **View/Delete** actions
 
-**Restart Heatmap** — Shows pods with the most container restarts. Bar length indicates restart count relative to the worst pod.
+**Restart Heatmap** — Visualizes which pods have the most container restarts. Bar length = restart count relative to the worst pod. Red = high, yellow = moderate, teal = low.
 
-**Pod Table** — Full table of all pods with:
-- Name (clickable), namespace, status badge, ready count, restart count, node, age
-- View and delete actions per row
-- Real-time updates via watch
+**Pod Table** — Full table with:
+- Name (clickable → detail view), namespace, status badge, ready containers, restart count (colored red when high), node, age
+- View and delete action buttons per row
+- Updates in real-time via K8s watch streams
 
-**Zero State** — When no workloads exist, shows a "Quick Deploy" button to create your first deployment.
+**Zero State** — When no workloads exist, shows a "Quick Deploy" button linking to the Create page.
+
+### How to Deploy an Application
+
+1. Click **Create** in the sidebar (or **+ Deploy** button on the Workloads page)
+2. Select **Quick Deploy**
+3. Enter app name (e.g., `nginx`), container image (e.g., `nginx:latest`), replicas, port
+4. Check **Create Service** to automatically expose it with a ClusterIP Service
+5. Click **Deploy**
+
+The Deployment and Service are created immediately. Switch to **Workloads** to see the rollout progress bar fill up as pods become ready.
+
+### How to Scale
+
+On any deployment card, click **+** or **-** to increase or decrease replicas. The change takes effect immediately — watch the progress bar and pod count update in real-time.
+
+You can also scale from the **Resource Detail** view (click the deployment name → header has scale controls).
+
+### How to Do a Rolling Restart
+
+Click the **restart** icon (circular arrow) on a deployment card. This patches the pod template with a `restartedAt` annotation, triggering a zero-downtime rolling restart of all pods.
+
+### How to Delete a Pod or Deployment
+
+Click the **trash icon** on any row or card. Confirm the deletion in the dialog. The resource is deleted via the K8s API and disappears from the view in real-time.
+
+Deleting a pod managed by a Deployment/ReplicaSet causes the controller to create a replacement automatically.
+
+---
 
 ## Networking
 
 [![Networking](screenshots/thumbs/console-networking.png)](screenshots/console-networking.png)
 
-**Cluster Network Configuration** — Four cards showing:
-- **Service CIDR** — the IP range for ClusterIP services (e.g., 10.96.0.0/12)
-- **Pod CIDRs** — per-node pod CIDR allocations
-- **Cluster DNS** — kube-dns ClusterIP, ports (53/UDP, 53/TCP, 9153/TCP)
-- **Kube-Proxy** — mode (iptables), supported service types
+The Networking page shows your cluster's network configuration and all network resources.
 
-This panel shows even when there are no services — it's always useful context.
+### Cluster Network Configuration
 
-**Service Type Summary** — Colored chips showing how many services of each type exist (ClusterIP, NodePort, LoadBalancer).
+Four cards always visible at the top, even with zero services:
 
-**Service Routing** — Visual diagrams showing service-to-pod connections. Each service box connects with an arrow to its target pods, showing pod name, status, and IP.
+- **Service CIDR** — the IP range for ClusterIP allocation (e.g., `10.96.0.0/12`). All ClusterIP addresses are allocated from this range.
+- **Pod CIDRs** — per-node pod CIDR assignments. Shows `auto` when pods use Docker bridge networking.
+- **Cluster DNS** — the kube-dns service at `10.96.0.10` with ports 53/UDP, 53/TCP (DNS), and 9153/TCP (metrics). All pods use this for service discovery.
+- **Kube-Proxy** — mode (`iptables`), runs in host network mode, supports ClusterIP, NodePort, and LoadBalancer service types.
 
-**Service Cards** — Cards for each service showing type badge, ClusterIP, port mappings (with arrows showing port→targetPort/protocol), and target pod count.
+### Service Types
 
-**Ingresses** and **Network Policies** — Tables and cards for these resources when they exist.
+Services are color-coded:
+- **Blue (ClusterIP)** — accessible only within the cluster. This is the default type. Every service gets a virtual IP from the Service CIDR.
+- **Green (NodePort)** — accessible on port 30000-32767 on every node's IP. Useful for development and testing.
+- **Orange (LoadBalancer)** — provisions an external load balancer. Requires a cloud provider integration or MetalLB for bare-metal clusters.
+
+### Service Routing Visualization
+
+The **Service Routing** section shows visual diagrams for each service with a selector:
+- Service box (with ClusterIP) → arrow → matched pods (with status dot, name, and pod IP)
+- This shows exactly which pods are receiving traffic for each service
+
+### Service Cards
+
+Each service gets a card showing:
+- Name, namespace, type badge
+- ClusterIP address
+- Port mappings displayed as `port → targetPort / protocol` with arrows
+- NodePort shown in yellow when applicable
+- Target pod count
+
+### Creating a Service
+
+Use **Create > Service** to create a Service from a JSON template, or use **Quick Deploy** with the "Create Service" checkbox to create a Deployment + Service together.
+
+### Network Policies
+
+When NetworkPolicy resources exist, they appear as cards at the bottom of the Networking page. Click any to see its full spec in the detail view.
+
+### Ingresses
+
+Ingress resources appear in a table section when present, with name, namespace, and click-through to detail view.
+
+### Load Balancers
+
+For LoadBalancer services on bare-metal clusters (no cloud provider), configure MetalLB to allocate external IPs. Create a MetalLB IPAddressPool and L2Advertisement, then create a Service with `type: LoadBalancer`. The service will receive an external IP from the pool.
+
+### CNI Plugins
+
+Rusternetes implements the standard CNI specification. On Linux with network namespace support, you can use third-party CNI plugins:
+- **Calico** — BGP-based networking with full NetworkPolicy support
+- **Cilium** — eBPF-based high-performance networking
+- **Flannel** — simple overlay networking
+
+Drop the plugin binaries in `/opt/cni/bin/` and configuration in `/etc/cni/net.d/`. On macOS (Docker Desktop), the kubelet automatically falls back to Docker bridge networking since CNI requires Linux network namespaces.
+
+---
 
 ## Storage
 
 [![Storage](screenshots/thumbs/console-storage.png)](screenshots/console-storage.png)
 
-**Overview Panel** — Five stat cards: Claims, Volumes, Classes, CSI Drivers, Total Capacity.
+The Storage page manages persistent storage across the cluster.
 
-**Storage Capabilities** — What the cluster supports:
-- Supported volume types (emptyDir, hostPath, configMap, secret, projected, etc.)
-- Access modes (RWO, ROX, RWX) with descriptions
-- Reclaim policies (Delete, Retain, Recycle)
-- Dynamic provisioning status
+### Overview Panel
 
-**Create StorageClass** — Click the "StorageClass" button to open an inline form:
-- Name, provisioner (defaults to rusternetes.io/hostpath), reclaim policy, binding mode
-- Helper text explains what each provisioner does
+Five stat cards:
+- **Claims** — PVC count (with bound count)
+- **Volumes** — PV count (with available count)
+- **Classes** — StorageClass count
+- **CSI Drivers** — Container Storage Interface drivers
+- **Capacity** — total provisioned storage
 
-**Create PVC** — Click "Create PVC" to open an inline form:
-- Name, namespace, Storage Class dropdown (populated from existing classes), size, access mode
-- Shows "Create a StorageClass first" hint when none exist
+### Storage Capabilities
 
-**StorageClass Cards** — Show provisioner, reclaim policy, binding mode, and expandable badge.
+Shows what the cluster supports:
+- **Volume types**: emptyDir (ephemeral per-pod), hostPath (host directory), configMap, secret, projected, downwardAPI, persistentVolumeClaim
+- **Access modes**: ReadWriteOnce (single node read-write), ReadOnlyMany (multi-node read-only), ReadWriteMany (multi-node read-write)
+- **Reclaim policies**: Delete (PV deleted when PVC is deleted), Retain (PV preserved), Recycle (deprecated)
+- **Dynamic provisioning**: enabled when a StorageClass with a provisioner exists
 
-**PVC Cards** — Show status (Bound/Pending), requested size, actual capacity, access modes, storage class, and PV binding.
+### Default StorageClass
 
-**PV Table** — Status, capacity, reclaim policy, and claim reference.
+Rusternetes bootstraps a `standard` StorageClass on startup with the `rusternetes.io/hostpath` provisioner. When you create a PVC referencing this class, the Dynamic Provisioner controller automatically creates a PV backed by a host directory.
+
+### How to Create a StorageClass
+
+1. Click **+ StorageClass** on the Storage page
+2. **Name**: e.g., `fast-storage`
+3. **Provisioner**: choose `rusternetes.io/hostpath` (auto-provisions directories) or `kubernetes.io/no-provisioner` (manual PV binding)
+4. **Reclaim Policy**: `Delete` or `Retain`
+5. **Volume Binding Mode**: `WaitForFirstConsumer` (recommended — binds when a pod actually uses it) or `Immediate`
+6. Click **Create StorageClass**
+
+Success message appears at the top of the page. The new class appears in the StorageClass section immediately.
+
+### How to Create a PVC
+
+1. Click **+ Create PVC** on the Storage page
+2. **Name**: e.g., `my-data`
+3. **Namespace**: defaults to `default`
+4. **Storage Class**: dropdown populated from existing StorageClasses. If none exist, a hint says "Create a StorageClass first"
+5. **Size**: 1Gi, 5Gi, 10Gi, 50Gi, or 100Gi
+6. **Access Mode**: ReadWriteOnce (RWO), ReadOnlyMany (ROX), or ReadWriteMany (RWX)
+7. Click **Create PVC**
+
+If the selected StorageClass has a dynamic provisioner (like `rusternetes.io/hostpath`), a PV is automatically created and the PVC transitions from Pending → Bound. Without a provisioner, the PVC stays Pending until you manually create a matching PV.
+
+### PVC Lifecycle
+
+- **Pending** — waiting for a PV to be created or bound
+- **Bound** — successfully bound to a PV, ready for use by pods
+- **Released** — the PVC was deleted but the PV still exists (Retain policy)
+
+### Using a PVC in a Pod
+
+Reference the PVC name in your pod spec:
+
+```json
+{
+  "spec": {
+    "containers": [{
+      "volumeMounts": [{ "name": "data", "mountPath": "/data" }]
+    }],
+    "volumes": [{
+      "name": "data",
+      "persistentVolumeClaim": { "claimName": "my-data" }
+    }]
+  }
+}
+```
+
+### Volume Snapshots and Expansion
+
+Rusternetes supports volume snapshots (point-in-time copies) and online volume expansion (resize PVCs without downtime). Create VolumeSnapshot resources via **Explore All > VolumeSnapshots** or the JSON editor.
+
+---
 
 ## Nodes
 
 [![Nodes](screenshots/thumbs/console-nodes.png)](screenshots/console-nodes.png)
 
-**Node Cards** — Each node shows:
-- Name (clickable to detail view) and Ready/NotReady status badge
-- Role badges (e.g., "control-plane")
-- "cordoned" badge if unschedulable
-- Version, OS/architecture, pod count, age
-- **CPU gauge** — real utilization bar with percentage from Docker stats
-- **Memory gauge** — real utilization bar with percentage
-- Taint badges showing key=value:effect
-- **View** button and **Cordon/Uncordon** toggle
+The Nodes page shows every node in the cluster with real-time resource utilization.
+
+**Node Cards** — Each node displays:
+- **Name** (clickable → detail view) and **Ready/NotReady** status badge
+- **Role badges** (e.g., "control-plane") from `node-role.kubernetes.io/` labels
+- **"cordoned"** badge if the node is marked unschedulable
+- **Version** — kubelet version (e.g., v1.35.0-rusternetes)
+- **OS/Architecture** — e.g., linux/amd64
+- **Pod count** — number of pods scheduled to this node
+- **Age** — how long the node has been registered
+- **CPU gauge** — real utilization from Docker/Podman container stats, shown as millicores used / total cores with percentage (e.g., `2m / 4.0 cores (0.1%)`)
+- **Memory gauge** — real utilization shown as used / total with percentage (e.g., `37Mi / 8.0Gi (0.5%)`)
+- **Taint badges** — shows each taint as `key=value:effect` (e.g., `node.kubernetes.io/not-ready:NoSchedule`)
+
+### How to Cordon/Uncordon a Node
+
+Click the **ban icon** to cordon a node (marks it unschedulable — no new pods will be scheduled there, but existing pods continue running). Click the **check icon** to uncordon it (allows scheduling again).
+
+### Node Metrics
+
+CPU and memory values come from the metrics API (`/apis/metrics.k8s.io/v1beta1/nodes`), which queries real Docker/Podman container stats using the bollard API. The metrics are:
+- Per-node (each node shows only its own pods' usage)
+- Updated every 5 seconds
+- Derived from actual container CPU nanocores and memory working set bytes
+
+---
 
 ## Configuration
 
 [![Configuration](screenshots/thumbs/console-config.png)](screenshots/console-config.png)
 
-**Summary Chips** — ConfigMaps count, Secrets count, Service Accounts count.
+The Config page manages cluster configuration resources.
 
-**ConfigMap Cards** — Name, namespace, data key badges (colored by key name). View and delete actions.
+**Summary Chips** — Quick counts: ConfigMaps, Secrets, Service Accounts
 
-**Secret Cards** — Name, namespace, type badge (e.g., kubernetes.io/service-account-token), key count. Eye-off icon indicates secret content. View and delete actions.
+**ConfigMap Cards** — Each card shows:
+- Name and namespace
+- **Data key badges** — colored pills showing each key in the ConfigMap's data
+- View (eye icon) and Delete (trash icon) actions
 
-**Service Account List** — Compact cards showing name and namespace. Click to view details.
+ConfigMaps are commonly used for application configuration, CoreDNS Corefile, and kube-proxy config.
+
+**Secret Cards** — Each card shows:
+- Name and namespace with eye-off icon (indicating sensitive content)
+- **Type badge** — e.g., `kubernetes.io/service-account-token`, `Opaque`, `kubernetes.io/tls`
+- **Key count** — number of data entries
+- View and Delete actions
+
+Secret values are base64-encoded in the API. The console shows the keys but not the decoded values.
+
+**Service Account List** — Compact cards for each ServiceAccount. Click to view details including bound secrets and token information.
+
+### How to Create a ConfigMap
+
+Use **Create > ConfigMap** to open the JSON editor pre-populated with a ConfigMap template. Edit the `data` section with your key-value pairs and click Create.
+
+### How to Create a Secret
+
+Use **Create > From JSON** and paste a Secret definition. Use `stringData` for plain-text values (the API server base64-encodes them automatically) or `data` for pre-encoded values.
+
+---
 
 ## RBAC (Access Control)
 
 [![RBAC](screenshots/thumbs/console-rbac.png)](screenshots/console-rbac.png)
 
-**Subjects** — Shows who has access. Each card displays:
-- Subject identity (ServiceAccount, Group, or User) with colored icon
-- Roles bound to this subject
+The RBAC page visualizes who has access to what in the cluster.
 
-**ClusterRoleBindings** — Visualizes subject → role connections:
-- Subject badges colored by type (teal=ServiceAccount, yellow=Group, blue=User)
-- Arrow pointing to the role reference
+**Subjects** — Shows every identity that has RBAC permissions:
+- **ServiceAccount** (teal icon) — automated identities for pods and controllers
+- **Group** (yellow icon) — groups like `system:masters`, `system:authenticated`
+- **User** (blue icon) — individual user identities
+- Each card shows the roles bound to that subject
 
-**ClusterRoles** — Cards showing:
+**ClusterRoleBindings** — Visualizes the connection between subjects and roles:
+- Subject badge → arrow → role reference
+- Shows which specific role each subject is bound to
+
+**ClusterRoles** — Cards showing role permissions:
 - Role name and rule count
-- Rule badges showing verbs (get, list, create, etc.) and resources
-- "full access (*)" indicator for admin roles
+- **Rule badges** showing verbs (get, list, create, delete, etc.) on resources
+- **"full access (*)"** in red for roles with wildcard access to everything
 
-Click "View all" links to see the complete list via the Resource Explorer.
+Click "View all" to see the complete list of ClusterRoles or ClusterRoleBindings via the Resource Explorer.
+
+### Understanding RBAC
+
+- **Role** — defines permissions within a namespace (verbs × resources)
+- **ClusterRole** — defines permissions cluster-wide
+- **RoleBinding** — grants a Role to a subject in a specific namespace
+- **ClusterRoleBinding** — grants a ClusterRole to a subject across all namespaces
+
+### Default ClusterRoles
+
+- `cluster-admin` — full access to everything
+- `admin` — full access within a namespace (no RBAC modification)
+- `edit` — read/write to most resources
+- `view` — read-only access
+
+### How to Secure the Cluster
+
+By default, `--skip-auth` is enabled — all requests are treated as admin with no token required. To enable real authentication:
+
+1. **Generate RSA signing keys** for JWT token signing:
+   ```bash
+   mkdir -p .rusternetes/certs
+   openssl genrsa -out .rusternetes/certs/sa.key 2048
+   openssl rsa -in .rusternetes/certs/sa.key -pubout -out .rusternetes/certs/sa.pub
+   ```
+
+2. **Create an admin ServiceAccount** (while still in skip-auth mode):
+   ```bash
+   kubectl create serviceaccount cluster-admin -n kube-system
+   kubectl create clusterrolebinding cluster-admin-binding \
+     --clusterrole=cluster-admin \
+     --serviceaccount=kube-system:cluster-admin
+   ```
+
+3. **Create a token Secret** and retrieve it:
+   ```bash
+   cat <<EOF | kubectl apply -f -
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: cluster-admin-token
+     namespace: kube-system
+     annotations:
+       kubernetes.io/service-account.name: cluster-admin
+   type: kubernetes.io/service-account-token
+   EOF
+
+   TOKEN=$(kubectl get secret cluster-admin-token -n kube-system \
+     -o jsonpath='{.data.token}' | base64 -d)
+   kubectl config set-credentials rusternetes-admin --token="$TOKEN"
+   ```
+
+4. **Restart without `--skip-auth`** — edit `docker-compose.yml` to remove the `--skip-auth` line, rebuild, and redeploy the API server.
+
+5. **Verify**: `curl -k https://localhost:6443/api/v1/pods` should return 401 Unauthorized.
+
+For the console in auth mode, set the token in the browser: `sessionStorage.setItem('rusternetes-token', '<TOKEN>')`.
+
+### TLS and mTLS
+
+The API server supports:
+- **TLS** with self-signed or custom certificates (`--tls`, `--tls-cert-file`, `--tls-key-file`)
+- **mTLS** with client certificate authentication (`--client-ca-file`) — clients must present a certificate signed by the specified CA
+
+---
 
 ## Events
 
 [![Events](screenshots/thumbs/console-events.png)](screenshots/console-events.png)
 
-**Event Frequency Histogram** — Stacked bar chart showing event count over the last hour in 5-minute buckets. Blue = Normal, yellow = Warning.
+The Events page shows everything happening in the cluster with rich filtering.
+
+**Event Frequency Histogram** — Stacked bar chart showing event count over the last hour in 5-minute buckets:
+- Blue bars = Normal events
+- Yellow bars = Warning events
 
 **Filter Controls:**
-- **Type filter** — All, Warning, Normal. Warning count shown as badge.
-- **Text search** — Filter by reason, message, or involved object name.
-- **Quick reason filters** — One-click buttons for common reasons (Created, Pulled, Scheduled, Started).
+- **Type buttons** — All, Warning (with count badge), Normal
+- **Text search** — filter by reason, message, object name, or kind
+- **Quick reason filters** — one-click buttons for common reasons (Created, Pulled, Scheduled, Started)
 
 **Event List** — Each event shows:
 - Severity icon (blue=Normal, yellow=Warning, red=Error)
-- Reason and involved object (clickable to navigate to that resource)
+- **Reason** (e.g., Created, Pulled, Started, FailedScheduling) — bold and prominent
+- **Involved object** (clickable — navigates to that resource's detail view)
+- Namespace in parentheses
 - Message text
-- Time ago and occurrence count
+- Time ago and occurrence count (e.g., "x3" if the event fired multiple times)
 - Warning events have amber background
 
-Auto-refreshes every 10 seconds. Shows up to 100 events.
+Auto-refreshes every 10 seconds. Shows up to 100 most recent events.
+
+---
 
 ## Create Resource
 
 [![Create Resource](screenshots/thumbs/console-create.png)](screenshots/console-create.png)
 
-Four creation modes:
+The Create page offers four ways to create resources:
 
-**Quick Deploy** — Form-based deployment:
-- App name, container image, replicas, port, namespace
-- Optional "Create Service" checkbox to expose the deployment
-- Click Deploy to create the Deployment (and optionally Service)
+**Quick Deploy** — Form-based application deployment:
+1. Enter app name, container image, replicas, port, namespace
+2. Check **Create Service** to expose it with a ClusterIP Service
+3. Click **Deploy** — creates the Deployment (and Service) immediately
 
-**From JSON** — Paste or edit a JSON resource definition:
-- Pre-populated with a Deployment template
-- When opened from a resource list's Create button, pre-populated with the correct resource type template
+**From JSON** — Create any Kubernetes resource from a JSON definition:
+- Pre-populated with a Deployment template by default
+- When opened via a "Create" button on a resource list, the template matches that resource type (e.g., clicking Create on the Ingress list gives you an Ingress template)
+- Supports all 100+ resource types including CRDs
 
-**Service** — JSON template pre-populated for creating a Service.
+**Service** — JSON editor pre-populated with a Service template (ClusterIP, selector, port mapping)
 
-**ConfigMap** — JSON template pre-populated for creating a ConfigMap.
-
-## Multi-Cluster (Fleet Mode)
-
-Click the **Fleet** button in the header bar to enable multi-cluster mode.
-
-- Click **+** to register a remote cluster (name + API server URL)
-- Click a cluster name to switch active context
-- All views automatically route API calls to the selected cluster
-- Cluster registrations persist in browser localStorage
-
-## Namespace Filtering
-
-Use the **namespace dropdown** in the header bar to filter all views to a specific namespace. Select "All namespaces" to see everything.
-
-## Header Bar
-
-The header bar shows:
-- **Namespace selector** — filter all views by namespace
-- **Fleet cluster switcher** — switch between clusters (when enabled)
-- **Resource type count** — how many API resource types were discovered
-- **Connection status** — green dot with "Connected" indicator
+**ConfigMap** — JSON editor pre-populated with a ConfigMap template (key-value data)
 
 ---
 
-## Managing Workloads
+## Resource Explorer
 
-### Deploy an Application
+Navigate to **Explore All** in the sidebar. This is the universal entry point for browsing any resource type in the cluster.
 
-The fastest way to deploy is the **Quick Deploy** form (sidebar > Create):
+The explorer auto-discovers all resource types from the API server (100+), including any Custom Resource Definitions. Resources are grouped into categories:
+- Workloads, Networking, Storage, Access Control, Configuration, Cluster, Extensions, Coordination, Certificates, Scheduling, Autoscaling, and custom API groups
 
-1. Enter an app name (e.g., `nginx`)
-2. Enter a container image (e.g., `nginx:latest`)
-3. Set replicas and port
-4. Check "Create Service" to expose it
-5. Click **Deploy**
+**Search** — Type to filter by kind name, plural name, or short name (e.g., "po" for pods, "svc" for services, "deploy" for deployments).
 
-This creates a Deployment and optionally a ClusterIP Service. View the result in **Workloads** — you'll see the deployment card with a rollout progress bar.
+**Resource Cards** — Each type shows:
+- Kind name and API group/version (e.g., `apps/v1`)
+- Short names in orange (e.g., `po`, `svc`, `deploy`)
+- "ns" badge if the resource is namespaced
+- Live resource count (yellow number)
 
-### Scale a Deployment
+Click any card to open the **Resource List View** for that type.
 
-On the **Workloads** page, each deployment card has **+/-** buttons to adjust the replica count. Or click the deployment name to open the detail view, where the scale controls are in the header.
+### Resource List View
 
-### Rolling Restart
+A table of all instances of the selected resource type:
+- Name (clickable → detail view), namespace, status, age
+- Search bar to filter by name or namespace
+- Create button (opens JSON editor with correct template)
+- Refresh button to re-fetch
+- Delete button (trash icon) with confirmation dialog per row
+- View button (eye icon) to open detail view
+- Real-time updates via K8s watch stream
 
-Click the **restart** icon (circular arrow) on a deployment card. This adds a `restartedAt` annotation to the pod template, triggering a rolling restart of all pods.
+### Resource Detail View
 
-### Delete Resources
+Click any resource name to see:
 
-Every resource has a trash icon. Click it and confirm. The resource is deleted via the K8s API and disappears from the view in real-time via the watch stream.
+**Overview Tab** — Metadata (UID, generation, finalizers), labels as colored chips, conditions table with status badges, owner references, annotations
 
-### Create Any Resource from JSON
+**YAML/JSON Tab** — Full resource JSON in an editor. Edit and click Save to apply changes via PUT. Reset to revert.
 
-Use **Create > From JSON** to create any Kubernetes resource. When you click "Create" from a resource list (e.g., from the Resource Explorer), the JSON editor is pre-populated with a template for that specific resource type.
+**Events Tab** — Events filtered to this specific resource, auto-refreshing every 15 seconds
 
-## Managing Storage
+**Header Actions:**
+- **Scale** (Deployments/StatefulSets/ReplicaSets) — +/- replica controls
+- **Restart** (Deployments/StatefulSets/DaemonSets) — rolling restart via annotation
+- **Copy** — copies full JSON to clipboard
+- **Delete** — deletes with confirmation dialog
 
-### Create a StorageClass
-
-Navigate to **Storage** and click **+ StorageClass**:
-- **Name**: e.g., `fast-storage`
-- **Provisioner**: `rusternetes.io/hostpath` (auto-provisions host directories) or `kubernetes.io/no-provisioner` (manual PV binding)
-- **Reclaim Policy**: `Delete` (auto-cleanup) or `Retain` (keep data)
-- **Volume Binding Mode**: `WaitForFirstConsumer` (bind when pod uses it) or `Immediate`
-
-A default `standard` StorageClass with the hostpath provisioner is created automatically on cluster startup.
-
-### Create a PVC
-
-Click **+ Create PVC**:
-- Select a **Storage Class** from the dropdown (populated from existing classes)
-- Choose **Size** and **Access Mode** (RWO, ROX, RWX)
-- Click **Create PVC**
-
-If the StorageClass has a dynamic provisioner, a PV is automatically created and the PVC transitions from Pending to Bound.
-
-### View Storage Status
-
-The Storage page shows:
-- **Overview panel**: PVC count, PV count, StorageClass count, CSI drivers, total capacity
-- **Storage Capabilities**: supported volume types, access modes, reclaim policies
-- **Binding visualization**: PVCs show which PV they're bound to
-
-## Networking
-
-### View Cluster Network Configuration
-
-The **Networking** page always shows four configuration cards at the top:
-- **Service CIDR** — the IP range for ClusterIP allocation (e.g., `10.96.0.0/12`)
-- **Pod CIDRs** — per-node pod CIDR assignments
-- **Cluster DNS** — the kube-dns service IP (`10.96.0.10`) and its ports
-- **Kube-Proxy** — mode (`iptables`), network mode, supported service types
-
-### Understand Service Routing
-
-The **Service Routing** section shows visual diagrams of how each service connects to its target pods — service box → arrow → matched pods with their IPs and status.
-
-### Service Types
-
-Services are color-coded by type:
-- **Blue** — ClusterIP (cluster-internal only)
-- **Green** — NodePort (accessible on every node's IP)
-- **Orange** — LoadBalancer (external access via cloud provider or MetalLB)
-
-### Using Third-Party CNI Plugins
-
-Rusternetes supports standard CNI plugins on Linux. See the [CNI Guide](CNI_GUIDE.md) for setup instructions for Calico, Cilium, and Flannel.
-
-### Load Balancers
-
-For LoadBalancer services outside cloud providers, use MetalLB. See [LOADBALANCER.md](LOADBALANCER.md) and [METALLB_INTEGRATION.md](METALLB_INTEGRATION.md).
-
-## Security & Authentication
-
-### Current Auth Mode
-
-By default, `--skip-auth` is enabled — all requests are treated as admin. This is fine for development but **must be disabled** before exposing the cluster to any network.
-
-### Securing the Cluster
-
-See the [Authentication Guide](AUTHENTICATION.md) for the full walkthrough:
-1. Generate RSA signing keys for JWT tokens
-2. Create an admin ServiceAccount and ClusterRoleBinding
-3. Configure kubectl with the token
-4. Restart without `--skip-auth`
-
-### RBAC in the Console
-
-The **RBAC** page visualizes:
-- **Subjects** — who has access (ServiceAccounts, Users, Groups)
-- **Bindings** — which subjects are bound to which roles
-- **Roles** — what permissions each role grants (verbs × resources)
-- **"full access (*)"** badge on admin roles
-
-### TLS/mTLS
-
-The API server supports TLS with self-signed or custom certificates, and mTLS via `--client-ca-file` for client certificate authentication. See [TLS_GUIDE.md](TLS_GUIDE.md).
-
-## Monitoring & Metrics
-
-### Real-Time Metrics in the Console
-
-The console collects metrics from two sources:
-- **K8s metrics API** (`/apis/metrics.k8s.io/v1beta1/nodes`) — real CPU/memory usage from Docker container stats, refreshed every 5 seconds
-- **In-browser collection** — pod counts, restart rates, event frequency collected every 30 seconds with 30-minute history
-
-### Overview Dashboard
-
-Health rings show pod/node/deployment readiness. Sparkline charts track pod count, node count, restart trends, and event rates over time.
-
-### Node Metrics
-
-The **Nodes** page shows CPU and memory utilization gauges per node with actual percentages from Docker container stats. Values update every 5 seconds.
-
-### Topology Metrics
-
-The **Topology** view shows:
-- Node CPU/MEM bars with percentages
-- Pod brightness based on CPU usage (brighter = more CPU)
-- Traffic particles along service connections
-
-### Activity Timeline
-
-At the bottom of Topology, the cluster activity timeline records snapshots every 15 seconds. Click any bar to see the cluster state at that point — pod count, node count, service count, and deltas.
+---
 
 ## Custom Resource Definitions (CRDs)
 
-### Discovering CRDs
+CRDs let you extend the Kubernetes API with your own resource types. Rusternetes supports the full CRD lifecycle:
 
-The **Explore All** page auto-discovers all resource types from the API, including CRDs. CRDs appear under custom categories (grouped by API group).
+- **Create a CRD** via kubectl or the JSON editor — defines a new resource type with its own API group, version, kind, schema, and subresources
+- **Auto-discovery** — the Resource Explorer discovers new CRDs within 5 minutes (discovery cache TTL)
+- **CRUD operations** — create, read, update, delete custom resource instances through the console just like built-in resources
+- **Watch** — custom resources support real-time watch streams
+- **Status/Scale subresources** — if defined in the CRD, the status and scale endpoints work
+- **Schema validation** — the API server validates custom resources against the CRD's OpenAPI v3 schema
 
-### Managing CRDs
+To create a CRD, use **Create > From JSON** and define a CustomResourceDefinition. After creating it, navigate to **Explore All** — your new resource type appears under its API group.
 
-Click any CRD-backed resource type to see instances, create new ones (via JSON), view details, and delete. The full CRD lifecycle works through the console just like built-in resources.
+---
 
-See [CRD_IMPLEMENTATION.md](CRD_IMPLEMENTATION.md) for how to create CRDs via kubectl.
+## Monitoring & Metrics
 
-## Resource Explorer
+### Where Metrics Come From
 
-The **Explore All** page discovers every resource type in the cluster (100+, including CRDs):
-- Grouped by category (Workloads, Networking, Storage, Access Control, etc.)
-- Search by kind, plural name, or short name
-- Live resource count per type
-- Click any type to browse instances
+The console collects metrics from two sources:
 
-This is the universal entry point for any resource the API server knows about.
+1. **K8s Metrics API** — `/apis/metrics.k8s.io/v1beta1/nodes` and `/pods`. The API server queries Docker/Podman container stats via the bollard library, aggregates CPU nanocores and memory working set bytes per node based on pod-to-node assignments. Updated every 5 seconds on both Nodes and Topology pages.
 
-## Pod Log Streaming
+2. **In-browser collection** — the Overview page polls `/api/v1/pods`, `/api/v1/nodes`, `/apis/apps/v1/deployments`, and `/api/v1/events` every 30 seconds, storing time-series data points for sparkline charts. Up to 30 minutes of history (60 data points).
 
-### From Topology
+### What You Can Monitor
 
-Click any pod in the topology SVG to immediately open a **Live Logs** panel at the bottom of the screen. Logs refresh every 5 seconds with color-coded severity.
+| Where | What | Update Frequency |
+|---|---|---|
+| Overview health rings | Pod/node/deployment readiness ratios | 30 seconds |
+| Overview sparklines | Pod count, node count, restart rate, event rate trends | 30 seconds |
+| Topology node bars | Per-node CPU and memory utilization | 5 seconds |
+| Topology pod brightness | Per-pod CPU usage intensity | 5 seconds |
+| Topology particles | Service-to-pod traffic flow visualization | Animated |
+| Topology timeline | Pod/node/service count history | 15-second snapshots |
+| Nodes page gauges | Per-node CPU (millicores) and memory (Mi) with percentage | 5 seconds |
+| Events histogram | Event frequency over last hour | 10 seconds |
+| Workloads restart heatmap | Container restart counts per pod | 30 seconds |
 
-### From Resource Detail
+### Node Metrics Detail
 
-Navigate to any pod's detail view and click the **Events** tab to see events for that specific pod.
+CPU is shown as millicores used vs total cores. For example, `2m / 4.0 cores (0.1%)` means 2 millicores (0.002 cores) out of 4 available cores. These are real values from Docker container stats, not estimates.
+
+Memory is shown as megabytes or gigabytes used vs total allocatable. For example, `37Mi / 8.0Gi (0.5%)`.
+
+When utilization is very low (< 1%), the gauge shows one decimal place (e.g., `0.1%`) with a minimum visible bar width so you can always see that something is running.
+
+---
+
+## Multi-Cluster (Fleet Mode)
+
+The console supports managing multiple rusternetes clusters from a single browser tab.
+
+### Enable Fleet Mode
+
+Click the **Fleet** button in the header bar. A cluster switcher appears showing "Local" (the current cluster).
+
+### Register a Remote Cluster
+
+1. Click the **+** button in the cluster switcher
+2. Enter a **Name** (e.g., "production") and the cluster's **API server URL** (e.g., `https://10.0.1.5:6443`)
+3. Click **Add**
+
+### Switch Clusters
+
+Click any cluster name in the switcher. All console views immediately route their API calls to the selected cluster. The header shows which cluster is active.
+
+### How It Works
+
+- **Local cluster**: API calls go same-origin (no prefix)
+- **Remote clusters**: API calls are prefixed with `/clusters/{cluster-id}` and proxied by the hub API server to the remote cluster
+- **Persistence**: cluster registrations are stored in the browser's `localStorage` and survive page reloads
+- **Remove**: click the X next to any remote cluster name to unregister it
+
+---
+
+## Namespace Filtering
+
+The **namespace dropdown** in the header bar filters all views to a specific namespace:
+- **"All namespaces"** — shows resources from every namespace (default)
+- **Select a namespace** — only shows resources in that namespace
+
+The dropdown is populated live from the cluster's namespace list. Namespace filtering applies to all tabbed views (Workloads, Networking, Storage, Config, Events) and the Resource Explorer/List views for namespaced resource types. Cluster-scoped resources (Nodes, ClusterRoles, PVs, StorageClasses) are always shown regardless of the namespace filter.
+
+---
 
 ## Troubleshooting
 
 ### Console shows "Loading..." forever
-
 - Check that the API server is running: `curl -k https://localhost:6443/healthz`
-- Check browser console for errors (F12 > Console tab)
-- If using auth, ensure a valid token is in `sessionStorage`
+- Check browser developer console for errors (F12 > Console tab)
+- If using auth, ensure a valid token is in sessionStorage: `sessionStorage.getItem('rusternetes-token')`
 
 ### Console shows stale data
+- The namespace filter may be set to a specific namespace — check the dropdown in the header
+- Click the refresh button on any resource list to force a re-fetch
+- Hard refresh the page (Cmd+Shift+R / Ctrl+Shift+R)
 
-- The namespace filter may be set — check the dropdown in the header
-- Click the refresh icon on any resource list
-- Hard refresh the page (Cmd+Shift+R)
-
-### Resource creates succeed but don't appear
-
+### Resources created but don't appear
 - The resource may be in a different namespace — set namespace filter to "All namespaces"
-- Watch updates may not be connected — check the "Connected" indicator in the header
+- Watch updates may have disconnected — check the "Connected" indicator in the header bar
+- The resource may have been created successfully but is in a non-Running state — check the Events page
 
-### Metrics show 0%
+### Metrics show 0% on everything
+- CPU/memory metrics come from Docker/Podman container stats via the bollard API
+- Very low utilization (< 1%) shows as "0.1%" with a tiny visible bar
+- If metrics are stuck at exactly 0, check that the API server container has the Docker socket mounted (`/var/run/docker.sock`)
+- Run `curl -sk https://localhost:6443/apis/metrics.k8s.io/v1beta1/nodes` to verify the metrics API returns data
 
-- CPU/memory metrics come from Docker container stats
-- Very low utilization (< 1%) shows as "0.1%" with a tiny bar
-- If metrics are stuck at exactly 0, check that the API server can reach the Docker socket
+### Console accessible but API calls fail
+- The console is served at `/console/` and the API at `/api/` — both from the same server. If the console loads but shows errors, the issue is with the API endpoint, not the console itself.
+- Check API server logs: `docker compose logs api-server`
+
+### "e2e-fake-node" or stale nodes appearing
+- Conformance tests create temporary fake nodes that may not get cleaned up
+- Delete them: `kubectl delete node <fake-node-name>`
 
 ---
 
 ## Architecture
 
-The console is a React single-page application served by the Axum API server at `/console/`. Because the SPA and API share the same origin, there is no CORS configuration, no nginx proxy, and no separate deployment.
+The console is a React single-page application served by the Axum API server at `/console/`. Because the SPA and API share the same origin, there is no CORS, no proxy, and no separate deployment.
 
 ```
 Browser ─── https://localhost:6443/console/
@@ -547,40 +681,26 @@ Browser ─── https://localhost:6443/console/
 | Bundler | Vite |
 | State | Zustand (UI state) + TanStack Query (server state) |
 | Styling | Tailwind CSS + Radix UI |
-| Charts | Recharts |
-| Serving | Axum `tower-http::ServeDir` |
+| Charts | Recharts (pie, area, bar) |
+| Theme | WALL-E earth tones matching the docs site |
+| Serving | Axum `tower-http::ServeDir` with SPA fallback |
 
 ### K8s API Client
 
-The console communicates with the API server using the standard Kubernetes REST protocol. No custom endpoints are needed.
+The console uses the standard Kubernetes REST protocol — no custom API endpoints:
+- **Resource Discovery** — fetches `/api/v1` and `/apis` to discover all resource types (including CRDs), cached 5 minutes
+- **Watch Streams** — chunked HTTP with newline-delimited JSON, resourceVersion tracking, bookmark support, exponential backoff reconnection (1s → 30s max), 410 Gone recovery
+- **Authentication** — reads JWT from `sessionStorage`, passes as `Authorization: Bearer`. No token needed in `--skip-auth` mode
 
-- **Resource Discovery** — fetches `/api/v1` and `/apis` to discover all resource types (including CRDs), cached for 5 minutes
-- **Watch Streams** — chunked HTTP with newline-delimited JSON, `resourceVersion` tracking, bookmark support, exponential backoff reconnection (1s to 30s), 410 Gone recovery
-- **Authentication** — reads JWT from `sessionStorage`, passes as `Authorization: Bearer`. No token needed in `--skip-auth` mode.
+### Console Deployment
 
-### CLI Flags
+| Method | How |
+|---|---|
+| Docker Compose | Console is built into the API server image (multi-stage Dockerfile). `--console-dir /app/console` is passed automatically. |
+| All-in-one binary | Pass `--console-dir ./console/dist` to serve the SPA. |
+| Development | Run `npm run dev` in `console/` for hot-reload on port 3000 with API proxy to localhost:6443. |
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--console-dir` | *(disabled)* | Path to the console SPA build directory. Enables the web console at `/console/`. |
-
-The console auto-deploys in Docker Compose — the Dockerfile builds the SPA and bakes it into the API server image at `/app/console`.
-
-### Development
-
-```bash
-# Terminal 1: start the API server
-./target/release/rusternetes
-
-# Terminal 2: start the console dev server (hot reload)
-cd console
-npm install
-npm run dev
-# Open http://localhost:3000/console/
-# Vite proxies /api and /apis to localhost:6443
-```
-
-### Building
+### Building from Source
 
 ```bash
 cd console
