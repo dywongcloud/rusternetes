@@ -2,38 +2,41 @@
 
 ## Current Run (Round 153 — release builds, etcd, clean state)
 
-**Status at 57min: 42 passed, 4 failed, 46/441 done (91.3%)**
+**Status at ~2.5h: 199 passed, 24 failed, 223/441 done (89.2%)**
 
-### Failures
+### All 24 Failures
 
-| # | Test | Duration | Error | Root Cause | Fix Status |
-|---|------|----------|-------|------------|------------|
-| 1 | deployment.go:1259 | 304s | RS availableReplicas not converging | Extra phase==Running check in is_pod_available(). K8s only checks Ready + minReadySeconds + not-terminating. | **Fixed** (committed d7162b4, not in this run) |
-| 2 | daemon_set.go:494 | 9s | DS rollback without restarts | DS rolling update missing revision tracking — no updateRevision/currentRevision in status, no hash snapshot for rollout. | Needs fix |
-| 3 | webhook.go:1481 | 20s | kubectl attach denied — broken pipe | Attach webhook GVR uses pods/attach subresource. Pre-existing. | Pre-existing |
-| 4 | daemon_set.go:1276 | 8s | DS rolling update pod count | Same root cause as #2 — DS revision tracking incomplete. | Needs fix |
+| # | Test | Fix Status |
+|---|------|------------|
+| 1 | deployment.go:1259 | **Fixed** (committed, not in this run) — RS availableReplicas removed extra phase check |
+| 2 | daemon_set.go:494 | **Fixed** (committed, not in this run) — K8s-style maxUnavailable budget |
+| 3 | daemon_set.go:1276 | **Fixed** (committed, not in this run) — same DS rolling update fix |
+| 4 | webhook.go:1481 | **Fixed** (committed, not in this run) — resource/subResource split + PodAttachOptions |
+| 5 | deployment.go:1008 | Deployment rollover — needs investigation |
+| 6 | crd_publish_openapi.go x7 | CRD OpenAPI — fix committed but may need more work |
+| 7 | rc.go:538 | RC pod responses timeout — networking/proxy |
+| 8 | replica_set.go:232 | RS serve image — networking/proxy |
+| 9 | init_container.go:440 | Init container — fix committed but may need more work |
+| 10 | lifecycle_hook.go:132 | Lifecycle hook — pod readiness timing |
+| 11 | output.go:263 x2 | EmptyDir perms — fix committed |
+| 12 | job.go:596 | Job test — needs investigation |
+| 13 | hostport.go:219 | HostPort — timing |
+| 14 | service_latency.go:145 | Service latency — deployment readiness |
+| 15 | service.go:3459 | Service delete timeout |
+| 16 | preemption.go:1025 | Preemption timeout |
+| 17 | endpointslicemirroring.go:129 | EndpointSlice mirroring — needs investigation |
+| 18 | apiserver.go:94 | API server network test — needs investigation |
 
 ### Fixes committed but not in this run
 
-- RS availableReplicas: removed extra phase==Running check (d7162b4)
-
-### New failure discovered during run
-
-| # | Test | Error | Root Cause |
-|---|------|-------|------------|
-| 5 | subpath projected volume | mount-tester sees configmap content instead of written file | subPath mount binds entire directory instead of specific file. Docker bind mount needs file-level targeting for projected volume subPaths. |
-
-## Known Architectural Limitations
-
-| Issue | Reason |
-|-------|--------|
-| Pod resize cgroup | Docker cgroup paths differ from K8s |
-| HostPort conflict | Timing-dependent |
+- RS availableReplicas: removed extra phase==Running check
+- DaemonSet rolling update: K8s-style maxUnavailable budget
+- Webhook: resource/subResource split + PodAttachOptions
+- subPath: file-level bind mount for projected volumes
 
 ## Previous Results
 
 | Round | Pass | Fail | Total | Rate | Notes |
 |-------|------|------|-------|------|-------|
 | 149 | 398 | 43 | 441 | 90.2% | Pre-work-queue baseline |
-| 152 | 266 | 42 | 308* | 86.4% | *Killed by external restart |
-| 153 | 42 | 4 | 46 | 91.3% | Running — already above baseline |
+| 153 | 199 | 24 | 223* | 89.2% | *Still running. 4 failures already fixed for next run. |
