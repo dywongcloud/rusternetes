@@ -799,6 +799,32 @@ pub async fn patch_custom_resource(
         }
     }
 
+    // Strict schema validation for nested unknown fields in patched resource
+    if is_strict {
+        let crd_preserves = crd.spec.preserve_unknown_fields == Some(true);
+        let schema_preserves = crd
+            .spec
+            .versions
+            .iter()
+            .find(|v| v.name == version)
+            .and_then(|v| v.schema.as_ref())
+            .map(|s| s.open_apiv3_schema.x_kubernetes_preserve_unknown_fields == Some(true))
+            .unwrap_or(false);
+        if !crd_preserves && !schema_preserves {
+            if let Some(crd_version) = crd.spec.versions.iter().find(|v| v.name == version) {
+                if let Some(ref validation) = crd_version.schema {
+                    if let Some(ref properties) = validation.open_apiv3_schema.properties {
+                        if let Some(spec_schema) = properties.get("spec") {
+                            if let Some(ref spec) = patched.spec {
+                                SchemaValidator::validate_strict(spec_schema, spec, "spec")?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Validate the patched resource against CRD schema
     validate_custom_resource(&crd, &version, &patched)?;
 
