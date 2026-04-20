@@ -502,16 +502,9 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
     }
 
     fn is_pod_available(&self, pod: &Pod, replicaset: &ReplicaSet) -> bool {
+        // K8s IsPodAvailable: Ready condition True + minReadySeconds + not terminating
+        // Does NOT require phase == Running (a pod can be Ready before/during phase transitions)
         if !self.is_pod_ready(pod) {
-            return false;
-        }
-
-        // Pod must be Running (not just Ready)
-        let is_running = matches!(
-            pod.status.as_ref().and_then(|s| s.phase.as_ref()),
-            Some(Phase::Running)
-        );
-        if !is_running {
             return false;
         }
 
