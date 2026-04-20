@@ -6,8 +6,9 @@ scratch, implementing the real Kubernetes API surface, wire format, and
 behavioral semantics.
 
 **By the numbers:** 216,000+ lines of Rust across 10 crates. 31 controllers.
-75 API handler files. 307 registered routes. 3,100+ tests. 328 conformance fixes
-applied across 8 rounds of testing against the official K8s e2e suite.
+76 API handler files. 307+ registered routes. 3,100+ tests. 90% conformance
+pass rate (398/441) across 149 rounds of testing against the official K8s e2e suite.
+Built-in web console with real-time topology visualization and live metrics.
 
 ---
 
@@ -31,7 +32,8 @@ applied across 8 rounds of testing against the official K8s e2e suite.
 |  |  Watch API (SSE)          |<----| Scheduler                  |  |
 |  |  RBAC + Admission         |     |   Filter/Score plugins     |  |
 |  |  Server-Side Apply        |     |   Priority + Preemption    |  |
-|  |  OpenAPI v2/v3            |     +----------------------------+  |
+|  |  Web Console (React SPA)  |     +----------------------------+  |
+|  |  OpenAPI v2/v3            |                                     |
 |  +-------------+-------------+                                     |
 |                |                                                   |
 |  +-------------v-------------+                                     |

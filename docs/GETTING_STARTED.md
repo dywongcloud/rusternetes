@@ -1,204 +1,112 @@
-# Getting Started with Rusternetes
+# Getting Started — Running Components Individually
 
-This guide will help you get Rusternetes up and running on your local machine.
+This guide shows how to run each rusternetes component as a separate process on your local machine. This is useful for development, debugging, and understanding how the components interact.
+
+**For the fastest path to a running cluster, see [QUICKSTART.md](QUICKSTART.md)** which uses Docker Compose.
 
 ## Prerequisites
 
-1. **Rust** - Install from [rustup.rs](https://rustup.rs/)
-2. **etcd** - Distributed key-value store for cluster state
-3. **Docker** - Container runtime (for kubelet)
+- **Rust toolchain** — install via [rustup.rs](https://rustup.rs/)
+- **etcd** — for cluster state storage (or use SQLite with the all-in-one binary)
+- **Docker** — for the kubelet to create containers
 
-### Installing etcd
+### Start etcd
 
-Using Docker:
 ```bash
-docker run -d \
-  --name etcd \
-  -p 2379:2379 \
-  -p 2380:2380 \
-  -e ALLOW_NONE_AUTHENTICATION=yes \
-  bitnami/etcd:latest
+docker run -d --name etcd -p 2379:2379 -p 2380:2380 \
+  -e ALLOW_NONE_AUTHENTICATION=yes bitnami/etcd:latest
 ```
 
-Or using Homebrew (macOS):
-```bash
-brew install etcd
-etcd
-```
+## Build
 
-## Building Rusternetes
-
-Build all components:
 ```bash
 cargo build --release
 ```
 
-The binaries will be available in `target/release/`:
-- `api-server`
-- `scheduler`
-- `controller-manager`
-- `kubelet`
-- `kube-proxy`
-- `kubectl`
+This produces binaries in `target/release/`: `api-server`, `scheduler`, `controller-manager`, `kubelet`, `kube-proxy`, `kubectl`, and `rusternetes` (all-in-one).
 
-## Running the Control Plane
+## Start the Control Plane
 
-### 1. Start the API Server
+Open separate terminals for each component:
+
+### 1. API Server
 
 ```bash
-cargo run --bin api-server -- \
+./target/release/api-server \
   --bind-address 0.0.0.0:6443 \
   --etcd-servers http://localhost:2379 \
-  --tls \
-  --tls-self-signed
+  --tls --tls-self-signed \
+  --skip-auth \
+  --console-dir ./console/dist   # optional: enables web console
 ```
 
-### 2. Start the Scheduler
+The API server is now at `https://localhost:6443`. If you built the console, open `https://localhost:6443/console/`.
+
+### 2. Scheduler
 
 ```bash
-cargo run --bin scheduler -- \
+./target/release/scheduler \
   --etcd-servers http://localhost:2379
 ```
 
-### 3. Start the Controller Manager
+### 3. Controller Manager
 
 ```bash
-cargo run --bin controller-manager -- \
+./target/release/controller-manager \
   --etcd-servers http://localhost:2379
 ```
 
-## Running Node Components
+## Start Node Components
 
-### 1. Start the Kubelet
+### 4. Kubelet
 
 ```bash
-cargo run --bin kubelet -- \
+./target/release/kubelet \
+  --node-name node-1 \
+  --etcd-servers http://localhost:2379 \
+  --cluster-dns 10.96.0.10
+```
+
+### 5. Kube-Proxy (optional, Linux only)
+
+```bash
+sudo ./target/release/kube-proxy \
   --node-name node-1 \
   --etcd-servers http://localhost:2379
 ```
 
-### 2. Start Kube-proxy (optional)
+Kube-proxy requires `CAP_NET_ADMIN` for iptables rules. Skip it if you don't need ClusterIP/NodePort routing.
+
+## Use the Cluster
 
 ```bash
-cargo run --bin kube-proxy -- \
-  --node-name node-1
-```
+# Using standard kubectl
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+kubectl create deployment nginx --image=nginx
+kubectl get pods -w
 
-## Using kubectl
-
-### Create a namespace
-
-```bash
-cargo run --bin kubectl -- \
-  --server https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  create -f examples/tests/test-namespace.yaml
-```
-
-### Create a pod
-
-```bash
-cargo run --bin kubectl -- \
-  --server https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  create -f examples/workloads/test-pod.yaml
-```
-
-### List pods
-
-```bash
-cargo run --bin kubectl -- \
+# Or using the built-in kubectl
+./target/release/kubectl \
   --server https://localhost:6443 \
   --insecure-skip-tls-verify \
   get pods
 ```
 
-### Create a deployment
+## All-in-One Alternative
+
+Instead of running 5 separate processes, run everything in one:
 
 ```bash
-cargo run --bin kubectl -- \
-  --server https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  create -f examples/workloads/test-deployment.yaml
+./target/release/rusternetes \
+  --data-dir ./cluster.db \
+  --console-dir ./console/dist
 ```
 
-### List deployments
-
-```bash
-cargo run --bin kubectl -- \
-  --server https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  get deployments
-```
-
-### Delete a pod
-
-```bash
-cargo run --bin kubectl -- \
-  --server https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  delete pod nginx-pod -n test-namespace
-```
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────┐
-│           Control Plane                  │
-│  ┌──────────────┐  ┌──────────────┐    │
-│  │  API Server  │  │  Scheduler   │    │
-│  └──────────────┘  └──────────────┘    │
-│  ┌──────────────┐                       │
-│  │ Controller   │                       │
-│  │  Manager     │                       │
-│  └──────────────┘                       │
-└─────────────────────────────────────────┘
-              │
-              │ (communicates via etcd)
-              ▼
-      ┌──────────────┐
-      │     etcd     │
-      └──────────────┘
-              │
-              ▼
-┌─────────────────────────────────────────┐
-│             Node                         │
-│  ┌──────────────┐  ┌──────────────┐    │
-│  │   Kubelet    │  │ Kube-proxy   │    │
-│  └──────────────┘  └──────────────┘    │
-│         │                                │
-│         ▼                                │
-│  ┌──────────────┐                       │
-│  │    Docker    │                       │
-│  └──────────────┘                       │
-└─────────────────────────────────────────┘
-```
+This starts the API server, scheduler, controller manager, kubelet, and kube-proxy as concurrent tokio tasks with embedded SQLite. No etcd needed.
 
 ## Next Steps
 
-- Explore the example YAML files in the `examples/` directory
-- Read the main README.md for architecture details
-- Check out the source code in `crates/`
-
-## Troubleshooting
-
-### etcd connection errors
-Make sure etcd is running and accessible at `localhost:2379`
-
-### Docker connection errors
-Ensure Docker daemon is running for the kubelet to start containers
-
-### Port already in use
-The API server uses port 6443 by default. Change with `--bind-address`
-
-## Development
-
-Run tests:
-```bash
-cargo test
-```
-
-Run with debug logging:
-```bash
-cargo run --bin api-server -- --log-level debug
-```
+- **[QUICKSTART.md](QUICKSTART.md)** — Docker Compose cluster (faster, no manual setup)
+- **[Console User Guide](CONSOLE_USER_GUIDE.md)** — web console features
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — build commands, testing, crate structure

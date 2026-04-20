@@ -1,470 +1,154 @@
-# Rusternetes Clean Room Deployment Guide
+# Deployment Guide
 
-**Date:** March 11, 2026
-**Deployment Method:** Podman Compose
-**Status:** ✅ PRODUCTION READY
+Rusternetes supports three deployment modes from the same codebase. Choose based on your needs.
 
----
+| Mode | Storage | Best For | Console |
+|---|---|---|---|
+| Docker Compose + etcd | etcd cluster | Production, multi-node, HA | Included |
+| Docker Compose + SQLite | SQLite via Rhino | Development, simpler ops | Included |
+| All-in-one binary | Embedded SQLite | Edge, CI/CD, single-node, learning | Included |
 
-## Overview
+The web console (`https://localhost:6443/console/`) deploys automatically in all modes.
 
-This guide documents the clean room setup and deployment of Rusternetes, a production-ready Kubernetes implementation written in Rust. The cluster has been verified to function exactly like Kubernetes (see VERIFICATION_REPORT.md).
+## Mode 1: Docker Compose + etcd
 
-## Architecture
-
-Rusternetes consists of 7 core components. The storage backend is
-pluggable — etcd (default) or SQLite via rhino. See
-[Storage Backends](storage/STORAGE_BACKENDS.md) for deployment options
-including the all-in-one single binary.
-
-1. **Storage** - etcd (distributed) or rhino/SQLite (lightweight)
-2. **api-server** - RESTful API server (port 6443)
-3. **scheduler** - Pod scheduling to nodes
-4. **controller-manager** - Deployment, ReplicaSet, Job, and other controllers
-5. **kubelet** - Node agent for container lifecycle management
-6. **kube-proxy** - Network proxy for services
-7. **dns-server** - DNS-based service discovery
-
----
-
-## Prerequisites
-
-### Required Software
-
-- **Podman** - Container runtime (replaces Docker)
-- **Podman Compose** - Multi-container orchestration
-- **Rust toolchain** - For building kubectl and other tools
-
-### Environment Setup
+The standard deployment. Separate containers for each component with etcd for state storage.
 
 ```bash
-# Set volume path for kubelet storage
-export KUBELET_VOLUMES_PATH=/tmp/rusternetes-volumes
+git clone https://github.com/calfonso/rusternetes.git
+cd rusternetes
 
-# Ensure the directory exists
-mkdir -p $KUBELET_VOLUMES_PATH
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+docker compose build
+docker compose up -d
+bash scripts/bootstrap-cluster.sh
+
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
 ```
 
----
+**Components started:**
+- etcd (port 2379)
+- API server (port 6443, HTTPS, with web console)
+- Scheduler
+- Controller manager (31 controllers)
+- 2 kubelets (node-1, node-2)
+- Kube-proxy (host network, iptables)
+- CoreDNS (10.96.0.10)
+- Default StorageClass (`standard` with hostpath provisioner)
 
-## Deployment Steps
+**Open the console:** `https://localhost:6443/console/`
 
-### 1. Clean Up Previous Deployments (if any)
+## Mode 2: Docker Compose + SQLite
+
+Same cluster architecture, but [Rhino](https://github.com/calfonso/rhino) replaces etcd with SQLite. No etcd infrastructure to manage.
 
 ```bash
-# Stop all containers
-podman stop $(podman ps -aq) 2>/dev/null || true
-
-# Remove all containers
-podman rm -af
-
-# Clean up volumes
-podman volume prune -f
+docker compose -f docker-compose.sqlite.yml build
+docker compose -f docker-compose.sqlite.yml up -d
+bash scripts/bootstrap-cluster.sh
 ```
 
-### 2. Build Components
+Same components as Mode 1, but storage goes through Rhino's etcd-compatible gRPC API backed by SQLite.
 
-The cluster components are built using podman-compose:
+## Mode 3: All-in-One Binary
+
+All five Kubernetes components in a single Rust process with embedded SQLite. No containers for infrastructure — just one binary.
 
 ```bash
-# Build all images (this may take several minutes)
-podman-compose build
+cargo build -p rusternetes --release
+
+# Build the console (optional)
+cd console && npm install && npm run build && cd ..
+
+# Start
+./target/release/rusternetes \
+  --data-dir ./cluster.db \
+  --console-dir ./console/dist
 ```
 
-**Note:** Images may already be available from cache. If builds are in progress, check status with:
-```bash
-podman images
-```
+This starts the API server, scheduler, controller manager, kubelet, and kube-proxy as concurrent tokio tasks.
 
-### 3. Start the Cluster
+**Requirements:** Docker must be running on the host for the kubelet to create containers.
 
-```bash
-# Start all components in detached mode
-podman-compose up -d
-```
+**Open the console:** `https://localhost:6443/console/`
 
-This will start all 7 components with proper networking and dependencies.
+### All-in-one flags
 
-### 4. Verify Component Health
+| Flag | Default | Description |
+|---|---|---|
+| `--data-dir` | `./data/rusternetes.db` | SQLite database path |
+| `--bind-address` | `0.0.0.0:6443` | API server listen address |
+| `--node-name` | `node-1` | Kubelet node name |
+| `--tls` | off | Enable TLS with self-signed cert |
+| `--skip-auth` | `true` | Skip authentication (dev mode) |
+| `--console-dir` | *(disabled)* | Path to console SPA build |
+| `--client-ca-file` | *(disabled)* | Client CA for mTLS auth |
+| `--disable-proxy` | off | Disable kube-proxy (no iptables) |
 
-Check that all containers are running:
+## High Availability
 
-```bash
-podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-```
-
-Expected output:
-```
-NAMES                           STATUS                        PORTS
-rusternetes-etcd                Up X minutes (healthy)        0.0.0.0:2379-2380->2379-2380/tcp
-rusternetes-api-server          Up X minutes                  0.0.0.0:6443->6443/tcp
-rusternetes-scheduler           Up X minutes
-rusternetes-controller-manager  Up X minutes
-rusternetes-kubelet             Up X minutes
-rusternetes-kube-proxy          Up X minutes                  0.0.0.0:30000-30100->30000-30100/tcp
-rusternetes-dns-server          Up X minutes                  53/udp
-```
-
-### 5. Check Component Logs
-
-Verify each component started successfully:
+For HA deployments with multiple API servers and etcd nodes, see [HIGH_AVAILABILITY.md](HIGH_AVAILABILITY.md).
 
 ```bash
-# API Server
-podman logs rusternetes-api-server --tail 10
-
-# Scheduler
-podman logs rusternetes-scheduler --tail 10
-
-# Controller Manager
-podman logs rusternetes-controller-manager --tail 10
-
-# Kubelet
-podman logs rusternetes-kubelet --tail 10
+docker compose -f docker-compose.ha.yml build
+docker compose -f docker-compose.ha.yml up -d
 ```
 
-Look for successful startup messages:
-- API Server: `HTTPS server listening on 0.0.0.0:6443`
-- Scheduler: `Scheduler started, running every 5s`
-- Controller Manager: Controllers started (Job, Deployment, DynamicProvisioner, etc.)
-- Kubelet: `Node registered successfully`
+This starts 3 etcd nodes, 3 API servers behind HAProxy, 2 schedulers, and 2 controller managers with leader election.
 
----
+## TLS Certificates
 
-## Using the Cluster
-
-### kubectl Configuration
-
-Rusternetes includes a custom kubectl implementation. Use it with these flags:
+TLS certificates are auto-generated during the Docker build in `.rusternetes/certs/`. For custom certificates:
 
 ```bash
-./target/release/kubectl \
-  --server=https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  <command>
+bash scripts/generate-certs.sh
 ```
 
-**Note:** The API server uses self-signed certificates, so `--insecure-skip-tls-verify` is required.
+See [TLS_GUIDE.md](TLS_GUIDE.md) for custom cert configuration.
 
-### Verify Cluster Access
+## Authentication
+
+By default, `--skip-auth` is enabled (all requests are admin). To secure the cluster:
+
+1. Generate RSA signing keys
+2. Create an admin ServiceAccount
+3. Remove `--skip-auth`
+
+See [AUTHENTICATION.md](AUTHENTICATION.md) for the complete guide.
+
+## Networking
+
+Default network configuration:
+- Service CIDR: `10.96.0.0/12`
+- Pod CIDR: `10.244.0.0/16` (when using CNI)
+- Cluster DNS: `10.96.0.10`
+- Kube-proxy mode: iptables (host network)
+
+Third-party CNI plugins (Calico, Cilium, Flannel) work on Linux. See [CNI_GUIDE.md](CNI_GUIDE.md).
+
+## Storage
+
+A default `standard` StorageClass with `rusternetes.io/hostpath` provisioner is created on API server startup. PVCs referencing this class are automatically provisioned.
+
+See [Storage Backends](storage/STORAGE_BACKENDS.md) for etcd vs SQLite details.
+
+## Stopping and Cleaning Up
 
 ```bash
-# Check nodes
-./target/release/kubectl \
-  --server=https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  get nodes
+# Stop the cluster (preserves state)
+docker compose down
+
+# Stop and wipe all state
+docker compose down -v
+
+# Clean up dangling containers from conformance tests
+docker ps -a --filter "status=exited" -q | xargs docker rm 2>/dev/null
 ```
 
-Expected output:
-```
-NAME       STATUS
-node-1     True
-```
-
-### Create a Pod
-
-```bash
-./target/release/kubectl \
-  --server=https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: nginx-pod
-  namespace: default
-spec:
-  containers:
-  - name: nginx
-    image: nginx:latest
-EOF
-```
-
-### Create a Deployment
-
-```bash
-./target/release/kubectl \
-  --server=https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-  namespace: default
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-EOF
-```
-
-### Create a Service
-
-```bash
-./target/release/kubectl \
-  --server=https://localhost:6443 \
-  --insecure-skip-tls-verify \
-  apply -f - <<EOF
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx-service
-  namespace: default
-spec:
-  selector:
-    app: nginx
-  ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 80
-  type: ClusterIP
-EOF
-```
-
----
-
-## Verification Tests
-
-### Smoke Tests
-
-The cluster has been verified with comprehensive smoke tests:
-
-1. **Pod Lifecycle** - Create, get, update, delete pods ✅
-2. **Deployments** - ReplicaSet creation and scaling ✅
-3. **Services** - ClusterIP allocation (10.96.0.0/12) ✅
-4. **Controllers** - Deployment controller, Job controller ✅
-5. **Networking** - Service discovery, endpoints ✅
-6. **Storage** - PV/PVC binding ✅
-
-### Manual Verification
-
-```bash
-# List all resources in a namespace
-./target/release/kubectl --server=https://localhost:6443 --insecure-skip-tls-verify \
-  get all -n default
-
-# Get individual resources
-./target/release/kubectl --server=https://localhost:6443 --insecure-skip-tls-verify \
-  get pod <pod-name> -n default
-
-# List resources by type
-./target/release/kubectl --server=https://localhost:6443 --insecure-skip-tls-verify \
-  get pods -n default
-
-./target/release/kubectl --server=https://localhost:6443 --insecure-skip-tls-verify \
-  get deployments -n default
-
-./target/release/kubectl --server=https://localhost:6443 --insecure-skip-tls-verify \
-  get services -n default
-
-# Use --no-headers flag for scripting
-./target/release/kubectl --server=https://localhost:6443 --insecure-skip-tls-verify \
-  get pods -n default --no-headers
-```
-
----
-
-## Network Configuration
-
-### Service IP Ranges
-
-- **ClusterIP CIDR:** 10.96.0.0/12
-- **Pod CIDR:** 10.88.0.0/16 (configurable per node)
-- **NodePort Range:** 30000-32767
-
-### DNS
-
-- **Service DNS Format:** `<service>.<namespace>.svc.cluster.local`
-- **DNS Server:** Runs on port 53/udp in dns-server container
-
----
-
-## Storage Configuration
-
-### Volume Storage
-
-- **Host Path:** `${KUBELET_VOLUMES_PATH}` (default: `/tmp/rusternetes-volumes`)
-- **PersistentVolume Support:** ✅ Full support
-- **Dynamic Provisioning:** ✅ StorageClass support
-- **Volume Snapshots:** ✅ Available
-
----
-
-## Security
-
-### TLS Certificates
-
-The API server uses self-signed certificates by default:
-
-- **SANs:** localhost, 127.0.0.1, api-server, rusternetes-api-server
-- **Warning:** Self-signed certs are NOT suitable for production
-
-**For Production:** Replace with proper CA-signed certificates
-
-### RBAC
-
-- **Full RBAC Support:** ✅ Roles, RoleBindings, ClusterRoles, ClusterRoleBindings
-- **Service Accounts:** ✅ Supported
-- **Admission Webhooks:** ✅ MutatingWebhook, ValidatingWebhook
-
----
-
-## Monitoring
-
-### Component Metrics
-
-- **API Server:** Port 6443 (main endpoint)
-- **Scheduler:** Port 8081 (metrics)
-- **Kubelet:** Port 8082 (metrics)
-
-### Health Checks
-
-```bash
-# API Server health
-curl -k https://localhost:6443/healthz
-
-# etcd health
-curl http://localhost:2379/health
-```
-
----
-
-## Stopping the Cluster
-
-```bash
-# Stop all components
-podman-compose down
-
-# Or stop individual containers
-podman stop rusternetes-api-server rusternetes-scheduler \
-  rusternetes-controller-manager rusternetes-kubelet \
-  rusternetes-kube-proxy rusternetes-dns-server rusternetes-etcd
-```
-
----
-
-## Troubleshooting
-
-### Check Component Status
-
-```bash
-podman ps -a
-```
-
-### View Logs
-
-```bash
-# All logs for a component
-podman logs <container-name>
-
-# Follow logs in real-time
-podman logs -f <container-name>
-
-# Last N lines
-podman logs --tail 50 <container-name>
-```
-
-### Restart a Component
-
-```bash
-podman restart <container-name>
-```
-
-### Complete Reset
-
-```bash
-# Stop and remove everything
-podman-compose down
-podman volume prune -f
-podman system prune -f
-
-# Start fresh
-podman-compose up -d
-```
-
----
-
-## Production Considerations
-
-### High Availability
-
-Rusternetes supports HA deployments:
-
-- **Leader Election:** Built-in for controller-manager and scheduler
-- **etcd Clustering:** Configure multiple etcd instances
-- **API Server:** Run multiple replicas behind a load balancer
-
-### Backup and Recovery
-
-**etcd Backup:**
-```bash
-# Backup etcd data
-podman exec rusternetes-etcd etcdctl snapshot save /backup/snapshot.db
-
-# Restore from backup
-podman exec rusternetes-etcd etcdctl snapshot restore /backup/snapshot.db
-```
-
-### Resource Limits
-
-Adjust resource limits in `docker-compose.yml` as needed:
-
-```yaml
-deploy:
-  resources:
-    limits:
-      cpus: '2'
-      memory: 4G
-    reservations:
-      cpus: '1'
-      memory: 2G
-```
-
----
-
-## Feature Compatibility
-
-Rusternetes implements 100% Kubernetes API compatibility. See VERIFICATION_REPORT.md for detailed feature comparison.
-
-### Supported Resources
-
-- Core: Pods, Services, ConfigMaps, Secrets, Namespaces, ServiceAccounts
-- Apps: Deployments, ReplicaSets, StatefulSets, DaemonSets
-- Batch: Jobs, CronJobs
-- Storage: PersistentVolumes, PersistentVolumeClaims, StorageClasses, VolumeSnapshots
-- RBAC: Roles, RoleBindings, ClusterRoles, ClusterRoleBindings
-- Autoscaling: HorizontalPodAutoscaler, VerticalPodAutoscaler
-- Policy: PodDisruptionBudgets, PodSecurityStandards
-- Admission: MutatingWebhookConfiguration, ValidatingWebhookConfiguration
-
----
-
-## Conclusion
-
-Rusternetes is now successfully deployed and verified as production-ready. The cluster functions exactly like Kubernetes with full API compatibility and all core features implemented.
-
-**Next Steps:**
-1. Deploy your workloads
-2. Configure monitoring and alerting
-3. Set up backup procedures
-4. Implement proper TLS certificates for production
-
-**Support:**
-- Documentation: See project README.md
-- Verification Report: VERIFICATION_REPORT.md
-- Issue Tracking: Use project issue tracker
-
----
-
-**Deployment Status:** ✅ SUCCESSFUL - Cluster is ready for use
+## Next Steps
+
+- **[Console User Guide](CONSOLE_USER_GUIDE.md)** — explore the web console
+- **[AUTHENTICATION.md](AUTHENTICATION.md)** — secure the cluster
+- **[AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)** — deploy on AWS
+- **[FEDORA_SETUP.md](FEDORA_SETUP.md)** — Fedora Linux setup

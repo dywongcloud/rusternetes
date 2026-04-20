@@ -2,7 +2,9 @@
 
 **Last Updated:** March 10, 2026
 
-This document describes the security features implemented in Rusternetes, including admission control, pod security standards, secrets encryption at rest, and audit logging.
+This document covers admission controllers, pod security standards, secrets encryption at rest, and audit logging.
+
+**For authentication and authorization** (JWT tokens, RBAC, mTLS client certificates), see **[AUTHENTICATION.md](AUTHENTICATION.md)**.
 
 ## Table of Contents
 

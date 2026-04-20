@@ -52,51 +52,11 @@ The API server searches for keys in these locations (in order):
 
 If no RSA keys are found, it falls back to HMAC-SHA256 using the `--jwt-secret` value.
 
-### Step 2: Start without `--skip-auth`
+### Step 2: Create an admin user (while still in skip-auth mode)
 
-**All-in-one binary:**
-
-```bash
-rusternetes --skip-auth=false --data-dir ./cluster.db
-```
-
-**Standalone API server:**
+Before disabling skip-auth, create an admin ServiceAccount so you can authenticate after the switch.
 
 ```bash
-api-server \
-  --bind-address 0.0.0.0:6443 \
-  --tls \
-  --tls-cert-file /etc/kubernetes/pki/api-server.crt \
-  --tls-key-file /etc/kubernetes/pki/api-server.key \
-  --etcd-servers http://etcd:2379
-  # Note: no --skip-auth flag
-```
-
-**Docker Compose:**
-
-Edit `docker-compose.yml` and remove the `--skip-auth` line from the api-server command:
-
-```yaml
-api-server:
-  command:
-    - "--bind-address"
-    - "0.0.0.0:6443"
-    - "--etcd-servers"
-    - "http://etcd:2379"
-    - "--tls"
-    - "--tls-cert-file"
-    - "/etc/kubernetes/pki/api-server.crt"
-    - "--tls-key-file"
-    - "/etc/kubernetes/pki/api-server.key"
-    # --skip-auth is removed — authentication is now required
-```
-
-### Step 3: Create an admin user
-
-Once auth is enabled, you need a token to access the cluster. The simplest approach is to create a ServiceAccount and generate a token for it.
-
-```bash
-# Still using skip-auth temporarily to bootstrap
 export KUBECONFIG=~/.kube/rusternetes-config
 
 # Create an admin ServiceAccount
@@ -137,7 +97,7 @@ After the controller-manager generates the token, retrieve it:
 kubectl get secret cluster-admin-token -n kube-system -o jsonpath='{.data.token}' | base64 -d
 ```
 
-### Step 4: Configure kubectl
+### Step 3: Configure kubectl
 
 Update your kubeconfig to use the token:
 
@@ -148,9 +108,24 @@ kubectl config set-credentials rusternetes-admin --token="$TOKEN"
 kubectl config set-context rusternetes --user=rusternetes-admin
 ```
 
-### Step 5: Restart without `--skip-auth`
+### Step 4: Restart without `--skip-auth`
 
 Now restart the API server without `--skip-auth`. All requests will require a valid token.
+
+**Docker Compose:** Edit `docker-compose.yml`, remove the `--skip-auth` line from the api-server command, then:
+
+```bash
+docker compose build api-server
+docker compose up -d api-server
+```
+
+**All-in-one binary:**
+
+```bash
+rusternetes --skip-auth=false --data-dir ./cluster.db
+```
+
+**Verify:** `curl -k https://localhost:6443/api/v1/pods` should return 401/403.
 
 ## Token Types
 
