@@ -21,6 +21,13 @@ print_step() {
 # Detect container runtime (docker or podman)
 if command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
     CONTAINER_RT=podman
+    # Podman needs base images pre-pulled (Docker Desktop caches them)
+    for img in busybox:latest; do
+        if ! podman image exists "$img" 2>/dev/null; then
+            echo "  Pulling required image: $img"
+            podman pull "$img" >/dev/null 2>&1 || true
+        fi
+    done
 elif command -v docker &>/dev/null && docker ps &>/dev/null 2>&1; then
     CONTAINER_RT=docker
 else
@@ -92,9 +99,9 @@ fi
 # Step 3: Delete existing CoreDNS resources to ensure fresh creation with proper service account token
 print_step "Cleaning up existing CoreDNS resources (if any)..."
 # Remove CoreDNS container
-docker rm -f $(docker ps -a --filter "name=coredns" --format "{{.ID}}") 2>/dev/null && echo "  Deleted CoreDNS container" || echo "  No CoreDNS container to delete"
+$CONTAINER_RT rm -f $($CONTAINER_RT ps -a --filter "name=coredns" --format "{{.ID}}") 2>/dev/null && echo "  Deleted CoreDNS container" || echo "  No CoreDNS container to delete"
 # Remove CoreDNS pod from etcd
-docker exec rusternetes-etcd etcdctl del /registry/pods/kube-system/coredns 2>/dev/null && echo "  Deleted CoreDNS pod from etcd" || echo "  No CoreDNS pod in etcd"
+$CONTAINER_RT exec rusternetes-etcd etcdctl del /registry/pods/kube-system/coredns 2>/dev/null && echo "  Deleted CoreDNS pod from etcd" || echo "  No CoreDNS pod in etcd"
 
 # Step 4: Apply bootstrap cluster resources
 print_step "Applying bootstrap resources (namespaces, services, CoreDNS)..."
