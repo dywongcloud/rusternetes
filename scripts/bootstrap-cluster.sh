@@ -19,8 +19,11 @@ print_step() {
 }
 
 # Detect container runtime (docker or podman)
-# Override with CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman
-if [ -n "$CONTAINER_RUNTIME" ]; then
+# Usage: bootstrap-cluster.sh [docker|podman]
+# Or set CONTAINER_RUNTIME=docker|podman
+if [ -n "$1" ] && [[ "$1" == "docker" || "$1" == "podman" ]]; then
+    CONTAINER_RT="$1"
+elif [ -n "$CONTAINER_RUNTIME" ]; then
     CONTAINER_RT="$CONTAINER_RUNTIME"
 elif command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
     CONTAINER_RT=podman
