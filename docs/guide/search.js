@@ -25,8 +25,8 @@
     { title: 'Storage Backends', section: 'Configuration', url: 'storage-config.html', keywords: 'storage backend etcd sqlite rhino memory config database' },
     // Features
     { title: 'Workloads', section: 'Features', url: 'workloads.html', keywords: 'deployment replicaset statefulset daemonset job cronjob pod workload' },
-    { title: 'Networking', section: 'Features', url: 'networking.html', keywords: 'service endpoint dns coredns network policy ingress clusterip nodeport loadbalancer' },
-    { title: 'Storage & Volumes', section: 'Features', url: 'storage-volumes.html', keywords: 'pvc pv volume emptydir hostpath secret configmap projected nfs csi' },
+    { title: 'Networking', section: 'Features', url: 'networking.html', keywords: 'service endpoint dns coredns network policy ingress clusterip nodeport loadbalancer cni calico cilium flannel weave multus bridge overlay pod cidr' },
+    { title: 'Storage & Volumes', section: 'Features', url: 'storage-volumes.html', keywords: 'pvc pv volume emptydir hostpath secret configmap projected nfs csi driver storageclass provisioner dynamic provisioning snapshot expansion default standard' },
     { title: 'Security', section: 'Features', url: 'security.html', keywords: 'rbac tls webhook admission serviceaccount token security context secrets' },
     { title: 'Custom Resources (CRDs)', section: 'Features', url: 'crds.html', keywords: 'crd custom resource definition schema watch status scale validation' },
     { title: 'Scheduling & Autoscaling', section: 'Features', url: 'scheduling.html', keywords: 'scheduler affinity taint toleration priority preemption hpa vpa pdb' },

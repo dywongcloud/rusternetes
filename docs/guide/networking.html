@@ -724,6 +724,114 @@ kubectl get ipaddresses
 kubectl get servicecidr</code>
       </pre>
 
+      <!-- ───────────────────── CNI ───────────────────── -->
+      <h2 id="cni">CNI (Container Network Interface)</h2>
+      <p>
+        Rusternetes implements the standard CNI specification (v0.4.0+). The kubelet executes
+        CNI plugin binaries from <code>/opt/cni/bin/</code> using configuration from
+        <code>/etc/cni/net.d/</code> to set up pod networking.
+      </p>
+
+      <h3>Default Configuration</h3>
+      <p>
+        The cluster ships with a bridge CNI config providing basic pod networking:
+      </p>
+      <ul>
+        <li><strong>Pod CIDR:</strong> 10.244.0.0/16</li>
+        <li><strong>Service CIDR:</strong> 10.96.0.0/12</li>
+        <li><strong>Cluster DNS:</strong> 10.96.0.10 (CoreDNS)</li>
+        <li><strong>Plugins:</strong> bridge + host-local IPAM + portmap + firewall</li>
+      </ul>
+
+      <h3>Third-Party CNI Plugins</h3>
+      <p>
+        Any standard CNI plugin works on Linux with network namespace support.
+        Drop the plugin binaries in <code>/opt/cni/bin/</code> and the config in
+        <code>/etc/cni/net.d/</code>.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Plugin</th><th>Type</th><th>Features</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Calico</strong></td><td>BGP routing</td><td>Full NetworkPolicy support, IP-in-IP / VXLAN overlay, BGP peering</td></tr>
+          <tr><td><strong>Cilium</strong></td><td>eBPF</td><td>L7 network policy, service mesh, DNS-based policies, observability</td></tr>
+          <tr><td><strong>Flannel</strong></td><td>Overlay</td><td>Simple VXLAN overlay, minimal configuration, widely supported</td></tr>
+          <tr><td><strong>Weave Net</strong></td><td>Mesh overlay</td><td>Automatic mesh networking, encryption, multicast</td></tr>
+          <tr><td><strong>Multus</strong></td><td>Meta-plugin</td><td>Multiple network interfaces per pod (SR-IOV, MACVLAN, etc.)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Installing Calico</h3>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># Download Calico CNI binaries</span>
+curl -L https://github.com/projectcalico/cni-plugin/releases/latest/download/calico-amd64 \
+  -o /opt/cni/bin/calico
+curl -L https://github.com/projectcalico/cni-plugin/releases/latest/download/calico-ipam-amd64 \
+  -o /opt/cni/bin/calico-ipam
+chmod +x /opt/cni/bin/calico /opt/cni/bin/calico-ipam
+
+<span class="c"># Create Calico CNI config</span>
+cat &gt; /etc/cni/net.d/10-calico.conflist &lt;&lt;EOF
+{
+  "name": "k8s-pod-network",
+  "cniVersion": "0.3.1",
+  "plugins": [
+    {
+      "type": "calico",
+      "ipam": { "type": "calico-ipam" },
+      "policy": { "type": "k8s" }
+    },
+    { "type": "portmap", "capabilities": { "portMappings": true } }
+  ]
+}
+EOF</code>
+      </pre>
+
+      <h3>Docker Compose Integration</h3>
+      <p>
+        Mount CNI binaries and config into the kubelet containers:
+      </p>
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">docker-compose.yml</span>
+        </div>
+        <code>kubelet:
+  volumes:
+    - /opt/cni/bin:/opt/cni/bin:ro
+    - ./cni-config:/etc/cni/net.d:ro</code>
+      </pre>
+
+      <h3>macOS Limitation</h3>
+      <div class="admonition note">
+        <div class="admonition-title">NOTE</div>
+        <p>
+          CNI requires Linux network namespaces. On macOS (Docker Desktop / Podman Machine),
+          the kubelet automatically detects this limitation and falls back to Docker&rsquo;s
+          bridge networking. Pods still get IPs and can communicate, but CNI plugins are not invoked.
+        </p>
+      </div>
+
+      <h3>Troubleshooting CNI</h3>
+      <ul>
+        <li><strong>Pods stuck in ContainerCreating</strong> &mdash; Check kubelet logs for CNI errors:
+          <code>docker logs rusternetes-kubelet 2&gt;&amp;1 | grep -i cni</code></li>
+        <li><strong>Pods can&rsquo;t reach each other</strong> &mdash; Verify pod IPs with
+          <code>kubectl get pods -o wide</code> and test connectivity with
+          <code>kubectl exec pod-a -- ping &lt;pod-b-ip&gt;</code></li>
+        <li><strong>CNI not initializing</strong> &mdash; The kubelet tests network namespace support on startup.
+          If it fails, it logs a warning and falls back to Docker networking.</li>
+      </ul>
+
       <div class="doc-pager">
         <a href="workloads.html" class="prev">
           <span class="pager-label">Previous</span>

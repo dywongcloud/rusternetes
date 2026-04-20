@@ -678,6 +678,107 @@ parameters:
 5. Pod starts and mounts the volume</code>
       </pre>
 
+      <div class="admonition tip">
+        <div class="admonition-title">DEFAULT STORAGECLASS</div>
+        <p>
+          Rusternetes bootstraps a default <code>standard</code> StorageClass on startup with the
+          <code>rusternetes.io/hostpath</code> provisioner. PVCs that don't specify a StorageClass
+          use this default automatically. You can manage StorageClasses and PVCs through the
+          <a href="console.html">web console</a> Storage page.
+        </p>
+      </div>
+
+      <!-- ───────────────────── CSI Drivers ───────────────────── -->
+      <h2 id="csi-setup">CSI Driver Setup</h2>
+      <p>
+        The Container Storage Interface (CSI) is the standard plugin mechanism for connecting
+        external storage systems to Kubernetes. CSI drivers run as pods in the cluster and handle
+        volume provisioning, attaching, and mounting.
+      </p>
+
+      <h3>How CSI Works</h3>
+      <p>A CSI driver consists of:</p>
+      <ul>
+        <li><strong>Controller plugin</strong> &mdash; runs as a Deployment, handles volume creation/deletion</li>
+        <li><strong>Node plugin</strong> &mdash; runs as a DaemonSet on every node, handles volume mount/unmount</li>
+        <li><strong>CSIDriver resource</strong> &mdash; registered in the API, tells the kubelet how to interact with the driver</li>
+        <li><strong>StorageClass</strong> &mdash; references the CSI driver as its provisioner</li>
+      </ul>
+
+      <h3>Installing a CSI Driver</h3>
+      <p>
+        Most CSI drivers are installed via kubectl manifests or Helm charts. The general pattern:
+      </p>
+
+      <pre>
+        <div class="code-header">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-lang">Terminal</span>
+        </div>
+        <code><span class="c"># Example: install a CSI driver</span>
+kubectl apply -f https://example.com/csi-driver/deploy.yaml
+
+<span class="c"># Verify the CSIDriver resource was created</span>
+kubectl get csidrivers
+
+<span class="c"># Create a StorageClass that uses the CSI driver</span>
+cat &lt;&lt;EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-storage
+provisioner: csi.example.com
+parameters:
+  type: ssd
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+EOF
+
+<span class="c"># Create a PVC using the CSI StorageClass</span>
+cat &lt;&lt;EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-csi-volume
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: csi-storage
+  resources:
+    requests:
+      storage: 10Gi
+EOF</code>
+      </pre>
+
+      <h3>Supported CSI Operations</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Operation</th>
+            <th>Description</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>CreateVolume / DeleteVolume</td><td>Provision and remove volumes</td><td>Supported</td></tr>
+          <tr><td>ControllerPublishVolume</td><td>Attach volume to a node</td><td>Supported</td></tr>
+          <tr><td>NodeStageVolume / NodePublishVolume</td><td>Mount volume in pod</td><td>Supported</td></tr>
+          <tr><td>VolumeAttachment</td><td>Track volume attachment state</td><td>Supported</td></tr>
+          <tr><td>CSIDriver / CSINode</td><td>Driver discovery and capabilities</td><td>Supported</td></tr>
+          <tr><td>Volume Snapshots</td><td>Point-in-time volume copies</td><td>Supported</td></tr>
+          <tr><td>Volume Expansion</td><td>Online resize of PVCs</td><td>Supported</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Built-in Provisioner</h3>
+      <p>
+        Without a CSI driver, Rusternetes includes a built-in hostpath provisioner
+        (<code>rusternetes.io/hostpath</code>) that creates PVs backed by directories on the
+        node&rsquo;s filesystem. This is suitable for development and single-node clusters.
+        For production, use a proper CSI driver that provides replicated storage.
+      </p>
+
       <!-- ───────────────────── Volume Snapshots ───────────────────── -->
       <h2 id="snapshots">Volume Snapshots</h2>
       <p>
