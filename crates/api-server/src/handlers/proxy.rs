@@ -235,6 +235,9 @@ pub async fn proxy_service(
     // The API server container does NOT have kube-proxy's iptables rules,
     // so ClusterIP DNAT is not available. We MUST resolve to a pod IP.
     let mut endpoint_ip: Option<String> = None;
+    // Resolved port from the endpoint itself (may differ from service targetPort
+    // when using named ports). Falls back to target_port if endpoint has no port.
+    let mut resolved_port: u16 = target_port;
 
     // Strategy 1: EndpointSlices
     let es_prefix = rusternetes_storage::build_prefix("endpointslices", Some(&namespace));
@@ -247,6 +250,29 @@ pub async fn proxy_service(
             .as_ref()
             .and_then(|l| l.get("kubernetes.io/service-name"));
         if svc.map(|s| s == actual_service_name).unwrap_or(false) {
+            // Extract the endpoint port matching the requested service port.
+            // EndpointSlice ports are at the slice level, not per-endpoint.
+            // Match by port name first, then by port number.
+            if let Some(ep_port) = if !port_id.is_empty() {
+                // Match by name or number
+                es.ports.iter().find(|p| {
+                    p.name.as_deref() == Some(port_id)
+                        || p.port.map(|n| n.to_string()) == Some(port_id.to_string())
+                })
+            } else {
+                // No specific port requested — use first
+                es.ports.first()
+            } {
+                if let Some(p) = ep_port.port {
+                    resolved_port = p as u16;
+                }
+            } else if !es.ports.is_empty() {
+                // Fallback: use first port from the EndpointSlice
+                if let Some(p) = es.ports.first().and_then(|ep| ep.port) {
+                    resolved_port = p as u16;
+                }
+            }
+
             for ep in &es.endpoints {
                 if ep.conditions.as_ref().and_then(|c| c.ready).unwrap_or(true) {
                     if let Some(addr) = ep.addresses.first() {
@@ -271,6 +297,20 @@ pub async fn proxy_service(
             state.storage.get::<rusternetes_common::resources::Endpoints>(&ep_key).await
         {
             for subset in &endpoints.subsets {
+                // Also extract the port from the endpoint subset
+                if let Some(ports) = &subset.ports {
+                    if let Some(ep_port) = if !port_id.is_empty() {
+                        ports.iter().find(|p| {
+                            p.name.as_deref() == Some(port_id)
+                                || p.port.to_string() == port_id
+                        })
+                    } else {
+                        ports.first()
+                    } {
+                        resolved_port = ep_port.port as u16;
+                    }
+                }
+
                 if let Some(addrs) = &subset.addresses {
                     if let Some(addr) = addrs.first() {
                         endpoint_ip = Some(addr.ip.clone());
@@ -286,9 +326,9 @@ pub async fn proxy_service(
     let target_url = if let Some(ep_ip) = &endpoint_ip {
         debug!(
             "Service proxy resolved endpoint: {}://{}:{} (service {}/{})",
-            url_scheme, ep_ip, target_port, namespace, actual_service_name
+            url_scheme, ep_ip, resolved_port, namespace, actual_service_name
         );
-        format!("{}://{}:{}/{}", url_scheme, ep_ip, target_port, path)
+        format!("{}://{}:{}/{}", url_scheme, ep_ip, resolved_port, path)
     } else {
         // Last resort — use ClusterIP. This only works if kube-proxy rules
         // are somehow visible to the API server container (unlikely).

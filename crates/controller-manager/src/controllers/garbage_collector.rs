@@ -323,23 +323,15 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         resources: &[ResourceInfo],
         _owner_map: &HashMap<String, Vec<String>>,
     ) -> Vec<ResourceInfo> {
-        // Count resources as "existing" if they are either:
-        // 1. Not being deleted, OR
-        // 2. Being deleted but have orphan/foreground finalizers (their dependents
-        //    are handled by process_deletion, not orphan deletion)
+        // Include ALL resources in existing_uids, even those being deleted.
+        // A resource is only truly "gone" when it's removed from storage entirely.
+        // Resources with deletionTimestamp are still in storage and their dependents
+        // should not be flagged as orphans yet — the finalizer handlers (foreground,
+        // orphan) or background cascade will handle them properly.
+        // K8s GC uses informer caches where a resource is "existing" until the
+        // DELETE event fires (i.e., it's removed from etcd).
         let existing_uids: HashSet<_> = resources
             .iter()
-            .filter(|r| {
-                if !r.metadata.is_being_deleted() {
-                    return true;
-                }
-                // Resources being deleted with orphan or foreground finalizers
-                // still "own" their dependents until the finalizer is processed
-                r.metadata.finalizers.as_ref().map_or(false, |f| {
-                    f.contains(&"orphan".to_string())
-                        || f.contains(&"foregroundDeletion".to_string())
-                })
-            })
             .map(|r| r.metadata.uid.as_str())
             .collect();
         let mut orphans = Vec::new();

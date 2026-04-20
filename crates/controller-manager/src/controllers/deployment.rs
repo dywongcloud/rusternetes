@@ -237,6 +237,17 @@ impl<S: Storage + 'static> DeploymentController<S> {
             .as_deref()
             .unwrap_or("default");
 
+        // K8s deployment controller skips reconciliation for deleted deployments.
+        // The GC handles cascade/orphan deletion via finalizers.
+        // K8s ref: pkg/controller/deployment/deployment_controller.go — syncDeployment
+        if deployment.metadata.deletion_timestamp.is_some() {
+            debug!(
+                "Deployment {}/{} is being deleted, skipping reconciliation",
+                namespace, deployment.metadata.name
+            );
+            return Ok(());
+        }
+
         debug!(
             "Reconciling deployment: {}/{}",
             namespace, deployment.metadata.name
@@ -489,10 +500,33 @@ impl<S: Storage + 'static> DeploymentController<S> {
             .map(|rs| rs.spec.replicas)
             .sum();
 
-        // Proportional scaling: when deployment.spec.replicas changes and there are
-        // multiple active RSes, distribute replicas proportionally.
-        // K8s ref: pkg/controller/deployment/sync.go — scale()
-        if is_rolling_update && old_rs_total > 0 {
+        // Proportional scaling: only runs during scaling events (when
+        // deployment.spec.replicas changes while a rolling update is in progress).
+        // K8s ref: pkg/controller/deployment/sync.go — scale() + isScalingEvent()
+        //
+        // A scaling event is detected by checking the "deployment.kubernetes.io/desired-replicas"
+        // annotation on active ReplicaSets. If the annotation differs from the deployment's
+        // desired replicas, this is a scaling event that requires proportional distribution.
+        // During normal rolling updates (template change only), this block is skipped.
+        let is_scaling_event = if is_rolling_update && old_rs_total > 0 {
+            let active_rs_list: Vec<&ReplicaSet> = owned_replicasets
+                .iter()
+                .filter(|rs| rs.spec.replicas > 0)
+                .collect();
+            active_rs_list.iter().any(|rs| {
+                rs.metadata
+                    .annotations
+                    .as_ref()
+                    .and_then(|a| a.get("deployment.kubernetes.io/desired-replicas"))
+                    .and_then(|v| v.parse::<i32>().ok())
+                    .map(|annotated_desired| annotated_desired != desired_replicas)
+                    .unwrap_or(false) // No annotation = not a scaling event
+            })
+        } else {
+            false
+        };
+
+        if is_scaling_event {
             let all_rs_replicas: i32 = owned_replicasets.iter().map(|rs| rs.spec.replicas).sum();
             let allowed_size = desired_replicas + max_surge;
             let replicas_to_add = allowed_size - all_rs_replicas;
@@ -502,7 +536,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
                 let mut added = 0i32;
                 let mut updates: Vec<(String, i32)> = Vec::new();
 
-                for (i, rs) in owned_replicasets.iter().enumerate() {
+                for rs in owned_replicasets.iter() {
                     if rs.spec.replicas == 0 {
                         continue;
                     }
@@ -548,6 +582,13 @@ impl<S: Storage + 'static> DeploymentController<S> {
                             namespace, rs_name, rs.spec.replicas, new_replicas
                         );
                         self.update_replicaset_replicas(rs, *new_replicas).await?;
+                    }
+                }
+
+                // Update desired-replicas annotation on all active RSes after scaling
+                for rs in owned_replicasets.iter() {
+                    if rs.spec.replicas > 0 {
+                        self.set_desired_replicas_annotation(rs, desired_replicas, namespace).await;
                     }
                 }
 
@@ -981,13 +1022,41 @@ impl<S: Storage + 'static> DeploymentController<S> {
             .unwrap_or(0);
         let new_revision = (max_existing_revision + 1).to_string();
 
-        metadata
-            .annotations
-            .get_or_insert_with(std::collections::HashMap::new)
-            .insert(
+        {
+            let annotations = metadata
+                .annotations
+                .get_or_insert_with(std::collections::HashMap::new);
+            annotations.insert(
                 "deployment.kubernetes.io/revision".to_string(),
                 new_revision.clone(),
             );
+            // K8s sets desired-replicas and max-replicas annotations on each RS
+            // for proportional scaling detection. See SetReplicasAnnotations() in
+            // pkg/controller/deployment/util/deployment_util.go
+            let desired = deployment.spec.replicas.unwrap_or(1);
+            let local_max_surge = deployment
+                .spec
+                .strategy
+                .as_ref()
+                .and_then(|s| s.rolling_update.as_ref())
+                .and_then(|ru| {
+                    ru.max_surge.as_ref().and_then(|v| {
+                        v.as_str()
+                            .map(|s| s.to_string())
+                            .or_else(|| v.as_i64().map(|n| n.to_string()))
+                    })
+                })
+                .unwrap_or_else(|| "25%".to_string());
+            let surge = parse_int_or_percent(&local_max_surge, desired);
+            annotations.insert(
+                "deployment.kubernetes.io/desired-replicas".to_string(),
+                desired.to_string(),
+            );
+            annotations.insert(
+                "deployment.kubernetes.io/max-replicas".to_string(),
+                (desired + surge).to_string(),
+            );
+        }
 
         // Also update the deployment's revision annotation (with CAS retry)
         {
@@ -1077,6 +1146,30 @@ impl<S: Storage + 'static> DeploymentController<S> {
         }
 
         Ok(())
+    }
+
+    /// Set the desired-replicas annotation on a ReplicaSet (for scaling event detection).
+    async fn set_desired_replicas_annotation(
+        &self,
+        rs: &ReplicaSet,
+        desired: i32,
+        namespace: &str,
+    ) {
+        let key = build_key("replicasets", Some(namespace), &rs.metadata.name);
+        if let Ok(mut fresh_rs) = self.storage.get::<ReplicaSet>(&key).await {
+            let annotations = fresh_rs
+                .metadata
+                .annotations
+                .get_or_insert_with(std::collections::HashMap::new);
+            let desired_str = desired.to_string();
+            if annotations.get("deployment.kubernetes.io/desired-replicas") != Some(&desired_str) {
+                annotations.insert(
+                    "deployment.kubernetes.io/desired-replicas".to_string(),
+                    desired_str,
+                );
+                let _ = self.storage.update(&key, &fresh_rs).await;
+            }
+        }
     }
 
     async fn update_replicaset_replicas(

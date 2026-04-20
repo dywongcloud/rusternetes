@@ -26,8 +26,13 @@ fn encode_varint(buf: &mut Vec<u8>, mut value: u64) {
 }
 
 /// GET /openapi/v3
-/// Get the OpenAPI v3 root document listing available paths
-pub async fn get_openapi_spec() -> Response {
+/// Get the OpenAPI v3 root document listing available paths.
+///
+/// Dynamically includes CRD group/version paths so kubectl can discover
+/// CRD schemas via the OpenAPI v3 discovery mechanism.
+pub async fn get_openapi_spec(
+    State(state): State<Arc<ApiServerState>>,
+) -> Response {
     // Return the root document that lists all available OpenAPI paths
     // In real K8s, this returns {"paths": {"/apis/apps/v1": {...}, ...}}
     let mut paths = serde_json::Map::new();
@@ -59,6 +64,36 @@ pub async fn get_openapi_spec() -> Response {
             path_entry(&format!("apis/{}/{}", group, version)),
         );
     }
+
+    // Dynamically add CRD group/version paths
+    if let Ok(crds) = state
+        .storage
+        .list::<serde_json::Value>("/registry/customresourcedefinitions")
+        .await
+    {
+        for crd in &crds {
+            let group = crd
+                .pointer("/spec/group")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let versions = crd.pointer("/spec/versions").and_then(|v| v.as_array());
+            for version in versions.into_iter().flatten() {
+                let served = version
+                    .get("served")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if !served {
+                    continue;
+                }
+                let ver = version.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let gv_key = format!("apis/{}/{}", group, ver);
+                if !paths.contains_key(&gv_key) {
+                    paths.insert(gv_key.clone(), path_entry(&gv_key));
+                }
+            }
+        }
+    }
+
     let root = serde_json::json!({"paths": paths});
     Response::builder()
         .status(StatusCode::OK)
@@ -68,15 +103,167 @@ pub async fn get_openapi_spec() -> Response {
 }
 
 /// GET /openapi/v3/*path
-/// Returns the OpenAPI v3 spec for a specific group version
-pub async fn get_openapi_spec_path() -> Response {
+/// Returns the OpenAPI v3 spec for a specific group version.
+///
+/// Dynamically includes CRD schemas for the requested group/version.
+/// K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go
+pub async fn get_openapi_spec_path(
+    State(state): State<Arc<ApiServerState>>,
+    axum::extract::Path(gv_path): axum::extract::Path<String>,
+) -> Response {
+    // Start with the static OpenAPI v3 spec
     let spec = generate_openapi_spec();
-    let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
+    let mut spec_json = serde_json::to_value(&spec).unwrap_or_default();
+
+    // Parse the requested group/version from the path.
+    // Paths are like "api/v1" or "apis/apps/v1" or "apis/example.com/v1"
+    let (requested_group, requested_version) = parse_gv_path(&gv_path);
+
+    // Query storage for CRDs matching this group/version and inject their schemas.
+    if let Ok(crds) = state
+        .storage
+        .list::<serde_json::Value>("/registry/customresourcedefinitions")
+        .await
+    {
+        // Build a components/schemas map for CRD definitions
+        let schemas = spec_json
+            .pointer_mut("/components/schemas")
+            .and_then(|v| v.as_object_mut());
+
+        // If components/schemas doesn't exist, create it via the top-level object
+        let needs_create = schemas.is_none();
+        if needs_create {
+            if let Some(obj) = spec_json.as_object_mut() {
+                let components = obj
+                    .entry("components")
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(comp_obj) = components.as_object_mut() {
+                    comp_obj
+                        .entry("schemas")
+                        .or_insert_with(|| serde_json::json!({}));
+                }
+            }
+        }
+
+        for crd in &crds {
+            let group = crd
+                .pointer("/spec/group")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let kind = crd
+                .pointer("/spec/names/kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Only include CRDs matching the requested group/version
+            if !requested_group.is_empty() && group != requested_group {
+                continue;
+            }
+
+            let versions = crd.pointer("/spec/versions").and_then(|v| v.as_array());
+            for version in versions.into_iter().flatten() {
+                let served = version
+                    .get("served")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if !served {
+                    continue;
+                }
+                let ver = version.get("name").and_then(|v| v.as_str()).unwrap_or("");
+
+                if !requested_version.is_empty() && ver != requested_version {
+                    continue;
+                }
+
+                // Build definition key matching K8s ToRESTFriendlyName format:
+                // group/version/kind -> reverse group domain parts, join with dots
+                let group_parts: Vec<&str> = group.rsplitn(10, '.').collect();
+                let def_key = format!(
+                    "{}.{}.{}",
+                    group_parts.iter().copied().collect::<Vec<_>>().join("."),
+                    ver,
+                    kind
+                );
+
+                // Build the schema from CRD validation
+                let crd_preserves = crd
+                    .pointer("/spec/preserveUnknownFields")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let schema_value = if let Some(schema_val) = version.pointer("/schema/openAPIV3Schema") {
+                    let schema_preserves = schema_val
+                        .get("x-kubernetes-preserve-unknown-fields")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    if crd_preserves || schema_preserves {
+                        serde_json::json!({
+                            "type": "object",
+                            "x-kubernetes-group-version-kind": [{
+                                "group": group,
+                                "kind": kind,
+                                "version": ver,
+                            }],
+                        })
+                    } else {
+                        let mut cleaned = schema_val.clone();
+                        strip_false_extensions(&mut cleaned);
+                        if let Some(obj) = cleaned.as_object_mut() {
+                            obj.insert(
+                                "x-kubernetes-group-version-kind".to_string(),
+                                serde_json::json!([{
+                                    "group": group,
+                                    "kind": kind,
+                                    "version": ver,
+                                }]),
+                            );
+                        }
+                        cleaned
+                    }
+                } else {
+                    // No schema — CRD without validation, treat as preserveUnknownFields
+                    serde_json::json!({
+                        "type": "object",
+                        "x-kubernetes-group-version-kind": [{
+                            "group": group,
+                            "kind": kind,
+                            "version": ver,
+                        }],
+                    })
+                };
+
+                // Insert into components/schemas
+                if let Some(schemas) = spec_json
+                    .pointer_mut("/components/schemas")
+                    .and_then(|v| v.as_object_mut())
+                {
+                    schemas.insert(def_key, schema_value);
+                }
+            }
+        }
+    }
+
+    let json_bytes = serde_json::to_vec(&spec_json).unwrap_or_default();
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(json_bytes))
         .unwrap()
+}
+
+/// Parse the group and version from an OpenAPI v3 path.
+/// Examples:
+///   "api/v1" -> ("", "v1")                    (core API)
+///   "apis/apps/v1" -> ("apps", "v1")
+///   "apis/example.com/v1" -> ("example.com", "v1")
+fn parse_gv_path(path: &str) -> (String, String) {
+    let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    match parts.as_slice() {
+        ["api", version] => (String::new(), version.to_string()),
+        ["apis", group, version] => (group.to_string(), version.to_string()),
+        _ => (String::new(), String::new()),
+    }
 }
 
 /// Wrap JSON bytes in the Kubernetes protobuf wire format.

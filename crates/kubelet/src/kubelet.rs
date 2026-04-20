@@ -746,7 +746,52 @@ impl Kubelet {
             error!("Error cleaning up orphaned containers: {}", e);
         }
 
+        // Garbage-collect terminal pods (Succeeded/Failed) from storage.
+        // K8s has a terminated-pod-gc-threshold (default 12500) and the kubelet
+        // periodically cleans up terminal pods. This prevents accumulation of
+        // stale pod records that block namespace deletion.
+        self.cleanup_terminal_pods(&node_pods).await;
+
         Ok(())
+    }
+
+    /// Garbage-collect terminal pods (Succeeded/Failed) from storage.
+    /// K8s has a terminated-pod-gc-threshold (default 12500) and the kubelet's
+    /// pod lifecycle manager removes finished pods. Without this cleanup,
+    /// terminal pod records accumulate and block namespace deletion.
+    async fn cleanup_terminal_pods(&self, node_pods: &[Pod]) {
+        for pod in node_pods {
+            let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
+            if !matches!(phase, Some(Phase::Succeeded) | Some(Phase::Failed)) {
+                continue;
+            }
+
+            let ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+            let name = &pod.metadata.name;
+
+            // Verify containers are actually stopped before deleting the record
+            let containers_stopped = self
+                .runtime
+                .list_running_pods()
+                .await
+                .map(|running| !running.contains(&pod.metadata.name))
+                .unwrap_or(false);
+
+            if !containers_stopped {
+                continue;
+            }
+
+            // Pod is terminal and containers are stopped — safe to delete from storage
+            let key = build_key("pods", Some(ns), name);
+            if let Err(e) = self.storage.delete(&key).await {
+                debug!("Failed to delete terminal pod {}/{}: {}", ns, name, e);
+            } else {
+                info!(
+                    "Cleaned up terminal pod {}/{} (phase: {:?})",
+                    ns, name, phase
+                );
+            }
+        }
     }
 
     /// Startup cleanup: remove all containers that don't correspond to pods
@@ -2301,9 +2346,15 @@ impl Kubelet {
                                 // CrashLoopBackOff/Waiting until the next sync cycle (5s),
                                 // causing runtime.go:129 to see wrong state.
                                 // K8s PLEG updates status immediately on container events.
-                                if let Ok(fresh_statuses) = self.runtime.get_container_statuses(pod).await {
-                                    let key = build_key("pods", Some(namespace), pod_name);
-                                    if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                                //
+                                // IMPORTANT: Read the fresh pod from storage first, then pass
+                                // it to get_container_statuses(). The stale `pod` variable has
+                                // the OLD restart_count/last_state, so Docker status would be
+                                // merged with stale data, resetting the incremented restart count.
+                                let key = build_key("pods", Some(namespace), pod_name);
+                                if let Ok(fresh_pod) = self.storage.get::<Pod>(&key).await {
+                                    if let Ok(fresh_statuses) = self.runtime.get_container_statuses(&fresh_pod).await {
+                                        let mut p = fresh_pod;
                                         if let Some(ref mut s) = p.status {
                                             s.container_statuses = Some(fresh_statuses);
                                         }
@@ -2559,9 +2610,14 @@ impl Kubelet {
                             );
                         }
 
-                        // Update container statuses with readiness info
+                        // Update container statuses with readiness info.
+                        // IMPORTANT: Read the fresh pod from storage so that
+                        // restart_count/last_state set during the restart path
+                        // above are preserved (the original `pod` variable is stale).
+                        let readiness_pod_key = build_key("pods", Some(namespace), pod_name);
+                        let readiness_pod = self.storage.get::<Pod>(&readiness_pod_key).await.unwrap_or_else(|_| pod.clone());
                         if let Ok(container_statuses) =
-                            self.runtime.get_container_statuses(pod).await
+                            self.runtime.get_container_statuses(&readiness_pod).await
                         {
                             let all_ready = container_statuses.iter().all(|s| s.ready);
 

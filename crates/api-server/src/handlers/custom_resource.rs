@@ -147,6 +147,27 @@ pub async fn create_custom_resource(
     // Use the CRD we already looked up for preserve-unknown-fields check
     let crd = crd_for_validation;
 
+    // Strict schema validation for nested unknown fields.
+    // When fieldValidation=Strict, validate nested fields against the CRD schema
+    // and reject unknown fields with K8s-format errors.
+    // K8s ref: apiextensions-apiserver/pkg/apiserver/schema/pruning — PruneWithOptions
+    if params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict")
+        && !crd_preserves
+        && !schema_preserves
+    {
+        if let Some(crd_version) = crd.spec.versions.iter().find(|v| v.name == version) {
+            if let Some(ref validation) = crd_version.schema {
+                if let Some(ref properties) = validation.open_apiv3_schema.properties {
+                    if let Some(spec_schema) = properties.get("spec") {
+                        if let Some(ref spec) = cr.spec {
+                            SchemaValidator::validate_strict(spec_schema, spec, "spec")?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Apply schema defaults before validation
     apply_schema_defaults(&crd, &version, &mut cr);
 
@@ -394,7 +415,8 @@ pub async fn update_custom_resource(
     );
 
     // Strict field validation: reject unknown top-level fields for CRDs
-    if params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict") {
+    let is_strict = params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict");
+    if is_strict {
         if !cr.extra.is_empty() {
             let unknown: Vec<&String> = cr.extra.keys().collect();
             return Err(rusternetes_common::Error::InvalidResource(format!(
@@ -408,6 +430,32 @@ pub async fn update_custom_resource(
     // Find the CRD for this resource type
     let crd_name = format!("{}.{}", plural, group);
     let crd = get_crd_for_resource(&state, &crd_name).await?;
+
+    // Strict schema validation for nested unknown fields
+    if is_strict {
+        let crd_preserves = crd.spec.preserve_unknown_fields == Some(true);
+        let schema_preserves = crd
+            .spec
+            .versions
+            .iter()
+            .find(|v| v.name == version)
+            .and_then(|v| v.schema.as_ref())
+            .map(|s| s.open_apiv3_schema.x_kubernetes_preserve_unknown_fields == Some(true))
+            .unwrap_or(false);
+        if !crd_preserves && !schema_preserves {
+            if let Some(crd_version) = crd.spec.versions.iter().find(|v| v.name == version) {
+                if let Some(ref validation) = crd_version.schema {
+                    if let Some(ref properties) = validation.open_apiv3_schema.properties {
+                        if let Some(spec_schema) = properties.get("spec") {
+                            if let Some(ref spec) = cr.spec {
+                                SchemaValidator::validate_strict(spec_schema, spec, "spec")?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Apply schema defaults before validation
     apply_schema_defaults(&crd, &version, &mut cr);
@@ -1198,7 +1246,10 @@ fn validate_custom_resource(
                 // Extract the "spec" sub-schema from the top-level schema
                 if let Some(ref properties) = validation.open_apiv3_schema.properties {
                     if let Some(spec_schema) = properties.get("spec") {
-                        SchemaValidator::validate(spec_schema, spec)?;
+                        // Use validate_no_unknown_check: unknown fields are handled by
+                        // pruning (non-strict) or strict validation (strict mode).
+                        // This only checks types, required fields, enums, etc.
+                        SchemaValidator::validate_no_unknown_check(spec_schema, spec)?;
                     }
                 }
             }

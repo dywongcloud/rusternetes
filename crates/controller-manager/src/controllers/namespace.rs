@@ -658,6 +658,36 @@ impl<S: Storage + 'static> NamespaceController<S> {
                 if let Some(name) = metadata.get("name").and_then(|n| n.as_str()) {
                     let key = build_key(resource_type, Some(namespace), name);
 
+                    // For pods: terminal pods (Succeeded/Failed) should be hard-deleted
+                    // from storage regardless of finalizers. They are already done
+                    // executing and will never process their finalizers. Leaving them
+                    // in storage blocks namespace deletion indefinitely.
+                    if resource_type == "pods" {
+                        let phase = resource
+                            .pointer("/status/phase")
+                            .and_then(|p| p.as_str());
+                        if matches!(phase, Some("Succeeded") | Some("Failed")) {
+                            match self.storage.delete(&key).await {
+                                Ok(_) => {
+                                    debug!(
+                                        "Hard-deleted terminal pod {}/{} (phase: {})",
+                                        namespace,
+                                        name,
+                                        phase.unwrap_or("unknown")
+                                    );
+                                }
+                                Err(rusternetes_common::Error::NotFound(_)) => {}
+                                Err(e) => {
+                                    warn!(
+                                        "Failed to delete terminal pod {}/{}: {}",
+                                        namespace, name, e
+                                    );
+                                }
+                            }
+                            continue;
+                        }
+                    }
+
                     // Check if the resource has finalizers
                     let has_finalizers = metadata
                         .get("finalizers")

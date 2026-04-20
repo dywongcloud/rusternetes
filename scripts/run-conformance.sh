@@ -20,7 +20,14 @@ sleep 2
 
 # Step 2: Delete sonobuoy resources from cluster (ignore errors)
 echo "[2/5] Cleaning up sonobuoy resources..."
-sonobuoy delete --wait 2>/dev/null || true
+timeout 30 sonobuoy delete --wait 2>/dev/null || {
+    echo "Sonobuoy delete timed out or failed, force cleaning..."
+    kubectl delete pods --all -n sonobuoy --force --grace-period=0 2>/dev/null
+    kubectl delete jobs --all -n sonobuoy --force --grace-period=0 2>/dev/null
+    kubectl delete daemonsets --all -n sonobuoy --force --grace-period=0 2>/dev/null
+    kubectl delete services --all -n sonobuoy --force --grace-period=0 2>/dev/null
+    timeout 10 kubectl delete namespace sonobuoy --force --grace-period=0 2>/dev/null || true
+}
 sleep 2
 
 # Step 3: Add required labels to nodes (required for sonobuoy e2e tests)

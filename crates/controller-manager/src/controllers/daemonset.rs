@@ -342,10 +342,34 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                 block_owner_deletion: Some(true),
             }]);
 
-            // Store revision data in K8s getPatch() format:
-            // {"spec":{"template":{...,"$patch":"replace"}}}
-            // This format is required for daemon.Match() to work in conformance tests.
-            cr.data = Self::build_patch_data(&daemonset.spec.template);
+            // Build ControllerRevision data using raw JSON from storage.
+            // K8s Match() does byte-level comparison between getPatch(dsFromAPI) and
+            // history.Data.Raw. getPatch() takes the DaemonSet JSON (as served by the API),
+            // extracts spec.template, adds "$patch":"replace", and re-marshals.
+            // We must produce identical bytes by reading the DaemonSet as raw JSON from
+            // storage (same bytes the API serves) and extracting the template from it.
+            let ds_key = rusternetes_storage::build_key("daemonsets", Some(namespace), name);
+            let cr_data = if let Ok(raw_ds) = self.storage.get::<serde_json::Value>(&ds_key).await {
+                // Extract spec.template from the raw stored JSON
+                if let Some(template_val) = raw_ds.pointer("/spec/template").cloned() {
+                    let mut template_obj = template_val;
+                    if let Some(obj) = template_obj.as_object_mut() {
+                        obj.insert("$patch".to_string(), serde_json::json!("replace"));
+                    }
+                    // Re-serialize with sorted keys to match Go's encoding/json
+                    let patch = Self::sort_json_keys(&serde_json::json!({
+                        "spec": {
+                            "template": template_obj
+                        }
+                    }));
+                    Some(patch)
+                } else {
+                    Self::build_patch_data(&daemonset.spec.template)
+                }
+            } else {
+                Self::build_patch_data(&daemonset.spec.template)
+            };
+            cr.data = cr_data;
 
             if self.storage.create(&cr_key, &cr).await.is_ok() {
                 info!(

@@ -1223,19 +1223,24 @@ impl ContainerRuntime {
                         if let Some(host_port) = port.host_port {
                             // Use the pod spec's hostIP if specified, otherwise 0.0.0.0.
                             // Different pods can bind the same port on different hostIPs.
-                            // In Docker-in-Docker (DinD) environments, the node's InternalIP
-                            // is a container bridge IP that isn't local to the host Docker daemon.
-                            // Map non-loopback, non-wildcard IPs to 0.0.0.0 so Docker can bind them.
-                            let raw_ip = port.host_ip.as_deref().unwrap_or("0.0.0.0");
-                            let bind_ip = match raw_ip {
-                                "" | "0.0.0.0" | "::" => "0.0.0.0".to_string(),
-                                "127.0.0.1" | "::1" => raw_ip.to_string(),
-                                _ => "0.0.0.0".to_string(), // node IP can't bind in DinD
+                            // K8s ref: pkg/kubelet/cm/container_manager_linux.go
+                            //
+                            // We pass the hostIP directly to Docker. In our architecture
+                            // the kubelet uses the host Docker daemon (via docker.sock),
+                            // so the node's InternalIP (Docker bridge IP) is available
+                            // for binding. This allows two pods with the same hostPort
+                            // but different hostIPs (e.g., 127.0.0.1 vs 172.18.0.6) to
+                            // coexist without conflict.
+                            let bind_ip = port.host_ip.as_deref().unwrap_or("0.0.0.0");
+                            let bind_ip = if bind_ip.is_empty() || bind_ip == "::" {
+                                "0.0.0.0"
+                            } else {
+                                bind_ip
                             };
                             port_bindings.insert(
                                 port_key,
                                 Some(vec![bollard::models::PortBinding {
-                                    host_ip: Some(bind_ip),
+                                    host_ip: Some(bind_ip.to_string()),
                                     host_port: Some(host_port.to_string()),
                                 }]),
                             );
@@ -1991,14 +1996,13 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
-        // EmptyDir: create a temporary directory with mode 0777.
-        // Use a LOCAL path inside the container (not the host bind mount) so that
-        // Linux filesystem permissions work correctly. Host bind mounts on macOS
-        // (Docker's virtiofs/gRPC-fuse) may not support full POSIX permission bits,
-        // causing files created with mode 0666 to appear as 0644.
-        // K8s uses the node's local filesystem for EmptyDir, not a remote mount.
+        // EmptyDir: create a directory on the shared volumes path so it's accessible
+        // to both the kubelet container and workload containers (which run on the
+        // host Docker daemon). The directory must be on KUBELET_VOLUMES_PATH, which
+        // is bind-mounted into the kubelet container.
+        // K8s ref: pkg/volume/emptydir/empty_dir.go — setupDir() sets mode 0777.
         if volume.empty_dir.is_some() {
-            let volume_dir = format!("/tmp/emptydir-volumes/{}/{}", pod_name, volume.name);
+            let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;
             #[cfg(unix)]
             {
@@ -3745,10 +3749,13 @@ impl ContainerRuntime {
 
                         if use_tmpfs {
                             // Memory-backed emptyDir — use tmpfs
+                            // K8s sets mode=0777 (not 1777). The sticky bit is NOT set
+                            // by K8s for emptyDir tmpfs mounts.
+                            // K8s ref: pkg/volume/emptydir/empty_dir.go — setupDir()
                             let opts = if read_only {
-                                "ro,mode=1777".to_string()
+                                "ro,mode=0777".to_string()
                             } else {
-                                "mode=1777".to_string()
+                                "mode=0777".to_string()
                             };
                             tmpfs_mounts.insert(mount.mount_path.clone(), opts);
                         } else {

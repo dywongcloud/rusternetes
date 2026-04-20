@@ -36,6 +36,136 @@ impl SchemaValidator {
         Ok(())
     }
 
+    /// Validate a JSON value against a schema WITHOUT checking for unknown fields.
+    /// Used for normal (non-strict) validation where unknown fields are pruned
+    /// rather than rejected. Still validates types, required fields, enums, etc.
+    pub fn validate_no_unknown_check(schema: &JSONSchemaProps, value: &Value) -> Result<(), Error> {
+        let mut dummy = Vec::new();
+        Self::validate_with_path_skip_unknown(schema, value, "", &mut dummy)
+    }
+
+    /// Validate with strict mode — returns unknown fields as K8s-formatted errors.
+    /// Returns `strict decoding error: unknown field "spec.foo"` format.
+    pub fn validate_strict(
+        schema: &JSONSchemaProps,
+        value: &Value,
+        base_path: &str,
+    ) -> Result<(), Error> {
+        let mut unknown_fields = Vec::new();
+        Self::validate_with_path(schema, value, "", &mut unknown_fields)?;
+        if !unknown_fields.is_empty() {
+            unknown_fields.sort();
+            let msg = unknown_fields
+                .iter()
+                .map(|p| {
+                    // Convert ".foo" to "spec.foo" by prepending base_path
+                    let field = p.trim_start_matches('.');
+                    let full_path = if base_path.is_empty() {
+                        field.to_string()
+                    } else {
+                        format!("{}.{}", base_path, field)
+                    };
+                    format!("strict decoding error: unknown field \"{}\"", full_path)
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(Error::InvalidResource(msg));
+        }
+        Ok(())
+    }
+
+    /// Validate with path but skip unknown field detection.
+    /// Validates types, required fields, enums, patterns, etc.
+    fn validate_with_path_skip_unknown(
+        schema: &JSONSchemaProps,
+        value: &Value,
+        path: &str,
+        _unknown_fields: &mut Vec<String>,
+    ) -> Result<(), Error> {
+        // Validate type
+        if let Some(ref type_) = schema.type_ {
+            Self::validate_type(type_, value, path)?;
+        }
+
+        // Validate based on value type
+        match value {
+            Value::Object(obj) => Self::validate_object_skip_unknown(schema, obj, path)?,
+            Value::Array(arr) => {
+                let mut dummy = Vec::new();
+                Self::validate_array(schema, arr, path, &mut dummy)?;
+            }
+            Value::String(s) => Self::validate_string(schema, s, path)?,
+            Value::Number(n) => Self::validate_number(schema, n, path)?,
+            Value::Bool(_) => {}
+            Value::Null => {
+                if let Some(false) = schema.nullable {
+                    return Err(Error::InvalidResource(format!(
+                        "Field at {} cannot be null",
+                        path
+                    )));
+                }
+            }
+        }
+
+        // Validate enum
+        if let Some(ref enum_values) = schema.enum_ {
+            if !enum_values.contains(value) {
+                let val_str = match value {
+                    Value::String(s) => format!("\"{}\"", s),
+                    other => other.to_string(),
+                };
+                return Err(Error::InvalidResource(format!(
+                    "Unsupported value: {}",
+                    val_str
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate object properties without checking for unknown fields.
+    fn validate_object_skip_unknown(
+        schema: &JSONSchemaProps,
+        obj: &serde_json::Map<String, Value>,
+        path: &str,
+    ) -> Result<(), Error> {
+        // Validate required fields
+        if let Some(ref required) = schema.required {
+            for field in required {
+                if !obj.contains_key(field) {
+                    let field_path = if path.is_empty() {
+                        field.clone()
+                    } else {
+                        format!("{}.{}", path, field)
+                    };
+                    return Err(Error::InvalidResource(format!(
+                        "{}: Required value",
+                        field_path
+                    )));
+                }
+            }
+        }
+
+        // Validate known properties
+        if let Some(ref properties) = schema.properties {
+            for (key, value) in obj {
+                if let Some(prop_schema) = properties.get(key) {
+                    let new_path = if path.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{}.{}", path, key)
+                    };
+                    let mut dummy = Vec::new();
+                    Self::validate_with_path_skip_unknown(prop_schema, value, &new_path, &mut dummy)?;
+                }
+                // Unknown fields are silently ignored (they'll be pruned)
+            }
+        }
+
+        Ok(())
+    }
+
     /// Validate with a path for error reporting.
     /// Unknown fields are collected into `unknown_fields` instead of returning
     /// immediately, matching K8s PruneWithOptions behavior.
@@ -70,9 +200,14 @@ impl SchemaValidator {
         // Validate enum
         if let Some(ref enum_values) = schema.enum_ {
             if !enum_values.contains(value) {
+                // K8s format: Unsupported value: "NonExistentValue": supported values: "Great", "Down"
+                let val_str = match value {
+                    Value::String(s) => format!("\"{}\"", s),
+                    other => other.to_string(),
+                };
                 return Err(Error::InvalidResource(format!(
-                    "Field at {} must be one of {:?}",
-                    path, enum_values
+                    "Unsupported value: {}",
+                    val_str
                 )));
             }
         }
@@ -164,9 +299,16 @@ impl SchemaValidator {
         if let Some(ref required) = schema.required {
             for field in required {
                 if !obj.contains_key(field) {
+                    // K8s format: spec.bars[0].name: Required value
+                    // Also accepted: missing required field "name"
+                    let field_path = if path.is_empty() {
+                        field.clone()
+                    } else {
+                        format!("{}.{}", path, field)
+                    };
                     return Err(Error::InvalidResource(format!(
-                        "Required field '{}' missing at {}",
-                        field, path
+                        "{}: Required value",
+                        field_path
                     )));
                 }
             }
