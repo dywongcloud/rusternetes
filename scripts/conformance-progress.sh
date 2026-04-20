@@ -8,13 +8,26 @@
 INTERVAL="${1:-10}"
 
 # Detect container runtime
-if command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
-    CRT=podman
-elif command -v docker &>/dev/null && docker ps &>/dev/null 2>&1; then
-    CRT=docker
+# Override: CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman
+if [ -n "$CONTAINER_RUNTIME" ]; then
+    CRT="$CONTAINER_RUNTIME"
 else
-    echo "ERROR: No container runtime found"
-    exit 1
+    HAS_PODMAN=false
+    HAS_DOCKER=false
+    command -v podman &>/dev/null && podman ps &>/dev/null 2>&1 && HAS_PODMAN=true
+    command -v docker &>/dev/null && docker ps &>/dev/null 2>&1 && HAS_DOCKER=true
+
+    if $HAS_PODMAN && $HAS_DOCKER; then
+        echo "ERROR: Both docker and podman are available. Set CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman"
+        exit 1
+    elif $HAS_PODMAN; then
+        CRT=podman
+    elif $HAS_DOCKER; then
+        CRT=docker
+    else
+        echo "ERROR: No container runtime found"
+        exit 1
+    fi
 fi
 
 # Find the e2e pod name

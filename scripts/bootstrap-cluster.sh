@@ -25,14 +25,26 @@ if [ -n "$1" ] && [[ "$1" == "docker" || "$1" == "podman" ]]; then
     CONTAINER_RT="$1"
 elif [ -n "$CONTAINER_RUNTIME" ]; then
     CONTAINER_RT="$CONTAINER_RUNTIME"
-elif command -v podman &>/dev/null && podman ps &>/dev/null 2>&1; then
-    CONTAINER_RT=podman
-elif command -v docker &>/dev/null && docker ps &>/dev/null 2>&1; then
-    CONTAINER_RT=docker
 else
-    echo "ERROR: No container runtime (docker or podman) found"
-    echo "Set CONTAINER_RUNTIME=docker or CONTAINER_RUNTIME=podman to override"
-    exit 1
+    HAS_PODMAN=false
+    HAS_DOCKER=false
+    command -v podman &>/dev/null && podman ps &>/dev/null 2>&1 && HAS_PODMAN=true
+    command -v docker &>/dev/null && docker ps &>/dev/null 2>&1 && HAS_DOCKER=true
+
+    if $HAS_PODMAN && $HAS_DOCKER; then
+        echo "ERROR: Both docker and podman are available. Please specify which to use:"
+        echo "  bash $0 docker"
+        echo "  bash $0 podman"
+        echo "  CONTAINER_RUNTIME=docker bash $0"
+        exit 1
+    elif $HAS_PODMAN; then
+        CONTAINER_RT=podman
+    elif $HAS_DOCKER; then
+        CONTAINER_RT=docker
+    else
+        echo "ERROR: No container runtime (docker or podman) found"
+        exit 1
+    fi
 fi
 
 echo "Using container runtime: $CONTAINER_RT"
