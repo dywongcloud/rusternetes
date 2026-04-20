@@ -6,6 +6,9 @@ target/
 **/*.rs.bk
 *.pdb
 
+# TypeScript build cache
+*.tsbuildinfo
+
 # IDE
 .idea/
 .vscode/
