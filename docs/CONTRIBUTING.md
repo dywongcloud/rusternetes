@@ -67,7 +67,7 @@ mod tests {
 To run tests for a single crate (note: use underscores in the package name):
 
 ```bash
-cargo test -p rusternetes_api_server
+cargo test -p rusternetes-api-server
 ```
 
 To run a single test with output:

@@ -1,166 +1,57 @@
 # Rusternetes Documentation
 
-Welcome to the Rusternetes documentation! This directory contains comprehensive documentation for the Rusternetes Kubernetes implementation in Rust.
+216,000+ lines of Rust. 10 crates. 31 controllers. 3,100+ tests. 90% conformance pass rate. Built-in web console.
 
-## 📚 Documentation Structure
+## Start Here
 
-### Planning & Status Documents (`planning/`)
-Core planning and implementation tracking documents:
+| I want to... | Read this |
+|---|---|
+| Get a cluster running in 5 minutes | [QUICKSTART.md](QUICKSTART.md) |
+| Use the web console | [CONSOLE_USER_GUIDE.md](CONSOLE_USER_GUIDE.md) |
+| Understand the architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Set up development | [DEVELOPMENT.md](DEVELOPMENT.md) |
+| Deploy to production | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Secure the cluster | [AUTHENTICATION.md](AUTHENTICATION.md) |
+| Contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
-- **[IMPLEMENTATION_PLAN.md](planning/IMPLEMENTATION_PLAN.md)** - Complete implementation roadmap with phase tracking
-- **[CONFORMANCE_PLAN.md](planning/CONFORMANCE_PLAN.md)** - Kubernetes 1.35 conformance testing plan
-- **[CONFORMANCE_READINESS_CHECK.md](planning/CONFORMANCE_READINESS_CHECK.md)** - Conformance readiness assessment
-- **[CONFORMANCE_REQUIREMENTS.md](planning/CONFORMANCE_REQUIREMENTS.md)** - Requirements for conformance
-- **[CONFORMANCE_FINDINGS.md](planning/CONFORMANCE_FINDINGS.md)** - Findings from conformance testing
-- **[CRD_IMPLEMENTATION_STATUS.md](planning/CRD_IMPLEMENTATION_STATUS.md)** - Custom Resource Definition implementation status
-- **[FINALIZERS_INTEGRATION.md](planning/FINALIZERS_INTEGRATION.md)** - Finalizers implementation guide
+## Full Documentation Index
 
-### Networking (`networking/`)
-Networking-related documentation:
+See **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** for the complete organized list of all documentation.
 
-- **network-policies.md** - NetworkPolicy implementation and CNI integration
+## HTML Documentation Site
 
-### Storage (`storage/`)
-Storage and volume-related documentation:
+The **[documentation site](guide/index.html)** has 30 themed pages with search, navigation, and console screenshots.
 
-- **csi-integration.md** - Container Storage Interface integration guide
+## Topics
 
-### Metrics (`metrics/`)
-Metrics and monitoring documentation:
-
-- **prometheus-integration.md** - Prometheus integration for custom metrics
-
-### Security (`security/`)
-Security-related documentation:
-
-- Security policies and best practices
-
-## 📖 Core Documentation Files
-
-### Getting Started
-- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Quick start guide
-- **[QUICKSTART.md](QUICKSTART.md)** - Quick deployment guide
-- **[LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)** - Local development setup
-
-### Architecture & Design
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture overview
-- **[STATUS.md](STATUS.md)** - Current implementation status (comprehensive)
-- **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** - Documentation index
-
-### Deployment
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment guide
-- **[AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)** - AWS-specific deployment
-- **[FEDORA_SETUP.md](FEDORA_SETUP.md)** - Fedora deployment setup
-- **[DOCKER_MIGRATION.md](DOCKER_MIGRATION.md)** - Docker to Podman migration
-
-### Development
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development guide
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
-- **[DEV_COMPARISON.md](DEV_COMPARISON.md)** - Development environment comparison
-- **[DEV_SETUP_METALLB.md](DEV_SETUP_METALLB.md)** - MetalLB development setup
-- **[SETUP_NOTES.md](SETUP_NOTES.md)** - Setup notes and tips
-
-### Features
-- **[API_FEATURES_COMPLETE.md](API_FEATURES_COMPLETE.md)** - Complete API features
-- **[ADVANCED_API_FEATURES.md](ADVANCED_API_FEATURES.md)** - Advanced API features
-- **[HIGH_AVAILABILITY.md](HIGH_AVAILABILITY.md)** - High availability setup
-- **[LOADBALANCER.md](LOADBALANCER.md)** - Load balancer implementation
-- **[METALLB_INTEGRATION.md](METALLB_INTEGRATION.md)** - MetalLB integration
-- **[METALLB_SETUP_SUMMARY.md](METALLB_SETUP_SUMMARY.md)** - MetalLB setup summary
+### Cluster Management
+- [Quick Start](QUICKSTART.md) | [Deployment](DEPLOYMENT.md) | [High Availability](HIGH_AVAILABILITY.md)
+- [Console User Guide](CONSOLE_USER_GUIDE.md) | [Authentication](AUTHENTICATION.md) | [TLS](TLS_GUIDE.md)
 
 ### Networking
-- **[CNI_INTEGRATION.md](CNI_INTEGRATION.md)** - CNI plugin integration
-- **[CNI_IMPLEMENTATION_SUMMARY.md](CNI_IMPLEMENTATION_SUMMARY.md)** - CNI implementation summary
-- **[CNI-NETWORKING.md](CNI-NETWORKING.md)** - CNI networking guide
+- [CNI Guide](CNI_GUIDE.md) | [Load Balancers](LOADBALANCER.md) | [MetalLB](METALLB_INTEGRATION.md) | [Network Policies](networking/network-policies.md)
 
 ### Storage
-- **[VOLUME_EXPANSION.md](VOLUME_EXPANSION.md)** - Volume expansion implementation
-- **[VOLUME_SNAPSHOTS.md](VOLUME_SNAPSHOTS.md)** - Volume snapshots implementation
-- **[DYNAMIC_PROVISIONING.md](DYNAMIC_PROVISIONING.md)** - Dynamic volume provisioning
-
-### CRDs & Extensions
-- **[CRD_IMPLEMENTATION.md](CRD_IMPLEMENTATION.md)** - CRD implementation guide
-- **[WEBHOOK_INTEGRATION.md](WEBHOOK_INTEGRATION.md)** - Webhook integration
-- **[WEBHOOK_TESTING.md](WEBHOOK_TESTING.md)** - Webhook testing guide
-- **[PATCH_IMPLEMENTATION.md](PATCH_IMPLEMENTATION.md)** - Patch operations implementation
-
-### Testing
-- **[TESTING.md](TESTING.md)** - Testing guide
-- **[TESTING_IMPLEMENTATION_GUIDE.md](TESTING_IMPLEMENTATION_GUIDE.md)** - Testing implementation guide
-- **[TEST_IMPROVEMENTS.md](TEST_IMPROVEMENTS.md)** - Test improvements
-- **[CONFORMANCE.md](CONFORMANCE.md)** - Conformance testing
-- **[CONFORMANCE_IMPLEMENTATION_STATUS.md](CONFORMANCE_IMPLEMENTATION_STATUS.md)** - Conformance status
-- **[CONFORMANCE_IMPROVEMENTS_2026-03-10.md](CONFORMANCE_IMPROVEMENTS_2026-03-10.md)** - Conformance improvements
-
-### Kubelet
-- **[KUBELET_CONFIGURATION.md](KUBELET_CONFIGURATION.md)** - Kubelet configuration
-- **[KUBELET_CONFIG_IMPLEMENTATION.md](KUBELET_CONFIG_IMPLEMENTATION.md)** - Kubelet config implementation
-
-### kubectl
-- **[KUBECTL_FIX_SUMMARY.md](KUBECTL_FIX_SUMMARY.md)** - kubectl fixes summary
-
-### WebSocket & Streaming
-- **[WEBSOCKET_EXEC_IMPLEMENTATION.md](WEBSOCKET_EXEC_IMPLEMENTATION.md)** - WebSocket exec implementation
-- **[WEBSOCKET_ATTACH_PORTFORWARD_IMPLEMENTATION.md](WEBSOCKET_ATTACH_PORTFORWARD_IMPLEMENTATION.md)** - WebSocket attach/port-forward
+- [Storage Backends](storage/STORAGE_BACKENDS.md) | [Dynamic Provisioning](DYNAMIC_PROVISIONING.md) | [Volume Snapshots](VOLUME_SNAPSHOTS.md) | [Volume Expansion](VOLUME_EXPANSION.md) | [CSI](storage/csi-integration.md)
 
 ### Security
-- **[SECURITY.md](SECURITY.md)** - Security guide
-- **[TLS_GUIDE.md](TLS_GUIDE.md)** - TLS setup guide
+- [Authentication & RBAC](AUTHENTICATION.md) | [Security Features](SECURITY.md) | [TLS/mTLS](TLS_GUIDE.md) | [Webhooks](WEBHOOK_INTEGRATION.md)
+
+### API & Extensibility
+- [CRDs](CRD_IMPLEMENTATION.md) | [Advanced API](ADVANCED_API_FEATURES.md) | [Webhooks](WEBHOOK_INTEGRATION.md)
 
 ### Operations
-- **[PODMAN_TIPS.md](PODMAN_TIPS.md)** - Podman tips and tricks
-- **[TRACING.md](TRACING.md)** - Distributed tracing
+- [Kubelet Configuration](KUBELET_CONFIGURATION.md) | [Monitoring & Metrics](metrics/metrics-integration.md) | [Tracing](TRACING.md) | [Conformance](CONFORMANCE.md)
 
-### Reports & Summaries
-- **[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)** - Verification report
-- **[FIXES_SUMMARY.md](FIXES_SUMMARY.md)** - Fixes summary
+### Platform-Specific
+- [AWS](AWS_DEPLOYMENT.md) | [Fedora](FEDORA_SETUP.md) | [Podman](PODMAN_TIPS.md) | [Docker Migration](DOCKER_MIGRATION.md)
 
-## 🚀 Quick Navigation
+### Development
+- [Development Guide](DEVELOPMENT.md) | [Contributing](CONTRIBUTING.md) | [Dev Processes](DEV_PROCESSES.md)
 
-### I want to...
+### Architecture & Planning
+- [Architecture](ARCHITECTURE.md) | [Runtime Abstraction Plan](planning/RUNTIME_ABSTRACTION.md) | [Implementation Plan](planning/IMPLEMENTATION_PLAN.md)
 
-**...get started quickly**
-→ [GETTING_STARTED.md](GETTING_STARTED.md) → [QUICKSTART.md](QUICKSTART.md)
+## License
 
-**...understand the architecture**
-→ [ARCHITECTURE.md](ARCHITECTURE.md) → [STATUS.md](STATUS.md)
-
-**...deploy to production**
-→ [DEPLOYMENT.md](DEPLOYMENT.md) → [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) or [FEDORA_SETUP.md](FEDORA_SETUP.md)
-
-**...contribute to development**
-→ [CONTRIBUTING.md](CONTRIBUTING.md) → [DEVELOPMENT.md](DEVELOPMENT.md)
-
-**...run tests**
-→ [TESTING.md](TESTING.md) → [CONFORMANCE.md](CONFORMANCE.md)
-
-**...understand implementation status**
-→ [planning/IMPLEMENTATION_PLAN.md](planning/IMPLEMENTATION_PLAN.md) → [STATUS.md](STATUS.md)
-
-**...set up networking**
-→ [CNI_INTEGRATION.md](CNI_INTEGRATION.md) → [networking/network-policies.md](networking/network-policies.md)
-
-**...set up storage**
-→ [DYNAMIC_PROVISIONING.md](DYNAMIC_PROVISIONING.md) → [storage/csi-integration.md](storage/csi-integration.md)
-
-**...set up monitoring**
-→ [metrics/prometheus-integration.md](metrics/prometheus-integration.md)
-
-## 📊 Current Status (2026-03-13)
-
-**Rusternetes is now CONFORMANCE-READY!** 🎉
-
-- ✅ **Phase 1 (Critical)**: 100% COMPLETE
-- ✅ **Phase 2 (Production)**: 100% COMPLETE
-- ✅ **Phase 3 (Feature Completeness)**: 100% COMPLETE
-- 🟢 **Phase 4 (Platform Expansion)**: 17% COMPLETE
-
-See [planning/IMPLEMENTATION_PLAN.md](planning/IMPLEMENTATION_PLAN.md) for detailed progress tracking.
-
-## 🤝 Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
-## 📝 License
-
-This project is licensed under the MIT License.
+Apache-2.0

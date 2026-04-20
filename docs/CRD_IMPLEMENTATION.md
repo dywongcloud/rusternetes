@@ -1,11 +1,10 @@
-## Custom Resource Definitions (CRDs) Implementation
+# Custom Resource Definitions (CRDs)
 
-**Date:** March 10, 2026
-**Status:** ✅ COMPLETE
+Rusternetes supports Custom Resource Definitions (CRDs), allowing you to extend the Kubernetes API with your own resource types. This includes full CRUD operations, watch, status/scale subresources, OpenAPI v3 schema validation, and defaulting/pruning.
+
+> **Tip:** CRDs and custom resources are fully browsable in the [web console](CONSOLE_USER_GUIDE.md) — the Resource Explorer auto-discovers them and lets you create, view, edit, and delete instances.
 
 ## Overview
-
-Rusternetes now supports Custom Resource Definitions (CRDs), allowing users to extend the Kubernetes API with custom resource types. This implementation provides full CRUD operations for CRDs and custom resources, OpenAPI v3 schema validation, and Kubernetes-compatible API conventions.
 
 ## Features Implemented
 

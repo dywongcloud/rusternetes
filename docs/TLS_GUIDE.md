@@ -1,10 +1,12 @@
 # TLS/HTTPS Configuration Guide
 
-**Status:** ✅ TLS is now enabled in the development environment
+The Rusternetes API server supports HTTPS with TLS 1.3, self-signed or custom certificates, and mutual TLS (mTLS) for client certificate authentication.
+
+> **Tip:** The [web console](CONSOLE_USER_GUIDE.md) is also served over TLS at `https://localhost:6443/console/`. For authentication beyond TLS, see [AUTHENTICATION.md](AUTHENTICATION.md).
 
 ## Overview
 
-The Rusternetes API server now runs with HTTPS enabled using TLS 1.3 encryption. This provides secure communication between clients and the API server.
+The API server runs with HTTPS enabled using TLS 1.3 encryption, providing secure communication between clients (kubectl, console, controllers) and the API server.
 
 ## Current Configuration
 
