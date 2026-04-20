@@ -1,4 +1,4 @@
-# Security Features in Rusternetes
+# Security Features in Rūsternetes
 
 **Last Updated:** March 10, 2026
 

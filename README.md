@@ -1,4 +1,4 @@
-# Rusternetes
+# Rūsternetes
 
 **A ground-up reimplementation of Kubernetes in Rust.**
 
@@ -8,7 +8,7 @@ This isn't a wrapper around the Go codebase or a partial mock. Every component �
 
 ## Web Console
 
-Rusternetes includes a built-in web console with real-time cluster topology visualization, live metrics, pod log streaming, and full resource management. It deploys automatically — embedded in the API server, no separate installation.
+Rūsternetes includes a built-in web console with real-time cluster topology visualization, live metrics, pod log streaming, and full resource management. It deploys automatically — embedded in the API server, no separate installation.
 
 [![Cluster Topology with Live Logs](docs/screenshots/console-topology-logs.png)](docs/screenshots/console-topology-logs.png)
 

@@ -1,4 +1,4 @@
-# Rusternetes Development Guide
+# Rūsternetes Development Guide
 
 How to build, test, and run Rusternetes locally.
 

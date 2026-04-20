@@ -1,4 +1,4 @@
-# Rusternetes Architecture
+# Rūsternetes Architecture
 
 A ground-up reimplementation of Kubernetes in Rust. Every component -- API
 server, scheduler, controller manager, kubelet, kube-proxy -- is written from

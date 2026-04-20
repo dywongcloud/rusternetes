@@ -1,4 +1,4 @@
-# Deployment Guide
+# Rūsternetes Deployment Guide
 
 Rusternetes supports three deployment modes from the same codebase. Choose based on your needs.
 

@@ -1,4 +1,4 @@
-# Rusternetes Quick Start
+# Rūsternetes Quick Start
 
 Get a Rust-based Kubernetes cluster running locally with a built-in web console.
 

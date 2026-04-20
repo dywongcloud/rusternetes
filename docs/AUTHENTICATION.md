@@ -1,4 +1,4 @@
-# Authentication & Authorization Guide
+# Rūsternetes Authentication & Authorization Guide
 
 This guide covers how to configure authentication and authorization in rusternetes, how to create user tokens, and how to move from insecure development mode to a properly secured cluster.
 

@@ -1,4 +1,4 @@
-# Rusternetes Documentation
+# Rūsternetes Documentation
 
 216,000+ lines of Rust. 10 crates. 31 controllers. 3,100+ tests. 90% conformance pass rate. Built-in web console.
 

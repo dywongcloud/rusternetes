@@ -1,4 +1,4 @@
-# Rusternetes Console
+# Rūsternetes Console
 
 The rusternetes console is a web-based cluster management dashboard served directly from the API server. It provides real-time topology visualization, live metrics, pod log streaming, and full resource management — with zero external dependencies.
 
