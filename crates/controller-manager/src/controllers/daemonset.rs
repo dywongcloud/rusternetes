@@ -488,63 +488,21 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             }
         }
 
-        // Rolling update: delete pods with old template hash BEFORE creating new ones.
-        // This way, in the same reconcile cycle we can delete an old pod and immediately
-        // create a replacement with the new template, rather than waiting for the next cycle.
+        // Determine update strategy
         let update_strategy = daemonset
             .spec
             .update_strategy
             .as_ref()
             .and_then(|s| s.strategy_type.as_deref())
             .unwrap_or("RollingUpdate");
-        let mut rolling_update_deleted_nodes = std::collections::HashSet::new();
-        if update_strategy == "RollingUpdate" {
-            let max_unavailable = daemonset
-                .spec
-                .update_strategy
-                .as_ref()
-                .and_then(|s| s.rolling_update.as_ref())
-                .and_then(|r| r.max_unavailable.as_ref())
-                .and_then(|s| s.trim_end_matches('%').parse::<i32>().ok())
-                .unwrap_or(1)
-                .max(1);
-            let mut deleted_count = 0;
-            for (node_name, pod) in pods_by_node.iter() {
-                if deleted_count >= max_unavailable {
-                    break;
-                }
-                let pod_hash = pod
-                    .metadata
-                    .labels
-                    .as_ref()
-                    .and_then(|l| l.get("controller-revision-hash"))
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
-                // If pod has no hash label at all, treat it as outdated too
-                if pod_hash != template_hash {
-                    let pod_name = &pod.metadata.name;
-                    let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
-                    if let Ok(()) = self.storage.delete(&pod_key).await {
-                        info!(
-                            "Rolling update: deleted DaemonSet pod {} on node {} (hash {:?} != {})",
-                            pod_name, node_name, pod_hash, template_hash
-                        );
-                        deleted_count += 1;
-                        rolling_update_deleted_nodes.insert(node_name.clone());
-                    }
-                }
-            }
-        }
 
-        // Ensure one pod per eligible node
+        // --- Manage phase: ensure one pod per eligible node (only for nodes with NO pod) ---
+        // This runs BEFORE the rolling update phase, matching K8s behavior:
+        // manage() creates pods on empty nodes, then rollingUpdate() replaces old pods.
         for node in eligible_nodes.iter() {
             let node_name = &node.metadata.name;
 
-            // Create pod if node has no pod, or if we just deleted the old-revision pod
-            let needs_pod = !pods_by_node.contains_key(node_name)
-                || rolling_update_deleted_nodes.contains(node_name);
-
-            if needs_pod {
+            if !pods_by_node.contains_key(node_name) {
                 // Create pod for this node, ignore AlreadyExists (race / re-reconcile)
                 match self.create_pod(daemonset, node_name, namespace).await {
                     Ok(_) => {
@@ -561,6 +519,169 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                             return Err(e);
                         }
                     }
+                }
+            }
+        }
+
+        // --- Rolling update phase ---
+        // K8s rolling update algorithm (maxSurge=0, the default):
+        // 1. Classify each node's pod as "old" (hash != current) or "new" (hash == current)
+        // 2. Count already-unavailable pods (new pods not yet available, nodes without pods)
+        // 3. Delete old pods only if within the maxUnavailable budget
+        // 4. Do NOT create replacement pods here — the next reconcile's manage phase does that
+        //
+        // This ensures that at any point in time, the number of unavailable pods
+        // never exceeds maxUnavailable, which is what the conformance test checks.
+        if update_strategy == "RollingUpdate" {
+            let max_unavailable = daemonset
+                .spec
+                .update_strategy
+                .as_ref()
+                .and_then(|s| s.rolling_update.as_ref())
+                .and_then(|r| r.max_unavailable.as_ref())
+                .and_then(|s| s.trim_end_matches('%').parse::<i32>().ok())
+                .unwrap_or(1)
+                .max(1);
+
+            // Re-read pods after manage phase to get accurate state
+            let all_pods_now: Vec<Pod> = self.storage.list(&pod_prefix).await?;
+            let daemonset_pods_now: Vec<Pod> = all_pods_now
+                .into_iter()
+                .filter(|pod| {
+                    pod.metadata
+                        .owner_references
+                        .as_ref()
+                        .map(|refs| refs.iter().any(|r| &r.uid == daemonset_uid))
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            let mut current_pods_by_node: std::collections::HashMap<String, Vec<Pod>> =
+                std::collections::HashMap::new();
+            for pod in daemonset_pods_now.iter() {
+                if let Some(node_name) = pod.spec.as_ref().and_then(|s| s.node_name.as_ref()) {
+                    let is_terminal = pod
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.phase.as_ref())
+                        .map(|phase| matches!(phase, Phase::Failed | Phase::Succeeded))
+                        .unwrap_or(false);
+                    if !is_terminal {
+                        current_pods_by_node
+                            .entry(node_name.clone())
+                            .or_default()
+                            .push(pod.clone());
+                    }
+                }
+            }
+
+            // Helper: check if a pod is "available" (has Ready condition True)
+            let is_pod_available = |pod: &Pod| -> bool {
+                pod.status
+                    .as_ref()
+                    .and_then(|s| s.conditions.as_ref())
+                    .map(|conditions| {
+                        conditions
+                            .iter()
+                            .any(|c| c.condition_type == "Ready" && c.status == "True")
+                    })
+                    .unwrap_or(false)
+            };
+
+            // Classify pods on each node and count current unavailability
+            let mut num_unavailable: i32 = 0;
+            let mut old_available_pods: Vec<(String, Pod)> = Vec::new(); // (node_name, pod)
+            let mut old_unavailable_pods: Vec<(String, Pod)> = Vec::new();
+
+            for node in eligible_nodes.iter() {
+                let node_name = &node.metadata.name;
+                let node_pods = current_pods_by_node
+                    .get(node_name.as_str())
+                    .cloned()
+                    .unwrap_or_default();
+
+                if node_pods.is_empty() {
+                    // No pod on this node — counts as unavailable
+                    num_unavailable += 1;
+                    continue;
+                }
+
+                // Find old and new pods on this node
+                let mut has_new_available = false;
+                let mut has_new_unavailable = false;
+                let mut old_pod: Option<Pod> = None;
+
+                for pod in &node_pods {
+                    let pod_hash = pod
+                        .metadata
+                        .labels
+                        .as_ref()
+                        .and_then(|l| l.get("controller-revision-hash"))
+                        .map(|s| s.as_str())
+                        .unwrap_or("");
+
+                    if pod_hash == template_hash {
+                        // New pod
+                        if is_pod_available(pod) {
+                            has_new_available = true;
+                        } else {
+                            has_new_unavailable = true;
+                        }
+                    } else {
+                        // Old pod
+                        old_pod = Some(pod.clone());
+                    }
+                }
+
+                if has_new_unavailable {
+                    // New pod exists but isn't available yet — counts against budget
+                    num_unavailable += 1;
+                }
+
+                if let Some(old) = old_pod {
+                    if has_new_available {
+                        // New pod is ready; old pod can be cleaned up (doesn't count as unavailable)
+                        // This shouldn't happen in maxSurge=0 mode, but handle it gracefully
+                        old_unavailable_pods.push((node_name.clone(), old));
+                    } else if !is_pod_available(&old) {
+                        // Old pod is unavailable — delete it immediately (free slot)
+                        old_unavailable_pods.push((node_name.clone(), old));
+                    } else {
+                        // Old pod is available — candidate for deletion within budget
+                        old_available_pods.push((node_name.clone(), old));
+                    }
+                }
+            }
+
+            // First, delete unavailable old pods (they're already not serving, free deletions)
+            for (node_name, pod) in &old_unavailable_pods {
+                let pod_name = &pod.metadata.name;
+                let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+                if let Ok(()) = self.storage.delete(&pod_key).await {
+                    info!(
+                        "Rolling update: deleted unavailable old pod {} on node {} (hash != {})",
+                        pod_name, node_name, template_hash
+                    );
+                }
+            }
+
+            // Then, delete available old pods within the maxUnavailable budget.
+            // Each deletion makes one more pod unavailable.
+            let allowed_deletions = (max_unavailable - num_unavailable).max(0);
+            let mut deleted_count = 0;
+            for (node_name, pod) in &old_available_pods {
+                if deleted_count >= allowed_deletions {
+                    break;
+                }
+                let pod_name = &pod.metadata.name;
+                let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
+                if let Ok(()) = self.storage.delete(&pod_key).await {
+                    info!(
+                        "Rolling update: deleted old pod {} on node {} (hash != {}, budget {}/{})",
+                        pod_name, node_name, template_hash,
+                        deleted_count + 1, allowed_deletions
+                    );
+                    deleted_count += 1;
                 }
             }
         }
