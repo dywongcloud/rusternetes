@@ -62,6 +62,9 @@ requires `CAP_NET_ADMIN` for iptables, which means rootful container execution.
 
 ### macOS -- Docker Desktop
 
+Allocate at least **8GB of memory** to Docker Desktop (Settings > Resources).
+Rust compilation will fail or be killed with the default 2GB.
+
 ```bash
 # Install Docker Desktop
 brew install --cask docker
@@ -89,7 +92,8 @@ Podman Machine works on macOS with Apple Silicon (M1+) and Intel Macs.
 brew install podman podman-compose docker-compose
 
 # Initialize and start the VM in rootful mode (required for kube-proxy iptables)
-podman machine init
+# At least 8GB of memory is required — Rust compilation will fail with the 2GB default
+podman machine init --memory 8192 --cpus 4
 podman machine set --rootful
 podman machine start
 
@@ -141,7 +145,7 @@ substitute `sudo podman-compose` wherever you see `docker compose`.
 ```bash
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
 
-docker compose build           # Build images (~10-15 min first time)
+docker compose build           # Build images (~1 hour first build, faster with cache, requires 8GB+ RAM)
 docker compose up -d           # Start all services
 bash scripts/bootstrap-cluster.sh  # Create CoreDNS, services, SA tokens
 ```

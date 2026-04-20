@@ -33,7 +33,7 @@ git clone https://github.com/calfonso/rusternetes.git
 cd rusternetes
 
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build           # ~10-15 minutes the first time
+docker compose build           # ~1 hour first build, faster with cache
 docker compose up -d
 bash scripts/bootstrap-cluster.sh
 ```
@@ -157,7 +157,7 @@ docker compose logs api-server | tail -20   # check for errors
 
 ### "Build is taking too long"
 
-The first build compiles all Rust crates inside the container (~10-15 min). Subsequent builds use the layer cache and are much faster. For local iteration, use `cargo build` directly.
+The first build compiles all Rust crates inside the container (~1 hour without cache). Subsequent builds use the layer cache and are much faster. For local iteration, use `cargo build` directly.
 
 ### Console shows no data
 

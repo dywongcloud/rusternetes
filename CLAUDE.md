@@ -22,7 +22,7 @@ make pre-commit                # Format + clippy + test (run before commits)
 
 # Docker cluster
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build           # Build images (~10-15 min)
+docker compose build           # Build images (~1 hour first build, faster with cache)
 docker compose up -d           # Start cluster
 docker compose down            # Stop cluster
 bash scripts/bootstrap-cluster.sh  # Create CoreDNS, services, SA tokens
