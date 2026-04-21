@@ -3842,9 +3842,21 @@ impl ContainerRuntime {
                             ),
                         }
                     } else {
+                        // Include both cluster DNS and the container network DNS
+                        // so pods can resolve both K8s services (via CoreDNS) and
+                        // container hostnames (via podman's aardvark-dns or Docker DNS).
+                        let host_dns = std::fs::read_to_string("/etc/resolv.conf")
+                            .ok()
+                            .and_then(|c| c.lines()
+                                .find(|l| l.starts_with("nameserver"))
+                                .map(|l| l.trim_start_matches("nameserver").trim().to_string()));
+                        let extra_ns = host_dns
+                            .map(|dns| format!("\nnameserver {}", dns))
+                            .unwrap_or_default();
                         format!(
-                            "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                            "nameserver {}{}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
                             self.cluster_dns,
+                            extra_ns,
                             namespace,
                             self.cluster_domain,
                             self.cluster_domain,
