@@ -1583,7 +1583,13 @@ impl IptablesManager {
         };
 
         // Apply rules via iptables-restore --noflush
-        let mut child = Command::new("iptables-restore")
+        // Use the matching restore command for the detected iptables backend
+        let restore_cmd = if self.iptables_cmd.contains("legacy") {
+            "iptables-legacy-restore"
+        } else {
+            "iptables-restore"
+        };
+        let mut child = Command::new(restore_cmd)
             .args(["--noflush"])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

@@ -37,7 +37,9 @@ pub async fn run(storage: Arc<StorageBackend>, config: KubeProxyConfig) -> anyho
     let worker_queue = queue.clone();
     let worker_proxy = Arc::clone(&kube_proxy);
     tokio::spawn(async move {
+        info!("Kube-proxy worker started");
         while let Some(key) = worker_queue.get().await {
+            info!("Kube-proxy worker processing key: {}", key);
             match worker_proxy.lock().await.sync().await {
                 Ok(()) => worker_queue.forget(&key).await,
                 Err(e) => {

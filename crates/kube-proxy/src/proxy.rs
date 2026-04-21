@@ -31,7 +31,7 @@ impl KubeProxy {
 
     /// Sync all services and their endpoints
     pub async fn sync(&mut self) -> Result<()> {
-        debug!("Starting kube-proxy sync");
+        info!("Starting kube-proxy sync");
 
         // Get all services
         let services: Vec<Service> = self
@@ -192,10 +192,12 @@ impl KubeProxy {
         // See: pkg/proxy/iptables/proxier.go:1495 — RestoreAll with NoFlushTables
         //
         // Build all rules in memory, then apply atomically.
+        info!("Kube-proxy sync: {} services, {} endpoint entries", services.len(), endpointslice_map.len());
         let nat_rules = self
             .iptables
             .build_nat_rules(&services, &endpointslice_map)
             .await;
+        info!("Kube-proxy built {} bytes of NAT rules", nat_rules.len());
 
         // Apply atomically via iptables-restore --noflush
         if let Err(e) = self.iptables.apply_nat_rules_atomic(&nat_rules) {
