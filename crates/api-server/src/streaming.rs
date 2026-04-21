@@ -23,24 +23,17 @@ pub async fn handle_ws_exec(
 
     debug!("WS exec direct Docker for container: {}", container_id);
 
-    // Execute directly via Docker (API server has Docker socket mounted)
+    // Execute directly via Docker/Podman (API server has container socket mounted)
     use bollard::exec::{CreateExecOptions, StartExecResults};
     use bollard::Docker;
 
-    let docker = match Docker::connect_with_local_defaults() {
-        Ok(d) => d,
-        Err(e) => {
-            let _ = socket
-                .send(Message::Binary(
-                    std::iter::once(3u8)
-                        .chain(format!("Docker error: {}", e).bytes())
-                        .collect(),
-                ))
-                .await;
-            let _ = socket.close().await;
-            return;
-        }
-    };
+    // Use a shared Docker client to avoid connection issues from creating
+    // a new client per exec call.
+    static DOCKER_CLIENT: std::sync::OnceLock<Docker> = std::sync::OnceLock::new();
+    let docker = DOCKER_CLIENT.get_or_init(|| {
+        Docker::connect_with_local_defaults().expect("Failed to connect to container runtime")
+    });
+    info!("WS exec: using container runtime client for {}", container_id);
 
     let exec_config = CreateExecOptions {
         cmd: Some(command.iter().map(|s| s.as_str()).collect()),
@@ -52,8 +45,12 @@ pub async fn handle_ws_exec(
     };
 
     let exec = match docker.create_exec(&container_id, exec_config).await {
-        Ok(e) => e,
+        Ok(e) => {
+            info!("WS exec: created exec {} for {}", e.id, container_id);
+            e
+        }
         Err(e) => {
+            error!("WS exec: create_exec failed for {}: {}", container_id, e);
             let _ = socket
                 .send(Message::Binary(
                     std::iter::once(3u8)
@@ -90,12 +87,33 @@ pub async fn handle_ws_exec(
         }
     };
 
+    // Split WebSocket into sender and receiver so we can read client messages
+    // (stdin, close) concurrently with writing exec output.
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    // Spawn a task to drain incoming WebSocket messages. Without this, the
+    // client's messages (close frames, pings) fill the buffer and the
+    // connection stalls. Forward stdin (channel 0) if stdin is enabled.
+    let client_closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let client_closed2 = client_closed.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = ws_receiver.next().await {
+            match msg {
+                Ok(Message::Close(_)) | Err(_) => {
+                    client_closed2.store(true, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+                _ => {} // Consume pings, pongs, stdin data
+            }
+        }
+    });
+
     // Stream output to WebSocket using v5.channel.k8s.io protocol
     // Channel prefix: 0=stdin, 1=stdout, 2=stderr, 3=error
     // K8s protocol requires channel 1 (stdout) to appear before channel 3 (status).
     // Send an initial empty stdout frame so the client sees ch1 first, even if the
     // exec command produces no output or finishes before we read from the stream.
-    let _ = socket.send(Message::Binary(vec![1u8].into())).await;
+    let _ = ws_sender.send(Message::Binary(vec![1u8].into())).await;
 
     if let StartExecResults::Attached {
         output: mut stream, ..
@@ -108,14 +126,14 @@ pub async fn handle_ws_exec(
                         bollard::container::LogOutput::StdOut { message } => {
                             let mut data = vec![1u8]; // stdout channel
                             data.extend_from_slice(&message);
-                            if socket.send(Message::Binary(data.into())).await.is_err() {
+                            if ws_sender.send(Message::Binary(data.into())).await.is_err() {
                                 break;
                             }
                         }
                         bollard::container::LogOutput::StdErr { message } => {
                             let mut data = vec![2u8]; // stderr channel
                             data.extend_from_slice(&message);
-                            if socket.send(Message::Binary(data.into())).await.is_err() {
+                            if ws_sender.send(Message::Binary(data.into())).await.is_err() {
                                 break;
                             }
                         }
@@ -137,33 +155,18 @@ pub async fn handle_ws_exec(
         }
     }
 
-    // K8s protocol: client expects channel 1 (stdout) before channel 3 (status).
-    // Send empty stdout/stderr frames and flush with a ping to ensure ordering.
-    let _ = socket.send(Message::Binary(vec![1u8].into())).await;
-    let _ = socket.send(Message::Binary(vec![2u8].into())).await;
-    // Send a Ping to flush the TCP buffer — the Pong response ensures the
-    // client has processed the stdout/stderr frames before we send status.
-    let _ = socket.send(Message::Ping(vec![].into())).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
     // Send exit code as status on error channel (channel 3).
     // Only send for v4/v5 protocols — v1 (channel.k8s.io) doesn't use
     // the status channel and clients fail if they see non-stdout data.
-    // We detect v1 by checking if the close frame was already sent or
-    // if the command exited successfully (v1 clients don't expect status).
-    // For compatibility: always send status for non-zero exit codes (all protocols),
-    // only send Success status if NOT using v1 protocol.
+    // K8s ref: staging/src/k8s.io/client-go/tools/remotecommand/v4.go
     let exit_code = docker
         .inspect_exec(&exec.id)
         .await
         .ok()
         .and_then(|info| info.exit_code)
         .unwrap_or(0);
+    info!("WS exec: command finished for {} with exit_code={}", container_id, exit_code);
 
-    // K8s v4/v5 protocol: send status on channel 3 (error channel).
-    // v1 protocol (channel.k8s.io) does NOT use channel 3 — sending it causes
-    // "Got message from server that didn't start with channel 1" failures.
-    // K8s ref: staging/src/k8s.io/client-go/tools/remotecommand/v4.go
     let is_v1 = V1_PROTOCOL_FLAG.load(std::sync::atomic::Ordering::Relaxed);
     if !is_v1 || exit_code != 0 {
         // v4/v5: always send status. v1: only send for non-zero exit (error reporting).
@@ -177,25 +180,17 @@ pub async fn handle_ws_exec(
         };
         let mut status_data = vec![3u8];
         status_data.extend_from_slice(status_json.as_bytes());
-        let _ = socket.send(Message::Binary(status_data.into())).await;
+        let _ = ws_sender.send(Message::Binary(status_data.into())).await;
     }
 
-    // Allow time for the client to read the status message before closing.
-    // Without this delay, the TCP connection may reset before the client
-    // processes channel 3, causing "connection reset by peer" errors.
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-    // Close with a short reason (WebSocket close frames max 125 bytes)
-    let short_reason = if exit_code == 0 {
-        "Success"
-    } else {
-        "NonZeroExitCode"
-    };
+    // Send proper close frame. The client (client-go) expects a 1000 close after
+    // receiving status on channel 3. Wait briefly then close.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let close_frame = axum::extract::ws::CloseFrame {
         code: 1000,
-        reason: short_reason.to_string().into(),
+        reason: "".to_string().into(),
     };
-    let _ = socket.send(Message::Close(Some(close_frame))).await;
+    let _ = ws_sender.send(Message::Close(Some(close_frame))).await;
     debug!("WS exec completed for {}", container_id);
 }
 

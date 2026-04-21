@@ -35,6 +35,7 @@ services:
       context: .
       dockerfile: Dockerfile.api-server
     container_name: rusternetes-api-server
+    privileged: true
     ports:
       - "6443:6443"
     depends_on:
@@ -47,8 +48,9 @@ services:
     volumes:
       # Mount persistent TLS certificates
       - ./.rusternetes/certs:/etc/kubernetes/pki:ro
-      # Podman socket for exec/attach via bollard
+      # Podman socket for exec/attach via bollard (mounted at both paths for compatibility)
       - /run/podman/podman.sock:/run/podman/podman.sock:rw,z
+      - /run/podman/podman.sock:/var/run/docker.sock:rw,z
     environment:
       - RUST_LOG=info
       - DOCKER_HOST=unix:///run/podman/podman.sock

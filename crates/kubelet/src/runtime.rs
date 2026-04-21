@@ -1196,6 +1196,30 @@ impl ContainerRuntime {
                 }
             }
 
+            // Remove dependent containers first (required for Podman which
+            // refuses to remove a container that has dependents).
+            if let Ok(containers) = self
+                .docker
+                .list_containers(Some(bollard::container::ListContainersOptions::<String> {
+                    all: true,
+                    ..Default::default()
+                }))
+                .await
+            {
+                let network_mode_key = format!("container:{}", pause_name);
+                for c in &containers {
+                    let is_dependent = c.host_config.as_ref()
+                        .and_then(|hc| hc.network_mode.as_deref())
+                        .map(|nm| nm == network_mode_key)
+                        .unwrap_or(false);
+                    if is_dependent {
+                        if let Some(id) = &c.id {
+                            let _ = self.docker.stop_container(id, Some(bollard::container::StopContainerOptions { t: 0 })).await;
+                            let _ = self.docker.remove_container(id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await;
+                        }
+                    }
+                }
+            }
             // Pause container exists but is not running — remove it
             let remove_options = RemoveContainerOptions {
                 force: true,
@@ -1339,8 +1363,31 @@ impl ContainerRuntime {
                         "Pause container {} already exists, removing and retrying",
                         pause_name
                     );
-                    // Force stop first, then remove. Docker may not release the name
-                    // immediately if the container is still running.
+                    // Remove dependent containers first (required for Podman which
+                    // refuses to remove a container that has dependents).
+                    if let Ok(containers) = self
+                        .docker
+                        .list_containers(Some(bollard::container::ListContainersOptions::<String> {
+                            all: true,
+                            ..Default::default()
+                        }))
+                        .await
+                    {
+                        let network_mode_key = format!("container:{}", pause_name);
+                        for c in &containers {
+                            let is_dependent = c.host_config.as_ref()
+                                .and_then(|hc| hc.network_mode.as_deref())
+                                .map(|nm| nm == network_mode_key)
+                                .unwrap_or(false);
+                            if is_dependent {
+                                if let Some(id) = &c.id {
+                                    let _ = self.docker.stop_container(id, Some(bollard::container::StopContainerOptions { t: 0 })).await;
+                                    let _ = self.docker.remove_container(id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await;
+                                }
+                            }
+                        }
+                    }
+                    // Force stop the pause container, then remove.
                     let _ = self
                         .docker
                         .stop_container(&pause_name, Some(bollard::container::StopContainerOptions { t: 0 }))
@@ -1357,12 +1404,12 @@ impl ContainerRuntime {
                         .await
                     {
                         Ok(_) => {
-                            // Wait briefly for Docker to release the container name
+                            // Wait briefly for the runtime to release the container name
                             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         }
                         Err(rm_err) => {
                             warn!("Failed to remove pause container {}: {}", pause_name, rm_err);
-                            // Try waiting longer — Docker may still be processing
+                            // Try waiting longer — runtime may still be processing
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
@@ -2052,15 +2099,9 @@ impl ContainerRuntime {
             // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
             let cm_default_mode = configmap_source.default_mode.unwrap_or(0o644);
 
-            // Set directory permissions to match defaultMode
+            // Compute final directory permissions (will be applied after files are written)
             #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &volume_dir,
-                    std::fs::Permissions::from_mode(cm_default_mode as u32 | 0o111),
-                )?;
-            }
+            let cm_dir_mode = cm_default_mode as u32 | 0o111;
 
             match configmap_result {
                 Ok(configmap) => {
@@ -2169,6 +2210,17 @@ impl ContainerRuntime {
                 }
             }
 
+            // Set directory permissions after files are written so that restrictive
+            // defaultMode values don't prevent file creation.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(cm_dir_mode),
+                )?;
+            }
+
             info!("Created ConfigMap volume {} at {}", volume.name, volume_dir);
             return Ok(volume_dir);
         }
@@ -2267,16 +2319,9 @@ impl ContainerRuntime {
             std::fs::create_dir_all(&volume_dir)
                 .context("Failed to create Secret volume directory")?;
 
-            // Set directory permissions to match defaultMode
+            // Compute final directory permissions (will be applied after files are written)
             #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let secret_dir_mode = secret_source.default_mode.unwrap_or(0o644) as u32 | 0o111;
-                std::fs::set_permissions(
-                    &volume_dir,
-                    std::fs::Permissions::from_mode(secret_dir_mode),
-                )?;
-            }
+            let secret_dir_mode = secret_source.default_mode.unwrap_or(0o644) as u32 | 0o111;
 
             let secret = match secret_result {
                 Ok(s) => Some(s),
@@ -2421,6 +2466,17 @@ impl ContainerRuntime {
                         warn!("CA certificate not found at {}, pods may not be able to verify API server", ca_cert_source);
                     }
                 }
+            }
+
+            // Set directory permissions after files are written so that restrictive
+            // defaultMode values (e.g., 0o400) don't prevent file creation.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(secret_dir_mode),
+                )?;
             }
 
             info!("Created Secret volume {} at {}", volume.name, volume_dir);
@@ -2657,15 +2713,9 @@ impl ContainerRuntime {
             // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
             let proj_default_mode = projected.default_mode.unwrap_or(0o644);
 
-            // Set directory permissions to match defaultMode
+            // Compute final directory permissions (will be applied after files are written)
             #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &volume_dir,
-                    std::fs::Permissions::from_mode(proj_default_mode as u32 | 0o111),
-                )?;
-            }
+            let proj_dir_mode = proj_default_mode as u32 | 0o111;
 
             if let Some(sources) = &projected.sources {
                 let storage = self.storage.as_ref();
@@ -2950,6 +3000,17 @@ impl ContainerRuntime {
                         }
                     }
                 }
+            }
+
+            // Set directory permissions after files are written so that restrictive
+            // defaultMode values don't prevent file creation.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(proj_dir_mode),
+                )?;
             }
 
             info!("Created projected volume {} at {}", volume.name, volume_dir);
