@@ -978,6 +978,18 @@ impl Kubelet {
                     running_pod_name
                 );
             }
+            // Re-check etcd before cleanup — a new pod with the same name may have
+            // been created since we fetched the pod list at the start of sync_loop.
+            // Without this check, we'd delete volumes that the new pod needs.
+            let still_orphaned = {
+                let fresh_pods: Vec<Pod> = self.storage.list("/registry/pods/").await.unwrap_or_default();
+                !fresh_pods.iter().any(|p| p.metadata.name == *running_pod_name)
+            };
+            if !still_orphaned {
+                debug!("Pod {} was recreated in etcd — skipping cleanup", running_pod_name);
+                continue;
+            }
+
             info!(
                 "Found orphaned pod {} - not in etcd, stopping and removing containers",
                 running_pod_name
