@@ -5,46 +5,207 @@
 ///
 /// K8s ref: staging/src/k8s.io/kube-aggregator/pkg/controllers/status/remote/remote_available_controller.go
 use anyhow::Result;
+use futures::StreamExt;
 use rusternetes_common::resources::EndpointSlice;
-use rusternetes_storage::{build_prefix, Storage};
+use rusternetes_storage::{build_key, build_prefix, extract_key, Storage, WorkQueue};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct APIServiceAvailabilityController<S: Storage> {
     storage: Arc<S>,
-    interval: Duration,
 }
 
 impl<S: Storage + 'static> APIServiceAvailabilityController<S> {
     pub fn new(storage: Arc<S>) -> Self {
-        Self {
-            storage,
-            interval: Duration::from_secs(10),
-        }
+        Self { storage }
     }
 
-    pub async fn run(&self) -> Result<()> {
-        info!("Starting APIServiceAvailabilityController");
+    /// Work-queue-based run loop. Watch events enqueue resource keys;
+    /// a worker task reconciles one APIService at a time with deduplication
+    /// and exponential backoff on failures.
+    pub async fn run(self: Arc<Self>) -> Result<()> {
+        let queue = WorkQueue::new();
+
+        // Spawn worker
+        let worker_queue = queue.clone();
+        let worker_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            worker_self.worker(worker_queue).await;
+        });
+
+        // Spawn secondary watch for endpointslices — changes to endpoints
+        // affect APIService availability
+        let ep_queue = queue.clone();
+        let ep_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            ep_self.watch_endpointslices(ep_queue).await;
+        });
+
+        // Spawn secondary watch for services
+        let svc_queue = queue.clone();
+        let svc_self = Arc::clone(&self);
+        tokio::spawn(async move {
+            svc_self.watch_services(svc_queue).await;
+        });
+
+        // Primary watch loop: enqueue keys from APIService watch events
         loop {
-            if let Err(e) = self.reconcile_all().await {
-                warn!("APIService availability reconcile error: {}", e);
+            self.enqueue_all(&queue).await;
+
+            let prefix = build_prefix("apiservices", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("APIService watch failed: {}, retrying", e);
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let mut resync = tokio::time::interval(Duration::from_secs(30));
+            resync.tick().await;
+
+            let mut watch_broken = false;
+            while !watch_broken {
+                tokio::select! {
+                    event = watch.next() => {
+                        match event {
+                            Some(Ok(ev)) => {
+                                let key = extract_key(&ev);
+                                queue.add(key).await;
+                            }
+                            Some(Err(e)) => {
+                                warn!("APIService watch error: {}, reconnecting", e);
+                                watch_broken = true;
+                            }
+                            None => {
+                                warn!("APIService watch stream ended, reconnecting");
+                                watch_broken = true;
+                            }
+                        }
+                    }
+                    _ = resync.tick() => {
+                        self.enqueue_all(&queue).await;
+                    }
+                }
             }
-            tokio::time::sleep(self.interval).await;
         }
     }
 
-    async fn reconcile_all(&self) -> Result<()> {
-        let prefix = build_prefix("apiservices", None);
-        let apiservices: Vec<serde_json::Value> =
-            self.storage.list(&prefix).await.unwrap_or_default();
-
-        for apiservice in apiservices {
-            if let Err(e) = self.reconcile_one(&apiservice).await {
-                debug!("Failed to reconcile APIService: {}", e);
+    /// Enqueue all existing APIService keys for reconciliation.
+    async fn enqueue_all(&self, queue: &WorkQueue) {
+        match self
+            .storage
+            .list::<serde_json::Value>("/registry/apiservices/")
+            .await
+        {
+            Ok(apiservices) => {
+                for apiservice in &apiservices {
+                    if let Some(name) = apiservice
+                        .pointer("/metadata/name")
+                        .and_then(|v| v.as_str())
+                    {
+                        queue.add(format!("apiservices/{}", name)).await;
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to list apiservices for enqueue: {}", e);
             }
         }
-        Ok(())
+    }
+
+    /// Watch endpointslices and enqueue all APIServices when endpoints change,
+    /// since endpoint changes can affect APIService availability.
+    async fn watch_endpointslices(&self, queue: WorkQueue) {
+        loop {
+            let prefix = build_prefix("endpointslices", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("EndpointSlice watch failed for apiservice controller: {}", e);
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            loop {
+                match watch.next().await {
+                    Some(Ok(_)) => {
+                        // An endpoint changed — re-check all APIServices
+                        self.enqueue_all(&queue).await;
+                    }
+                    Some(Err(e)) => {
+                        warn!("EndpointSlice watch error in apiservice controller: {}", e);
+                        break;
+                    }
+                    None => {
+                        warn!("EndpointSlice watch ended in apiservice controller, reconnecting");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Watch services and enqueue all APIServices when services change.
+    async fn watch_services(&self, queue: WorkQueue) {
+        loop {
+            let prefix = build_prefix("services", None);
+            let watch_result = self.storage.watch(&prefix).await;
+            let mut watch = match watch_result {
+                Ok(w) => w,
+                Err(e) => {
+                    error!("Service watch failed for apiservice controller: {}", e);
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            loop {
+                match watch.next().await {
+                    Some(Ok(_)) => {
+                        self.enqueue_all(&queue).await;
+                    }
+                    Some(Err(e)) => {
+                        warn!("Service watch error in apiservice controller: {}", e);
+                        break;
+                    }
+                    None => {
+                        warn!("Service watch ended in apiservice controller, reconnecting");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Worker loop: pulls keys from the queue and reconciles one at a time.
+    async fn worker(&self, queue: WorkQueue) {
+        while let Some(key) = queue.get().await {
+            let name = key.strip_prefix("apiservices/").unwrap_or(&key);
+            let storage_key = build_key("apiservices", None, name);
+
+            match self.storage.get::<serde_json::Value>(&storage_key).await {
+                Ok(apiservice) => match self.reconcile_one(&apiservice).await {
+                    Ok(()) => {
+                        queue.forget(&key).await;
+                    }
+                    Err(e) => {
+                        debug!("Failed to reconcile APIService {}: {}", name, e);
+                        queue.requeue_rate_limited(key.clone()).await;
+                    }
+                },
+                Err(_) => {
+                    // APIService was deleted — nothing to reconcile
+                    queue.forget(&key).await;
+                }
+            }
+            queue.done(&key).await;
+        }
     }
 
     async fn reconcile_one(&self, apiservice: &serde_json::Value) -> Result<()> {
@@ -77,21 +238,14 @@ impl<S: Storage + 'static> APIServiceAvailabilityController<S> {
 
         // Check if the backing service exists
         let svc_key = rusternetes_storage::build_key("services", Some(&svc_ns), &svc_name);
-        let svc = match self
-            .storage
-            .get::<serde_json::Value>(&svc_key)
-            .await
-        {
+        let svc = match self.storage.get::<serde_json::Value>(&svc_key).await {
             Ok(s) => s,
             Err(_) => {
                 self.update_condition(
                     name,
                     "False",
                     "ServiceNotFound",
-                    &format!(
-                        "service/{} in \"{}\" is not present",
-                        svc_name, svc_ns
-                    ),
+                    &format!("service/{} in \"{}\" is not present", svc_name, svc_ns),
                 )
                 .await?;
                 return Ok(());
@@ -137,7 +291,6 @@ impl<S: Storage + 'static> APIServiceAvailabilityController<S> {
         }
 
         // Check EndpointSlices for the service
-        // K8s ref: the aggregator checks endpointslices for ready endpoints with the matching port
         let ep_prefix = build_prefix("endpointslices", Some(&svc_ns));
         let all_slices: Vec<EndpointSlice> =
             self.storage.list(&ep_prefix).await.unwrap_or_default();
@@ -171,13 +324,8 @@ impl<S: Storage + 'static> APIServiceAvailabilityController<S> {
                         .unwrap_or(false)
                 });
                 if has_ready {
-                    self.update_condition(
-                        name,
-                        "True",
-                        "Passed",
-                        "all checks passed",
-                    )
-                    .await?;
+                    self.update_condition(name, "True", "Passed", "all checks passed")
+                        .await?;
                     return Ok(());
                 }
             }

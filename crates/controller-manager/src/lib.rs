@@ -221,7 +221,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: ControllerManagerConfig) 
 
     let s = storage.clone();
     tokio::spawn(async move {
-        let c = APIServiceAvailabilityController::new(s);
+        let c = Arc::new(APIServiceAvailabilityController::new(s));
         if let Err(e) = c.run().await { error!("APIService availability controller error: {}", e); }
     });
 

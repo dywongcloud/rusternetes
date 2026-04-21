@@ -140,7 +140,7 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
         },
         // Set last_schedule_time to 2 minutes ago so it's eligible to run
         status: Some(CronJobStatus {
-            active: None,
+            active: Vec::new(),
             last_schedule_time: Some(chrono::Utc::now() - chrono::Duration::minutes(2)),
             last_successful_time: None,
         }),
