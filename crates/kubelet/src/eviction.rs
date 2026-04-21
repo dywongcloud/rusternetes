@@ -585,19 +585,8 @@ fn get_pid_stats() -> (u64, u64) {
 
 /// Get pod resource usage statistics
 /// Queries the container runtime for actual resource usage
-pub fn get_pod_stats(pods: &[Pod]) -> HashMap<String, PodStats> {
-    use tokio::runtime::Runtime;
-
-    // Create a runtime for async operations
-    let rt = match Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => {
-            warn!("Failed to create runtime for pod stats: {}", e);
-            return HashMap::new();
-        }
-    };
-
-    rt.block_on(async { get_pod_stats_async(pods).await })
+pub async fn get_pod_stats(pods: &[Pod]) -> HashMap<String, PodStats> {
+    get_pod_stats_async(pods).await
 }
 
 /// Async implementation of pod stats gathering

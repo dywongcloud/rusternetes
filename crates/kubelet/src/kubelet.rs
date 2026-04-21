@@ -3478,7 +3478,7 @@ impl Kubelet {
             .collect();
 
         // Get pod resource usage statistics
-        let pod_stats = get_pod_stats(&node_pods);
+        let pod_stats = get_pod_stats(&node_pods).await;
 
         // For each active signal, select pods for eviction
         for signal in signals {
