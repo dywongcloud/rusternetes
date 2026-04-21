@@ -7327,6 +7327,115 @@ impl ContainerRuntime {
         Ok(stale)
     }
 
+    /// Collect CPU and memory usage for all containers belonging to pods on this node.
+    /// Returns (cpu_millicores, memory_bytes).
+    pub async fn collect_node_metrics(&self, pod_names: &[String]) -> (u64, u64) {
+        use futures::StreamExt;
+
+        if pod_names.is_empty() {
+            return (0, 0);
+        }
+
+        let opts = ListContainersOptions::<String> {
+            all: false,
+            ..Default::default()
+        };
+
+        let containers = match self.docker.list_containers(Some(opts)).await {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Failed to list containers for metrics: {}", e);
+                return (0, 0);
+            }
+        };
+
+        // Match containers to pods by name prefix ({pod_name}_{container_name})
+        // Skip pause containers — they have minimal resource usage
+        let node_containers: Vec<_> = containers.iter().filter(|c| {
+            if let Some(names) = &c.names {
+                for name in names {
+                    let clean = name.trim_start_matches('/');
+                    if clean.ends_with("_pause") {
+                        return false;
+                    }
+                    for pod_name in pod_names {
+                        if clean.starts_with(pod_name) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }).collect();
+
+        if node_containers.is_empty() {
+            return (0, 0);
+        }
+
+        // Collect stats from all containers in parallel
+        let mut stat_futures = Vec::new();
+        for container in &node_containers {
+            if let Some(id) = &container.id {
+                let id_clone = id.clone();
+                let docker_ref = &self.docker;
+                stat_futures.push(async move {
+                    let stats_opts = bollard::container::StatsOptions {
+                        stream: true,
+                        one_shot: false,
+                    };
+                    let mut stream = docker_ref.stats(&id_clone, Some(stats_opts));
+                    // Skip first sample (precpu_stats may be zeros), use second
+                    let _ = stream.next().await;
+                    let second = stream.next().await;
+                    drop(stream);
+                    second
+                });
+            }
+        }
+
+        let results = futures::future::join_all(stat_futures).await;
+
+        let mut total_memory_bytes: u64 = 0;
+        let mut total_cpu_pct: f64 = 0.0;
+
+        for result in results {
+            if let Some(Ok(stats)) = result {
+                // Memory: usage minus cache
+                if let Some(usage) = stats.memory_stats.usage {
+                    let cache = stats.memory_stats.stats
+                        .as_ref()
+                        .map(|s| match s {
+                            bollard::container::MemoryStatsStats::V1(v1) => v1.cache,
+                            bollard::container::MemoryStatsStats::V2(v2) => v2.inactive_file,
+                        })
+                        .unwrap_or(0);
+                    total_memory_bytes += usage.saturating_sub(cache);
+                }
+
+                // CPU: delta between current and previous sample
+                let total_usage = stats.cpu_stats.cpu_usage.total_usage;
+                if let Some(system_cpu) = stats.cpu_stats.system_cpu_usage {
+                    let prev_total = stats.precpu_stats.cpu_usage.total_usage;
+                    let prev_system = stats.precpu_stats.system_cpu_usage.unwrap_or(0);
+                    let cpu_delta = total_usage.saturating_sub(prev_total);
+                    let system_delta = system_cpu.saturating_sub(prev_system);
+                    if system_delta > 0 {
+                        let num_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as u64;
+                        total_cpu_pct += (cpu_delta as f64 / system_delta as f64) * num_cpus as f64 * 100.0;
+                    }
+                }
+            }
+        }
+
+        // Convert CPU percentage to millicores (1 core = 1000m, so 3.5% = 35m)
+        let cpu_millicores = (total_cpu_pct * 10.0) as u64;
+
+        debug!("Node metrics: {}m CPU, {} bytes memory ({} containers from {} pods)",
+            cpu_millicores, total_memory_bytes, node_containers.len(), pod_names.len());
+
+        (cpu_millicores, total_memory_bytes)
+    }
+
     /// Remove a container by ID
     pub async fn remove_container(&self, container_id: &str) -> Result<()> {
         self.docker

@@ -584,6 +584,9 @@ impl Kubelet {
 
         self.storage.update(&key, &node).await?;
 
+        // Collect and publish node metrics to storage
+        self.publish_node_metrics().await;
+
         // If eviction is needed, trigger pod eviction
         if !active_signals.is_empty() {
             if let Err(e) = self.handle_eviction(&active_signals).await {
@@ -651,6 +654,65 @@ impl Kubelet {
         }
 
         Ok(())
+    }
+
+    /// Collect container metrics from the runtime and write NodeMetrics to storage.
+    /// The api-server reads these to serve the metrics.k8s.io API.
+    async fn publish_node_metrics(&self) {
+        use rusternetes_common::resources::{NodeMetrics, NodeMetricsMetadata};
+        use std::collections::BTreeMap;
+
+        // Get pods assigned to this node
+        let all_pods: Vec<Pod> = self
+            .storage
+            .list(&build_prefix("pods", None))
+            .await
+            .unwrap_or_default();
+
+        let pod_names: Vec<String> = all_pods
+            .iter()
+            .filter(|p| {
+                p.spec
+                    .as_ref()
+                    .and_then(|s| s.node_name.as_deref())
+                    .map(|n| n == self.node_name)
+                    .unwrap_or(false)
+            })
+            .map(|p| p.metadata.name.clone())
+            .collect();
+
+        let (cpu_millicores, memory_bytes) = self.runtime.collect_node_metrics(&pod_names).await;
+        let memory_mi = memory_bytes / (1024 * 1024);
+
+        let mut usage = BTreeMap::new();
+        usage.insert("cpu".to_string(), format!("{}m", cpu_millicores));
+        usage.insert("memory".to_string(), format!("{}Mi", memory_mi));
+
+        let metrics = NodeMetrics {
+            api_version: "metrics.k8s.io/v1beta1".to_string(),
+            kind: "NodeMetrics".to_string(),
+            metadata: NodeMetricsMetadata {
+                name: self.node_name.clone(),
+                creation_timestamp: Some(chrono::Utc::now()),
+            },
+            timestamp: chrono::Utc::now(),
+            window: "30s".to_string(),
+            usage,
+        };
+
+        let metrics_key = format!("/registry/metrics.k8s.io/nodes/{}", self.node_name);
+        match self.storage.get::<NodeMetrics>(&metrics_key).await {
+            Ok(_) => {
+                if let Err(e) = self.storage.update(&metrics_key, &metrics).await {
+                    debug!("Failed to update node metrics: {}", e);
+                }
+            }
+            Err(_) => {
+                if let Err(e) = self.storage.create(&metrics_key, &metrics).await {
+                    debug!("Failed to create node metrics: {}", e);
+                }
+            }
+        }
     }
 
     async fn sync_loop(self: &Arc<Self>) -> Result<()> {

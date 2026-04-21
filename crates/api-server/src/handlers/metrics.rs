@@ -14,169 +14,10 @@ use rusternetes_common::{
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::debug;
 
-/// Connect to Docker or Podman, whichever is available.
-fn connect_container_runtime() -> std::result::Result<bollard::Docker, bollard::errors::Error> {
-    // Try Docker first (default socket)
-    if let Ok(d) = bollard::Docker::connect_with_local_defaults() {
-        return Ok(d);
-    }
-
-    // Try Podman socket (rootless) — get UID from environment or /proc
-    let uid = std::env::var("UID")
-        .or_else(|_| std::env::var("EUID"))
-        .unwrap_or_else(|_| "1000".to_string());
-    let podman_socket = format!("/run/user/{}/podman/podman.sock", uid);
-    if std::path::Path::new(&podman_socket).exists() {
-        if let Ok(d) = bollard::Docker::connect_with_socket(&podman_socket, 120, &bollard::API_DEFAULT_VERSION) {
-            return Ok(d);
-        }
-    }
-
-    // Try Podman socket (rootful)
-    let podman_root = "/run/podman/podman.sock";
-    if std::path::Path::new(podman_root).exists() {
-        if let Ok(d) = bollard::Docker::connect_with_socket(podman_root, 120, &bollard::API_DEFAULT_VERSION) {
-            return Ok(d);
-        }
-    }
-
-    // Last resort — try Docker default again and let it fail with a real error
-    bollard::Docker::connect_with_local_defaults()
-}
-
-/// Collect real CPU/memory usage for containers belonging to pods on a specific node.
-/// Uses pod-to-node mapping from K8s storage, then queries Docker stats for matching containers.
-async fn collect_node_usage<S: Storage>(
-    storage: &S,
-    node_name: &str,
-) -> (String, String) {
-    // 1. Find all pods scheduled to this node
-    let all_pods: Vec<rusternetes_common::resources::Pod> =
-        Storage::list(storage, "/registry/pods/").await.unwrap_or_default();
-
-    let node_pod_names: Vec<String> = all_pods
-        .iter()
-        .filter(|p| {
-            p.spec.as_ref()
-                .and_then(|s| s.node_name.as_deref())
-                .map(|n| n == node_name)
-                .unwrap_or(false)
-        })
-        .map(|p| p.metadata.name.clone())
-        .collect();
-
-    if node_pod_names.is_empty() {
-        return ("0m".to_string(), "0Mi".to_string());
-    }
-
-    // 2. Connect to container runtime (Docker or Podman)
-    let docker = match connect_container_runtime() {
-        Ok(d) => d,
-        Err(_) => return ("0m".to_string(), "0Mi".to_string()),
-    };
-
-    let opts = bollard::container::ListContainersOptions::<String> {
-        all: false,
-        ..Default::default()
-    };
-
-    let containers = match docker.list_containers(Some(opts)).await {
-        Ok(c) => c,
-        Err(_) => return ("0m".to_string(), "0Mi".to_string()),
-    };
-
-    // 3. Match Docker containers to pods on this node by name prefix
-    //    Container names follow the pattern: {pod_name}_{container_name}
-    let node_containers: Vec<_> = containers.iter().filter(|c| {
-        if let Some(names) = &c.names {
-            for name in names {
-                let clean = name.trim_start_matches('/');
-                for pod_name in &node_pod_names {
-                    if clean.starts_with(pod_name) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
-    }).collect();
-
-    if node_containers.is_empty() {
-        return ("0m".to_string(), "0Mi".to_string());
-    }
-
-    // 4. Get stats using stream mode — take 2 samples per container for valid CPU deltas.
-    //    All containers sampled in parallel to keep latency ~1s total.
-    let mut total_memory_bytes: u64 = 0;
-    let mut total_cpu_pct: f64 = 0.0;
-
-    // Collect two stats samples per container in parallel
-    let mut stat_futures = Vec::new();
-    for container in &node_containers {
-        if let Some(id) = &container.id {
-            let docker_ref = &docker;
-            let id_clone = id.clone();
-            stat_futures.push(async move {
-                use futures::StreamExt;
-                let stats_opts = bollard::container::StatsOptions {
-                    stream: true,
-                    one_shot: false,
-                };
-                let mut stream = docker_ref.stats(&id_clone, Some(stats_opts));
-                // Skip first sample (precpu_stats are zeros), use second
-                let _ = stream.next().await;
-                let second = stream.next().await;
-                // Drop the stream to stop Docker from sending more
-                drop(stream);
-                second
-            });
-        }
-    }
-
-    let results = futures::future::join_all(stat_futures).await;
-
-    for result in results {
-        if let Some(Ok(stats)) = result {
-            // Memory: direct usage value
-            if let Some(usage) = stats.memory_stats.usage {
-                let cache = stats.memory_stats.stats
-                    .as_ref()
-                    .map(|s| match s {
-                        bollard::container::MemoryStatsStats::V1(v1) => v1.cache,
-                        bollard::container::MemoryStatsStats::V2(v2) => v2.inactive_file,
-                    })
-                    .unwrap_or(0);
-                total_memory_bytes += usage.saturating_sub(cache);
-            }
-
-            // CPU: delta between second and first sample gives real usage
-            let total_usage = stats.cpu_stats.cpu_usage.total_usage;
-            if let Some(system_cpu) = stats.cpu_stats.system_cpu_usage {
-                let prev_total = stats.precpu_stats.cpu_usage.total_usage;
-                let prev_system = stats.precpu_stats.system_cpu_usage.unwrap_or(0);
-                let cpu_delta = total_usage.saturating_sub(prev_total);
-                let system_delta = system_cpu.saturating_sub(prev_system);
-                if system_delta > 0 {
-                    let num_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as u64;
-                    total_cpu_pct += (cpu_delta as f64 / system_delta as f64) * num_cpus as f64 * 100.0;
-                }
-            }
-        }
-    }
-
-    // Convert CPU percentage to millicores (1 core = 1000m, so 3.5% = 35m)
-    let cpu_millicores = (total_cpu_pct * 10.0) as u64;
-    let memory_mi = total_memory_bytes / (1024 * 1024);
-
-    debug!("Node {} real metrics: {}m CPU, {}Mi memory ({} containers on {} pods)",
-        node_name, cpu_millicores, memory_mi, node_containers.len(), node_pod_names.len());
-
-    (format!("{}m", cpu_millicores), format!("{}Mi", memory_mi))
-}
-
-/// Get metrics for a specific node
+/// Get metrics for a specific node.
+/// Reads metrics published to storage by the kubelet.
 pub async fn get_node_metrics(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
@@ -184,7 +25,6 @@ pub async fn get_node_metrics(
 ) -> Result<Json<NodeMetrics>> {
     debug!("Getting node metrics: {}", name);
 
-    // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "get", "nodes")
         .with_api_group("metrics.k8s.io")
         .with_subresource("metrics")
@@ -198,35 +38,38 @@ pub async fn get_node_metrics(
     let node_key = build_key("nodes", None, &name);
     let _node: rusternetes_common::resources::Node = state.storage.as_ref().get(&node_key).await?;
 
-    // Query real container stats from Docker, mapped by pod-to-node assignment
-    let (cpu, memory) = collect_node_usage(state.storage.as_ref(), &name).await;
-    let mut usage = BTreeMap::new();
-    usage.insert("cpu".to_string(), cpu);
-    usage.insert("memory".to_string(), memory);
-
-    let metrics = NodeMetrics {
-        api_version: "metrics.k8s.io/v1beta1".to_string(),
-        kind: "NodeMetrics".to_string(),
-        metadata: NodeMetricsMetadata {
-            name,
-            creation_timestamp: Some(Utc::now()),
-        },
-        timestamp: Utc::now(),
-        window: "30s".to_string(),
-        usage,
-    };
-
-    Ok(Json(metrics))
+    // Read metrics from storage (written by the kubelet)
+    let metrics_key = format!("/registry/metrics.k8s.io/nodes/{}", name);
+    match state.storage.as_ref().get::<NodeMetrics>(&metrics_key).await {
+        Ok(metrics) => Ok(Json(metrics)),
+        Err(_) => {
+            // No metrics yet — return zeros
+            let mut usage = BTreeMap::new();
+            usage.insert("cpu".to_string(), "0m".to_string());
+            usage.insert("memory".to_string(), "0Mi".to_string());
+            Ok(Json(NodeMetrics {
+                api_version: "metrics.k8s.io/v1beta1".to_string(),
+                kind: "NodeMetrics".to_string(),
+                metadata: NodeMetricsMetadata {
+                    name,
+                    creation_timestamp: Some(Utc::now()),
+                },
+                timestamp: Utc::now(),
+                window: "30s".to_string(),
+                usage,
+            }))
+        }
+    }
 }
 
-/// List metrics for all nodes
+/// List metrics for all nodes.
+/// Reads metrics published to storage by the kubelets.
 pub async fn list_node_metrics(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
 ) -> Result<Json<List<NodeMetrics>>> {
     debug!("Listing node metrics");
 
-    // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "list", "nodes")
         .with_api_group("metrics.k8s.io")
         .with_subresource("metrics");
@@ -235,34 +78,41 @@ pub async fn list_node_metrics(
         return Err(rusternetes_common::Error::Forbidden(reason));
     }
 
-    // Get all nodes
-    let nodes_prefix = build_prefix("nodes", None);
-    let nodes: Vec<rusternetes_common::resources::Node> =
-        state.storage.as_ref().list(&nodes_prefix).await?;
-    let mut metrics_list = Vec::new();
+    // Read all node metrics from storage
+    let metrics: Vec<NodeMetrics> = state
+        .storage
+        .as_ref()
+        .list("/registry/metrics.k8s.io/nodes/")
+        .await
+        .unwrap_or_default();
 
-    for node in nodes {
-        // Query real container stats from Docker/Podman, mapped by pod-to-node assignment
-        let (cpu, memory) = collect_node_usage(state.storage.as_ref(), &node.metadata.name).await;
-        let mut usage = BTreeMap::new();
-        usage.insert("cpu".to_string(), cpu);
-        usage.insert("memory".to_string(), memory);
-
-        let metrics = NodeMetrics {
-            api_version: "metrics.k8s.io/v1beta1".to_string(),
-            kind: "NodeMetrics".to_string(),
-            metadata: NodeMetricsMetadata {
-                name: node.metadata.name.clone(),
-                creation_timestamp: Some(Utc::now()),
-            },
-            timestamp: Utc::now(),
-            window: "30s".to_string(),
-            usage,
-        };
-        metrics_list.push(metrics);
+    // If no metrics in storage yet, return empty entries for each node
+    if metrics.is_empty() {
+        let nodes_prefix = build_prefix("nodes", None);
+        let nodes: Vec<rusternetes_common::resources::Node> =
+            state.storage.as_ref().list(&nodes_prefix).await?;
+        let mut metrics_list = Vec::new();
+        for node in nodes {
+            let mut usage = BTreeMap::new();
+            usage.insert("cpu".to_string(), "0m".to_string());
+            usage.insert("memory".to_string(), "0Mi".to_string());
+            metrics_list.push(NodeMetrics {
+                api_version: "metrics.k8s.io/v1beta1".to_string(),
+                kind: "NodeMetrics".to_string(),
+                metadata: NodeMetricsMetadata {
+                    name: node.metadata.name.clone(),
+                    creation_timestamp: Some(Utc::now()),
+                },
+                timestamp: Utc::now(),
+                window: "30s".to_string(),
+                usage,
+            });
+        }
+        let list = List::new("NodeMetricsList", "metrics.k8s.io/v1beta1", metrics_list);
+        return Ok(Json(list));
     }
 
-    let list = List::new("NodeMetricsList", "metrics.k8s.io/v1beta1", metrics_list);
+    let list = List::new("NodeMetricsList", "metrics.k8s.io/v1beta1", metrics);
     Ok(Json(list))
 }
 
