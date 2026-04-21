@@ -121,9 +121,9 @@
       </p>
       <p><strong>Fix:</strong></p>
       <ul>
-        <li>Restart kube-proxy: <code>podman compose restart kube-proxy</code></li>
-        <li>Verify rules are installed: <code>podman compose exec kube-proxy iptables -t nat -L KUBE-SERVICES</code></li>
-        <li>Check kube-proxy logs for sync errors: <code>podman compose logs kube-proxy</code></li>
+        <li>Restart kube-proxy: <code>podman compose -f compose.yml restart kube-proxy</code></li>
+        <li>Verify rules are installed: <code>podman compose -f compose.yml exec kube-proxy iptables -t nat -L KUBE-SERVICES</code></li>
+        <li>Check kube-proxy logs for sync errors: <code>podman compose -f compose.yml logs kube-proxy</code></li>
       </ul>
 
       <h2>"Watch failed: context canceled"</h2>
@@ -141,7 +141,7 @@
         <li>Ensure the API server's TLS configuration includes ALPN protocols:
           <code>alpn_protocols = [b"h2", b"http/1.1"]</code></li>
         <li>Regenerate TLS certificates if needed: <code>bash scripts/generate-certs.sh</code></li>
-        <li>Restart the API server: <code>podman compose restart api-server</code></li>
+        <li>Restart the API server: <code>podman compose -f compose.yml restart api-server</code></li>
       </ul>
 
       <div class="admonition note">
@@ -212,8 +212,8 @@ kubectl get nodes
 kubectl describe node node-1 | grep -A5 Taints
 
 <span class="comment"># Check scheduler is running</span>
-podman compose ps scheduler
-podman compose logs scheduler
+podman compose -f compose.yml ps scheduler
+podman compose -f compose.yml logs scheduler
 
 <span class="comment"># Describe the pod to see scheduling events</span>
 kubectl describe pod &lt;pod-name&gt;</code>
@@ -292,7 +292,7 @@ kubectl get sc <span class="flag">-o</span> jsonpath='{.items[?(@.metadata.annot
 
       <h2>"Port already in use" on startup</h2>
       <p>
-        <strong>Symptom:</strong> <code>podman compose up</code> fails with
+        <strong>Symptom:</strong> <code>podman compose -f compose.yml up</code> fails with
         <code>bind: address already in use</code> on port 6443 or 2379.
       </p>
       <p>
@@ -315,7 +315,7 @@ lsof <span class="flag">-i</span> :6443
 lsof <span class="flag">-i</span> :2379
 
 <span class="comment"># Stop a previous Rūsternetes cluster</span>
-podman compose down
+podman compose -f compose.yml down
 
 <span class="comment"># Or change the port mapping in compose.yml</span>
 <span class="comment"># ports: "7443:6443"</span></code>
@@ -338,10 +338,10 @@ podman compose down
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Check all services are running</span>
-podman compose ps
+podman compose -f compose.yml ps
 
 <span class="comment"># Check API server logs</span>
-podman compose logs api-server
+podman compose -f compose.yml logs api-server
 
 <span class="comment"># Verify TLS certs exist</span>
 ls -la .rusternetes/certs/
@@ -351,14 +351,14 @@ echo $KUBECONFIG
 <span class="comment"># Should be: ~/.kube/rusternetes-config</span>
 
 <span class="comment"># Full restart</span>
-podman compose down
-podman compose up <span class="flag">-d</span>
+podman compose -f compose.yml down
+podman compose -f compose.yml up <span class="flag">-d</span>
 bash scripts/bootstrap-cluster.sh</code>
       </pre>
 
       <h2>Build is slow</h2>
       <p>
-        <strong>Symptom:</strong> <code>podman compose build</code> takes 10&ndash;15 minutes.
+        <strong>Symptom:</strong> <code>podman compose -f compose.yml build</code> takes 10&ndash;15 minutes.
         Test binary compilation takes 5&ndash;10 minutes.
       </p>
       <p>
@@ -369,7 +369,7 @@ bash scripts/bootstrap-cluster.sh</code>
       <p><strong>Fix:</strong></p>
       <ul>
         <li>Allocate more CPUs and memory to your container runtime</li>
-        <li>Rebuild only the changed service: <code>podman compose build api-server</code></li>
+        <li>Rebuild only the changed service: <code>podman compose -f compose.yml build api-server</code></li>
         <li>Build natively for faster iteration: <code>cargo build</code></li>
         <li>Use <code>cargo test -p rusternetes-kubelet</code> to test a single crate instead of the entire workspace</li>
       </ul>
@@ -444,24 +444,24 @@ kubectl get events <span class="flag">--sort-by</span>='.lastTimestamp'
 kubectl get events <span class="flag">-A</span> <span class="flag">--sort-by</span>='.lastTimestamp'
 
 <span class="comment"># View Docker Compose service logs</span>
-podman compose logs <span class="flag">-f</span> api-server
-podman compose logs <span class="flag">-f</span> scheduler
-podman compose logs <span class="flag">-f</span> controller-manager
-podman compose logs <span class="flag">-f</span> kubelet
-podman compose logs <span class="flag">-f</span> kube-proxy
+podman compose -f compose.yml logs <span class="flag">-f</span> api-server
+podman compose -f compose.yml logs <span class="flag">-f</span> scheduler
+podman compose -f compose.yml logs <span class="flag">-f</span> controller-manager
+podman compose -f compose.yml logs <span class="flag">-f</span> kubelet
+podman compose -f compose.yml logs <span class="flag">-f</span> kube-proxy
 
 <span class="comment"># Enable debug logging for a service</span>
-RUST_LOG=<span class="value">debug</span> podman compose up api-server
+RUST_LOG=<span class="value">debug</span> podman compose -f compose.yml up api-server
 
 <span class="comment"># Check service health</span>
-podman compose ps
+podman compose -f compose.yml ps
 curl <span class="flag">-k</span> https://localhost:6443/healthz
 
 <span class="comment"># Check iptables rules (kube-proxy)</span>
-podman compose exec kube-proxy iptables <span class="flag">-t</span> nat <span class="flag">-L</span> KUBE-SERVICES
+podman compose -f compose.yml exec kube-proxy iptables <span class="flag">-t</span> nat <span class="flag">-L</span> KUBE-SERVICES
 
 <span class="comment"># Check etcd health</span>
-podman compose exec etcd etcdctl endpoint health</code>
+podman compose -f compose.yml exec etcd etcdctl endpoint health</code>
       </pre>
 
       <div class="doc-pager">

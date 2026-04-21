@@ -273,7 +273,7 @@ bash scripts/conformance-progress.sh
 
 <span class="comment"># View raw e2e output (inside the e2e container)</span>
 <span class="comment"># Log location: /tmp/sonobuoy/results/e2e.log</span>
-podman compose exec e2e tail <span class="flag">-f</span> /tmp/sonobuoy/results/e2e.log</code>
+podman compose -f compose.yml exec e2e tail <span class="flag">-f</span> /tmp/sonobuoy/results/e2e.log</code>
       </pre>
 
       <div class="admonition tip">

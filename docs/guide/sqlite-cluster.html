@@ -421,14 +421,14 @@ FROM pragma_page_count(), pragma_page_size();
         </div>
         <code>
 <span class="comment"># Stop the etcd cluster</span>
-podman compose down
+podman compose -f compose.yml down
 
 <span class="comment"># Start with SQLite instead</span>
 podman compose -f compose.sqlite.yml up -d
 
 <span class="comment"># Or switch back to etcd</span>
 podman compose -f compose.sqlite.yml down
-podman compose up -d
+podman compose -f compose.yml up -d
 </code>
       </pre>
 
@@ -456,7 +456,7 @@ podman compose up -d
           <tr>
             <td>API server can't connect to storage</td>
             <td>Rhino not ready yet</td>
-            <td>The api-server retries on startup. Check <code>podman compose logs rhino</code> for errors.</td>
+            <td>The api-server retries on startup. Check <code>podman compose -f compose.sqlite.yml logs rhino</code> for errors.</td>
           </tr>
           <tr>
             <td>Watch events not delivered</td>

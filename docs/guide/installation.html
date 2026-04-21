@@ -266,7 +266,7 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
       <h2>Docker Images</h2>
       <p>
         Each component has its own Dockerfile for containerized deployment. The
-        <code>podman compose build</code> command builds all of them.
+        <code>podman compose -f compose.yml build</code> command builds all of them.
       </p>
 
       <table>
@@ -331,7 +331,7 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Build a single image</span>
-podman compose build api-server
+podman compose -f compose.yml build api-server
 
 <span class="comment"># Build the all-in-one image directly</span>
 podman build <span class="flag">-t</span> <span class="value">rusternetes:latest</span> <span class="flag">-f</span> <span class="value">Dockerfile</span> .</code>
@@ -516,7 +516,7 @@ newgrp docker</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Run with rootful Podman</span>
-sudo podman compose up -d</code>
+sudo podman compose -f compose.yml up -d</code>
       </pre>
 
       <h3>Build dependencies</h3>

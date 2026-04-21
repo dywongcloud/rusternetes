@@ -160,7 +160,7 @@ curl <span class="flag">-k</span> https://localhost:6443/readyz
         <div class="admonition-title">Docker health checks</div>
         <p>
           The <code>compose file</code> uses these endpoints for container health checks.
-          Run <code>podman compose ps</code> to see the health status of each service.
+          Run <code>podman compose -f compose.yml ps</code> to see the health status of each service.
         </p>
       </div>
 
@@ -336,20 +336,20 @@ export RUST_LOG=<span class="value">rusternetes_api_server=debug,rusternetes_sch
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Follow logs from all services</span>
-podman compose logs <span class="flag">-f</span>
+podman compose -f compose.yml logs <span class="flag">-f</span>
 
 <span class="comment"># Follow logs from a single component</span>
-podman compose logs <span class="flag">-f</span> api-server
-podman compose logs <span class="flag">-f</span> kubelet
-podman compose logs <span class="flag">-f</span> scheduler
-podman compose logs <span class="flag">-f</span> controller-manager
-podman compose logs <span class="flag">-f</span> kube-proxy
+podman compose -f compose.yml logs <span class="flag">-f</span> api-server
+podman compose -f compose.yml logs <span class="flag">-f</span> kubelet
+podman compose -f compose.yml logs <span class="flag">-f</span> scheduler
+podman compose -f compose.yml logs <span class="flag">-f</span> controller-manager
+podman compose -f compose.yml logs <span class="flag">-f</span> kube-proxy
 
 <span class="comment"># Show last 100 lines from the API server</span>
-podman compose logs <span class="flag">--tail</span> <span class="value">100</span> api-server
+podman compose -f compose.yml logs <span class="flag">--tail</span> <span class="value">100</span> api-server
 
 <span class="comment"># Show logs with timestamps</span>
-podman compose logs <span class="flag">-f</span> <span class="flag">-t</span> api-server</code>
+podman compose -f compose.yml logs <span class="flag">-f</span> <span class="flag">-t</span> api-server</code>
       </pre>
 
       <h3>Enabling debug logging in Docker Compose</h3>
@@ -385,11 +385,11 @@ podman compose logs <span class="flag">-f</span> <span class="flag">-t</span> ap
 
       <h2>Monitoring Checklist</h2>
       <ul>
-        <li>Verify all services are healthy: <code>podman compose ps</code></li>
+        <li>Verify all services are healthy: <code>podman compose -f compose.yml ps</code></li>
         <li>Check API server readiness: <code>curl -k https://localhost:6443/readyz</code></li>
         <li>Verify nodes are reporting: <code>kubectl get nodes</code></li>
         <li>Check pod scheduling: <code>kubectl get pods -A</code></li>
-        <li>Monitor component logs: <code>podman compose logs -f</code></li>
+        <li>Monitor component logs: <code>podman compose -f compose.yml logs -f</code></li>
         <li>Scrape Prometheus metrics for dashboards and alerting</li>
       </ul>
 

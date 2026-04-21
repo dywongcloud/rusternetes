@@ -210,13 +210,13 @@
           <div class="feature-icon">&#9881;</div>
           <h3>Multi-Node with etcd</h3>
           <p>The standard production deployment. Separate containers for each component, backed by an etcd cluster with Raft consensus. High availability with leader election, multi-master, and horizontal scaling.</p>
-          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>docker compose up -d</code></pre>
+          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>podman compose -f compose.yml up -d</code></pre>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#128256;</div>
           <h3>Swap the Database</h3>
           <p>Don't want to run etcd? Drop in <a href="https://github.com/calfonso/rhino" style="color: #e8a058;">Rhino</a> &mdash; an etcd-compatible gRPC server backed by SQLite, PostgreSQL, or MySQL. Same Kubernetes API, same binaries, zero etcd infrastructure. Just change the compose file.</p>
-          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>docker compose -f docker-compose.sqlite.yml up -d</code></pre>
+          <pre style="font-size: 0.85em; margin-top: 0.5em; color: #b8a088;"><code>podman compose -f compose.sqlite.yml up -d</code></pre>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#128640;</div>
@@ -375,7 +375,7 @@
   <section id="quickstart" class="section section-alt">
     <div class="section-inner">
       <h2>Quick Start</h2>
-      <p class="section-sub">Get a local cluster running in minutes with Docker Compose.</p>
+      <p class="section-sub">Get a local cluster running in minutes with Podman or Docker Compose.</p>
       <div class="code-block">
         <div class="code-header">
           <span class="code-dot red"></span>
@@ -388,10 +388,10 @@ git clone https://github.com/calfonso/rusternetes.git
 cd rusternetes
 cargo build --release
 
-<span class="comment"># Start the cluster with Docker Compose</span>
+<span class="comment"># Start the cluster</span>
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build
-docker compose up -d
+podman compose -f compose.yml build   <span class="comment"># or: docker compose -f docker-compose.yml build</span>
+podman compose -f compose.yml up -d   <span class="comment"># or: docker compose -f docker-compose.yml up -d</span>
 
 <span class="comment"># Bootstrap CoreDNS, services, and SA tokens</span>
 bash scripts/bootstrap-cluster.sh

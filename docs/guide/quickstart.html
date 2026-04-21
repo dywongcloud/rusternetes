@@ -195,7 +195,7 @@ mkdir -p $KUBELET_VOLUMES_PATH</code>
           <span class="code-dot green"></span>
           <span class="code-title">terminal</span>
         </div>
-        <code>podman compose build   <span class="comment"># or: docker compose build</span></code>
+        <code>podman compose -f compose.yml build   <span class="comment"># or: docker compose -f docker-compose.yml build</span></code>
       </pre>
 
       <h3>4. Start the cluster</h3>
@@ -207,7 +207,7 @@ mkdir -p $KUBELET_VOLUMES_PATH</code>
           <span class="code-dot green"></span>
           <span class="code-title">terminal</span>
         </div>
-        <code>podman compose up -d   <span class="comment"># or: docker compose up -d</span></code>
+        <code>podman compose -f compose.yml up -d   <span class="comment"># or: docker compose -f docker-compose.yml up -d</span></code>
       </pre>
 
       <p>
@@ -358,12 +358,12 @@ kubectl get pods -w</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># All services</span>
-podman compose logs -f
+podman compose -f compose.yml logs -f
 
 <span class="comment"># Single service</span>
-podman compose logs -f api-server
-podman compose logs -f kubelet
-podman compose logs -f scheduler</code>
+podman compose -f compose.yml logs -f api-server
+podman compose -f compose.yml logs -f kubelet
+podman compose -f compose.yml logs -f scheduler</code>
       </pre>
 
       <h3>Rebuild after code changes</h3>
@@ -376,12 +376,12 @@ podman compose logs -f scheduler</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Rebuild and restart a single service</span>
-podman compose build api-server
-podman compose up -d api-server
+podman compose -f compose.yml build api-server
+podman compose -f compose.yml up -d api-server
 
 <span class="comment"># Rebuild everything</span>
-podman compose build
-podman compose up -d</code>
+podman compose -f compose.yml build
+podman compose -f compose.yml up -d</code>
       </pre>
 
       <h3>Stop the cluster</h3>
@@ -394,10 +394,10 @@ podman compose up -d</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Stop containers (preserves data)</span>
-podman compose down
+podman compose -f compose.yml down
 
 <span class="comment"># Stop and delete all data (clean restart)</span>
-podman compose down -v</code>
+podman compose -f compose.yml down -v</code>
       </pre>
 
       <h3>Clean restart</h3>
@@ -413,11 +413,11 @@ podman compose down -v</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Remove containers, volumes, and orphan pod containers</span>
-podman compose down -v
+podman compose -f compose.yml down -v
 podman rm -f $(podman ps -aq --filter "label=rusternetes") 2>/dev/null || true
 
 <span class="comment"># Start fresh</span>
-podman compose up -d
+podman compose -f compose.yml up -d
 bash scripts/bootstrap-cluster.sh</code>
       </pre>
 
@@ -458,22 +458,22 @@ ports:
         If <code>kubectl get nodes</code> returns a connection error:
       </p>
       <ul>
-        <li>Check that the API server is running: <code>podman compose ps</code></li>
-        <li>Check the API server logs: <code>podman compose logs api-server</code></li>
-        <li>Verify etcd is healthy: <code>podman compose logs etcd</code></li>
+        <li>Check that the API server is running: <code>podman compose -f compose.yml ps</code></li>
+        <li>Check the API server logs: <code>podman compose -f compose.yml logs api-server</code></li>
+        <li>Verify etcd is healthy: <code>podman compose -f compose.yml logs etcd</code></li>
         <li>Make sure <code>KUBECONFIG</code> is set: <code>echo $KUBECONFIG</code></li>
         <li>Confirm the kubeconfig file exists: <code>cat ~/.kube/rusternetes-config</code></li>
       </ul>
 
       <h3>First build is slow</h3>
       <p>
-        The initial <code>podman compose build</code> compiles the entire Rust workspace from scratch,
+        The initial <code>podman compose -f compose.yml build</code> compiles the entire Rust workspace from scratch,
         which takes 10&ndash;15 minutes depending on your hardware. Subsequent builds use the
         layer cache and only recompile changed crates. To speed things up:
       </p>
       <ul>
         <li>Allocate more CPUs and memory to your container runtime (Settings &rarr; Resources)</li>
-        <li>Rebuild only the service you changed: <code>podman compose build api-server</code></li>
+        <li>Rebuild only the service you changed: <code>podman compose -f compose.yml build api-server</code></li>
         <li>Consider building from source natively for faster iteration (see <a href="installation.html">Installation</a>)</li>
       </ul>
 
@@ -492,8 +492,8 @@ ports:
         If pods stay in <code>Pending</code> after deployment:
       </p>
       <ul>
-        <li>Check the scheduler is running: <code>podman compose ps scheduler</code></li>
-        <li>Check scheduler logs: <code>podman compose logs scheduler</code></li>
+        <li>Check the scheduler is running: <code>podman compose -f compose.yml ps scheduler</code></li>
+        <li>Check scheduler logs: <code>podman compose -f compose.yml logs scheduler</code></li>
         <li>Verify nodes are Ready: <code>kubectl get nodes</code></li>
         <li>Describe the pod for events: <code>kubectl describe pod &lt;name&gt;</code></li>
       </ul>

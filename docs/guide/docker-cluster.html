@@ -312,9 +312,9 @@
       <div class="admonition tip">
         <div class="admonition-title">TIP</div>
         <p>
-          Monitor etcd database size with <code>podman compose exec etcd etcdctl endpoint status --write-out=table</code>.
+          Monitor etcd database size with <code>podman compose -f compose.yml exec etcd etcdctl endpoint status --write-out=table</code>.
           If the database grows beyond 4 GB, run a manual defragmentation:
-          <code>podman compose exec etcd etcdctl defrag</code>.
+          <code>podman compose -f compose.yml exec etcd etcdctl defrag</code>.
         </p>
       </div>
 
@@ -392,7 +392,7 @@ bash scripts/generate-certs.sh
         <code>
 <span class="comment"># First build takes ~1 hour (Rust compilation), faster with cache</span>
 <span class="comment"># Subsequent builds are faster due to layer caching</span>
-podman compose build   <span class="comment"># or: docker compose build</span>
+podman compose -f compose.yml build   <span class="comment"># or: docker compose -f docker-compose.yml build</span>
 </code>
       </pre>
 
@@ -405,7 +405,7 @@ podman compose build   <span class="comment"># or: docker compose build</span>
           <span class="code-title">terminal</span>
         </div>
         <code>
-podman compose up -d   <span class="comment"># or: docker compose up -d</span>
+podman compose -f compose.yml up -d   <span class="comment"># or: docker compose -f docker-compose.yml up -d</span>
 </code>
       </pre>
 
@@ -464,16 +464,16 @@ kubectl get pods -w
         </div>
         <code>
 <span class="comment"># All services</span>
-podman compose logs -f
+podman compose -f compose.yml logs -f
 
 <span class="comment"># Single service</span>
-podman compose logs -f api-server
+podman compose -f compose.yml logs -f api-server
 
 <span class="comment"># With timestamps</span>
-podman compose logs -f <span class="flag">--timestamps</span> controller-manager
+podman compose -f compose.yml logs -f <span class="flag">--timestamps</span> controller-manager
 
 <span class="comment"># Last 100 lines</span>
-podman compose logs <span class="flag">--tail</span>=<span class="value">100</span> scheduler
+podman compose -f compose.yml logs <span class="flag">--tail</span>=<span class="value">100</span> scheduler
 </code>
       </pre>
 
@@ -487,12 +487,12 @@ podman compose logs <span class="flag">--tail</span>=<span class="value">100</sp
         </div>
         <code>
 <span class="comment"># Rebuild and restart just the api-server</span>
-podman compose build api-server
-podman compose up -d api-server
+podman compose -f compose.yml build api-server
+podman compose -f compose.yml up -d api-server
 
 <span class="comment"># Rebuild and restart kubelet node-1</span>
-podman compose build node-1
-podman compose up -d node-1
+podman compose -f compose.yml build node-1
+podman compose -f compose.yml up -d node-1
 </code>
       </pre>
 
@@ -506,7 +506,7 @@ podman compose up -d node-1
         </div>
         <code>
 <span class="comment"># Stop all services and remove containers</span>
-podman compose down
+podman compose -f compose.yml down
 
 <span class="comment"># Remove etcd data for a fresh start</span>
 podman volume rm rusternetes_etcd-data 2>/dev/null
@@ -515,8 +515,8 @@ podman volume rm rusternetes_etcd-data 2>/dev/null
 rm -rf .rusternetes/volumes/*
 
 <span class="comment"># Rebuild and start fresh</span>
-podman compose build
-podman compose up -d
+podman compose -f compose.yml build
+podman compose -f compose.yml up -d
 bash scripts/bootstrap-cluster.sh
 </code>
       </pre>
@@ -531,16 +531,16 @@ bash scripts/bootstrap-cluster.sh
         </div>
         <code>
 <span class="comment"># Endpoint status</span>
-podman compose exec etcd etcdctl endpoint status <span class="flag">--write-out</span>=<span class="value">table</span>
+podman compose -f compose.yml exec etcd etcdctl endpoint status <span class="flag">--write-out</span>=<span class="value">table</span>
 
 <span class="comment"># Endpoint health</span>
-podman compose exec etcd etcdctl endpoint health
+podman compose -f compose.yml exec etcd etcdctl endpoint health
 
 <span class="comment"># List all keys</span>
-podman compose exec etcd etcdctl get / <span class="flag">--prefix</span> <span class="flag">--keys-only</span>
+podman compose -f compose.yml exec etcd etcdctl get / <span class="flag">--prefix</span> <span class="flag">--keys-only</span>
 
 <span class="comment"># Count keys by resource type</span>
-podman compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</span> <span class="flag">--keys-only</span> | \
+podman compose -f compose.yml exec etcd etcdctl get /registry/ <span class="flag">--prefix</span> <span class="flag">--keys-only</span> | \
   sed 's|/registry/\([^/]*\)/.*|\1|' | sort | uniq -c | sort -rn
 </code>
       </pre>
@@ -548,7 +548,7 @@ podman compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</spa
       <div class="admonition danger">
         <div class="admonition-title">DANGER</div>
         <p>
-          Never run <code>podman compose down -v</code> unless you intend to destroy all cluster
+          Never run <code>podman compose -f compose.yml down -v</code> unless you intend to destroy all cluster
           state. The <code>-v</code> flag removes named volumes including etcd data.
         </p>
       </div>
@@ -592,7 +592,7 @@ podman compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</spa
           <tr>
             <td>Volume mount failures</td>
             <td><code>KUBELET_VOLUMES_PATH</code> not set</td>
-            <td>Export the variable with an absolute path before running <code>podman compose up</code></td>
+            <td>Export the variable with an absolute path before running <code>podman compose -f compose.yml up</code></td>
           </tr>
         </tbody>
       </table>
