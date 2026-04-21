@@ -66,6 +66,22 @@ The all-in-one mode is built for environments where a full K8s cluster is overki
 
 ## Quick Start
 
+### Full cluster (Podman + etcd)
+
+```bash
+git clone https://github.com/calfonso/rusternetes.git
+cd rusternetes
+
+export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+podman compose build
+podman compose up -d
+bash scripts/bootstrap-cluster.sh
+
+export KUBECONFIG=~/.kube/rusternetes-config
+kubectl get nodes
+kubectl create deployment nginx --image=nginx
+```
+
 ### Full cluster (Docker Compose + etcd)
 
 ```bash
@@ -79,22 +95,6 @@ bash scripts/bootstrap-cluster.sh
 
 export KUBECONFIG=~/.kube/rusternetes-config
 kubectl get nodes
-kubectl create deployment nginx --image=nginx
-```
-
-### Full cluster (Podman + etcd)
-
-```bash
-git clone https://github.com/calfonso/rusternetes.git
-cd rusternetes
-
-export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-podman-compose -f compose.yml build
-podman-compose -f compose.yml up -d
-bash scripts/bootstrap-cluster.sh
-
-export KUBECONFIG=~/.kube/rusternetes-config
-kubectl get nodes
 ```
 
 ### Full cluster with SQLite (no etcd)
@@ -102,8 +102,14 @@ kubectl get nodes
 Same cluster, but [Rhino](https://github.com/calfonso/rhino) replaces etcd. No recompilation needed — same binaries.
 
 ```bash
+# Podman
+podman compose -f compose.sqlite.yml build
+podman compose -f compose.sqlite.yml up -d
+
+# Docker
 docker compose -f docker-compose.sqlite.yml build
 docker compose -f docker-compose.sqlite.yml up -d
+
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -116,7 +122,7 @@ cargo build -p rusternetes
 ./target/release/rusternetes --data-dir ./cluster.db
 ```
 
-**Prerequisites:** Docker Desktop (macOS) or Docker/Podman in rootful mode (Linux) for the kubelet to manage containers. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed setup.
+**Prerequisites:** Podman or Docker for the kubelet to manage containers. On Linux with Podman, rootful mode is required for kube-proxy iptables access. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed setup.
 
 ## What's Implemented
 

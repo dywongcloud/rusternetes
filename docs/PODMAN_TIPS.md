@@ -2,23 +2,6 @@
 
 This guide provides Podman-specific tips and tricks for developing Rusternetes.
 
-## ⚠️ Important: macOS Compatibility Issue
-
-**If you're on macOS Sequoia 15.7+, use Docker Desktop instead of Podman Machine.**
-
-Podman Machine on macOS Sequoia 15.7+ has a critical bug in the Apple Virtualization Framework (vfkit) that prevents VMs from starting. This is a known issue in macOS, not Podman itself.
-
-**Symptoms:**
-```
-Error: vfkit exited unexpectedly with exit code 1
-Error Domain=VZErrorDomain Code=1
-Description="Internal Virtualization error. The virtual machine failed to start."
-```
-
-**Solution:** Use Docker Desktop on macOS for Rusternetes development. See [README.md](../README.md) for Docker setup instructions.
-
-**Linux users:** Podman works great on Linux! Just ensure you use **rootful mode** for kube-proxy iptables access.
-
 ## Why Podman?
 
 Podman is a daemonless container engine that's:

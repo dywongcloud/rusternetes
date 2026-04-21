@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -103,7 +103,7 @@
     <main class="doc-content">
       <h1>Quick Start</h1>
       <p class="lead">
-        Get a fully functional Rūsternetes cluster running in 5 minutes using Docker Compose.
+        Get a fully functional Rūsternetes cluster running in 5 minutes using Podman or Docker Compose.
         No Rust toolchain required.
       </p>
 
@@ -119,11 +119,11 @@
         <tbody>
           <tr>
             <td>macOS</td>
-            <td><a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> (recommended) or Podman Desktop</td>
+            <td><a href="https://podman-desktop.io/">Podman Desktop</a> or <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a></td>
           </tr>
           <tr>
             <td>Linux</td>
-            <td><a href="https://docs.docker.com/engine/install/">Docker Engine</a> 24+ or rootful Podman 4+</td>
+            <td>Rootful Podman 4+ or <a href="https://docs.docker.com/engine/install/">Docker Engine</a> 24+</td>
           </tr>
         </tbody>
       </table>
@@ -136,8 +136,8 @@
       <div class="admonition tip">
         <div class="admonition-title">Rust is optional</div>
         <p>
-          The Docker Compose setup builds everything inside containers. You only need Rust installed
-          if you want to <a href="installation.html">build from source</a> outside of Docker.
+          The compose setup builds everything inside containers. You only need Rust installed
+          if you want to <a href="installation.html">build from source</a> outside of containers.
         </p>
       </div>
 
@@ -184,8 +184,8 @@ mkdir -p $KUBELET_VOLUMES_PATH</code>
 
       <h3>3. Build the container images</h3>
       <p>
-        This compiles each Rūsternetes component inside a Docker build stage. The first build takes
-        10&ndash;15 minutes; subsequent builds use the Docker layer cache and are much faster.
+        This compiles each Rūsternetes component inside a container build stage. The first build takes
+        10&ndash;15 minutes; subsequent builds use the layer cache and are much faster.
       </p>
 
       <pre>
@@ -195,7 +195,7 @@ mkdir -p $KUBELET_VOLUMES_PATH</code>
           <span class="code-dot green"></span>
           <span class="code-title">terminal</span>
         </div>
-        <code>docker compose build</code>
+        <code>podman compose build   <span class="comment"># or: docker compose build</span></code>
       </pre>
 
       <h3>4. Start the cluster</h3>
@@ -207,7 +207,7 @@ mkdir -p $KUBELET_VOLUMES_PATH</code>
           <span class="code-dot green"></span>
           <span class="code-title">terminal</span>
         </div>
-        <code>docker compose up -d</code>
+        <code>podman compose up -d   <span class="comment"># or: docker compose up -d</span></code>
       </pre>
 
       <p>
@@ -290,7 +290,7 @@ kubectl get pods -w</code>
 
       <h2>What You Get</h2>
       <p>
-        The Docker Compose cluster runs seven services that mirror a real Kubernetes cluster:
+        The compose cluster runs seven services that mirror a real Kubernetes cluster:
       </p>
 
       <table>
@@ -358,12 +358,12 @@ kubectl get pods -w</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># All services</span>
-docker compose logs -f
+podman compose logs -f
 
 <span class="comment"># Single service</span>
-docker compose logs -f api-server
-docker compose logs -f kubelet
-docker compose logs -f scheduler</code>
+podman compose logs -f api-server
+podman compose logs -f kubelet
+podman compose logs -f scheduler</code>
       </pre>
 
       <h3>Rebuild after code changes</h3>
@@ -376,12 +376,12 @@ docker compose logs -f scheduler</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Rebuild and restart a single service</span>
-docker compose build api-server
-docker compose up -d api-server
+podman compose build api-server
+podman compose up -d api-server
 
 <span class="comment"># Rebuild everything</span>
-docker compose build
-docker compose up -d</code>
+podman compose build
+podman compose up -d</code>
       </pre>
 
       <h3>Stop the cluster</h3>
@@ -394,10 +394,10 @@ docker compose up -d</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Stop containers (preserves data)</span>
-docker compose down
+podman compose down
 
 <span class="comment"># Stop and delete all data (clean restart)</span>
-docker compose down -v</code>
+podman compose down -v</code>
       </pre>
 
       <h3>Clean restart</h3>
@@ -413,11 +413,11 @@ docker compose down -v</code>
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Remove containers, volumes, and orphan pod containers</span>
-docker compose down -v
-docker rm -f $(docker ps -aq --filter "label=rusternetes") 2>/dev/null || true
+podman compose down -v
+podman rm -f $(podman ps -aq --filter "label=rusternetes") 2>/dev/null || true
 
 <span class="comment"># Start fresh</span>
-docker compose up -d
+podman compose up -d
 bash scripts/bootstrap-cluster.sh</code>
       </pre>
 
@@ -426,7 +426,7 @@ bash scripts/bootstrap-cluster.sh</code>
       <h3>Port 6443 already in use</h3>
       <p>
         Another process (often a real Kubernetes or minikube) is listening on port 6443.
-        Stop it or change the port mapping in <code>docker-compose.yml</code>:
+        Stop it or change the port mapping in the compose file:
       </p>
 
       <pre>
@@ -434,7 +434,7 @@ bash scripts/bootstrap-cluster.sh</code>
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.yml</span>
+          <span class="code-title">compose.yml</span>
         </div>
         <code><span class="comment"># Change the host port (left side) to any free port</span>
 ports:
@@ -458,22 +458,22 @@ ports:
         If <code>kubectl get nodes</code> returns a connection error:
       </p>
       <ul>
-        <li>Check that the API server is running: <code>docker compose ps</code></li>
-        <li>Check the API server logs: <code>docker compose logs api-server</code></li>
-        <li>Verify etcd is healthy: <code>docker compose logs etcd</code></li>
+        <li>Check that the API server is running: <code>podman compose ps</code></li>
+        <li>Check the API server logs: <code>podman compose logs api-server</code></li>
+        <li>Verify etcd is healthy: <code>podman compose logs etcd</code></li>
         <li>Make sure <code>KUBECONFIG</code> is set: <code>echo $KUBECONFIG</code></li>
         <li>Confirm the kubeconfig file exists: <code>cat ~/.kube/rusternetes-config</code></li>
       </ul>
 
       <h3>First build is slow</h3>
       <p>
-        The initial <code>docker compose build</code> compiles the entire Rust workspace from scratch,
-        which takes 10&ndash;15 minutes depending on your hardware. Subsequent builds use the Docker
+        The initial <code>podman compose build</code> compiles the entire Rust workspace from scratch,
+        which takes 10&ndash;15 minutes depending on your hardware. Subsequent builds use the
         layer cache and only recompile changed crates. To speed things up:
       </p>
       <ul>
-        <li>Allocate more CPUs and memory to Docker Desktop (Settings &rarr; Resources)</li>
-        <li>Rebuild only the service you changed: <code>docker compose build api-server</code></li>
+        <li>Allocate more CPUs and memory to your container runtime (Settings &rarr; Resources)</li>
+        <li>Rebuild only the service you changed: <code>podman compose build api-server</code></li>
         <li>Consider building from source natively for faster iteration (see <a href="installation.html">Installation</a>)</li>
       </ul>
 
@@ -492,8 +492,8 @@ ports:
         If pods stay in <code>Pending</code> after deployment:
       </p>
       <ul>
-        <li>Check the scheduler is running: <code>docker compose ps scheduler</code></li>
-        <li>Check scheduler logs: <code>docker compose logs scheduler</code></li>
+        <li>Check the scheduler is running: <code>podman compose ps scheduler</code></li>
+        <li>Check scheduler logs: <code>podman compose logs scheduler</code></li>
         <li>Verify nodes are Ready: <code>kubectl get nodes</code></li>
         <li>Describe the pod for events: <code>kubectl describe pod &lt;name&gt;</code></li>
       </ul>
@@ -501,7 +501,7 @@ ports:
       <h2>Next Steps</h2>
       <ul>
         <li><a href="installation.html">Installation</a> &mdash; build from source, feature flags, and platform details</li>
-        <li><a href="deployment.html">Deployment Overview</a> &mdash; compare all-in-one, Docker+etcd, and Docker+SQLite modes</li>
+        <li><a href="deployment.html">Deployment Overview</a> &mdash; compare all-in-one, compose+etcd, and compose+SQLite modes</li>
         <li><a href="workloads.html">Workloads</a> &mdash; deploy Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs</li>
         <li><a href="bootstrap.html">Bootstrap</a> &mdash; understand what the bootstrap script creates</li>
       </ul>

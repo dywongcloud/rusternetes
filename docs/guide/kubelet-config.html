@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -323,7 +323,7 @@ clusterServiceCidr: <span class="value">10.96.0.0/12</span></code>
           <tr>
             <td><code>KUBERNETES_SERVICE_HOST_OVERRIDE</code></td>
             <td>&mdash;</td>
-            <td>Override the kubernetes service host IP. Used in Docker Desktop where the ClusterIP is not routable from bridge containers.</td>
+            <td>Override the kubernetes service host IP. Used in containerized deployments where the ClusterIP is not routable from bridge containers.</td>
           </tr>
           <tr>
             <td><code>RUST_LOG</code></td>
@@ -413,12 +413,12 @@ Built-in defaults   <span class="comment"># lowest priority</span></code>
       </pre>
 
       <div class="admonition tip">
-        <div class="admonition-title">DOCKER DESKTOP OVERRIDE</div>
+        <div class="admonition-title">CONTAINER RUNTIME OVERRIDE</div>
         <p>
-          In Docker Desktop environments, the ClusterIP (<code>10.96.0.1</code>) is not routable
+          In containerized environments, the ClusterIP (<code>10.96.0.1</code>) is not routable
           from bridge containers because kube-proxy's iptables DNAT only applies in the host
           network namespace. Set <code>KUBERNETES_SERVICE_HOST_OVERRIDE</code> to the API server's
-          direct container IP instead. The TLS certificate includes Docker bridge IPs as SANs.
+          direct container IP instead. The TLS certificate includes bridge IPs as SANs.
         </p>
       </div>
 

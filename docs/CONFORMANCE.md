@@ -256,8 +256,8 @@ See `docs/PERFORMANCE_PLAN.md` for the full optimization roadmap.
 ```bash
 # Build and start the cluster
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build
-docker compose up -d
+podman compose build
+podman compose up -d
 bash scripts/bootstrap-cluster.sh
 
 # Run the conformance suite

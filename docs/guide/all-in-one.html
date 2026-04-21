@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html" class="active">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -105,7 +105,7 @@
       <p class="lead">
         Run the entire Kubernetes control plane &mdash; API server, scheduler, controller manager,
         kubelet, and kube-proxy &mdash; in a single Rust process with embedded SQLite storage.
-        No Docker Compose, no etcd, no external dependencies beyond Docker for running pod containers.
+        No compose setup, no etcd, no external dependencies beyond a container runtime (Podman or Docker) for running pod containers.
       </p>
 
       <div class="admonition note">
@@ -635,7 +635,7 @@ docker load < images.tar.gz
 
       <h3>Developer Sandbox</h3>
       <p>
-        Run the binary during development to get a local Kubernetes API without Docker Compose
+        Run the binary during development to get a local Kubernetes API without compose
         setup. Changes to the codebase can be tested with <code>cargo run</code> immediately.
       </p>
 
@@ -717,7 +717,7 @@ kubectl get pods -w
         </a>
         <a href="docker-cluster.html" class="next">
           <span class="pager-label">Next</span>
-          Docker + etcd &rarr;
+          Compose + etcd &rarr;
         </a>
       </div>
     </main>

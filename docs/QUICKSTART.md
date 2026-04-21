@@ -4,15 +4,36 @@ Get a Rust-based Kubernetes cluster running locally with a built-in web console.
 
 ## Prerequisites
 
-- **Container runtime** — Docker Desktop (macOS) or Docker Engine (Linux)
+- **Container runtime** — Podman or Docker
 - **kubectl** (optional) — standard `kubectl` works against the cluster
 
-### macOS — Docker Desktop (recommended)
+### macOS — Podman
+
+```bash
+brew install podman podman-compose docker-compose
+podman machine init --memory 8192 --cpus 4
+podman machine set --rootful
+podman machine start
+```
+
+### macOS — Docker Desktop
 
 ```bash
 brew install --cask docker
 # Start Docker Desktop from Applications
 ```
+
+### Linux — Podman (rootful mode required)
+
+```bash
+# Fedora/RHEL/CentOS
+sudo dnf install podman podman-compose docker-compose
+
+# Ubuntu/Debian
+sudo apt-get install podman podman-compose docker-compose
+```
+
+On Linux, Podman must run in rootful mode because kube-proxy needs `CAP_NET_ADMIN` for iptables. Prefix compose commands with `sudo`.
 
 ### Linux — Docker Engine
 
@@ -22,10 +43,6 @@ sudo usermod -aG docker $USER
 # Log out and back in for the group change to take effect
 ```
 
-### Linux — Podman (rootful mode required)
-
-Podman works on Linux but must run in rootful mode because kube-proxy needs `CAP_NET_ADMIN` for iptables. Substitute `sudo podman-compose -f compose.yml` wherever this guide says `docker compose`.
-
 ## Start the Cluster
 
 ```bash
@@ -33,8 +50,15 @@ git clone https://github.com/calfonso/rusternetes.git
 cd rusternetes
 
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build           # ~1 hour first build, faster with cache
+
+# Podman
+podman compose build           # ~1 hour first build, faster with cache
+podman compose up -d
+
+# Or Docker
+docker compose build
 docker compose up -d
+
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -83,8 +107,14 @@ TLS certificates are auto-generated in `.rusternetes/certs/`.
 Same cluster, but [Rhino](https://github.com/calfonso/rhino) replaces etcd with SQLite:
 
 ```bash
+# Podman
+podman compose -f compose.sqlite.yml build
+podman compose -f compose.sqlite.yml up -d
+
+# Or Docker
 docker compose -f docker-compose.sqlite.yml build
 docker compose -f docker-compose.sqlite.yml up -d
+
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -99,28 +129,28 @@ cargo build -p rusternetes --release
 
 Open `https://localhost:6443/console/` for the web console.
 
-**Note:** The all-in-one binary still needs Docker running on the host for the kubelet to create containers.
+**Note:** The all-in-one binary still needs Podman or Docker running on the host for the kubelet to create containers.
 
 ## Common Operations
 
 ### View logs
 
 ```bash
-docker compose logs -f api-server
-docker compose logs -f kubelet
+podman compose logs -f api-server    # or: docker compose logs -f api-server
+podman compose logs -f kubelet
 ```
 
 ### Rebuild after code changes
 
 ```bash
-docker compose build api-server      # rebuild one component
-docker compose up -d api-server      # redeploy it
+podman compose build api-server      # rebuild one component
+podman compose up -d api-server      # redeploy it
 ```
 
 ### Stop the cluster
 
 ```bash
-docker compose down
+podman compose down                  # or: docker compose down
 ```
 
 ### Run tests
@@ -151,8 +181,8 @@ lsof -i :2379    # find what's using the etcd port
 ### "Cannot connect to API server"
 
 ```bash
-docker compose ps            # check all services are running
-docker compose logs api-server | tail -20   # check for errors
+podman compose ps            # check all services are running
+podman compose logs api-server | tail -20   # check for errors
 ```
 
 ### "Build is taking too long"
@@ -169,7 +199,7 @@ Rusternetes is a ground-up reimplementation — not a fork. Every component is w
 
 - 216,000+ lines of Rust across 10 crates
 - 90% conformance pass rate (398/441 tests) across 149 rounds of testing
-- Uses Docker as the container runtime via the bollard library
+- Uses Podman or Docker as the container runtime via the bollard library
 - Standard `kubectl` works against it (same REST API)
 - Built-in web console with topology visualization, live metrics, and pod log streaming
 - Supports CNI plugins (Calico, Cilium, Flannel) on Linux

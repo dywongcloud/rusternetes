@@ -6,14 +6,14 @@
 
 ```bash
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build                              # Full cluster with etcd
-docker compose -f docker-compose.sqlite.yml build # SQLite cluster (no etcd)
+podman compose build                              # Full cluster with etcd
+podman compose -f compose.sqlite.yml build # SQLite cluster (no etcd)
 ```
 
 ### Deploy the cluster
 
 ```bash
-docker compose up -d
+podman compose up -d
 bash scripts/bootstrap-cluster.sh
 export KUBECONFIG=~/.kube/rusternetes-config
 kubectl get nodes
@@ -24,8 +24,8 @@ kubectl get nodes
 To rebuild and redeploy just the API server (e.g., after console changes):
 
 ```bash
-docker compose -f docker-compose.sqlite.yml build api-server
-docker compose -f docker-compose.sqlite.yml up -d api-server
+podman compose -f compose.sqlite.yml build api-server
+podman compose -f compose.sqlite.yml up -d api-server
 ```
 
 ### Clean redeploy
@@ -33,9 +33,9 @@ docker compose -f docker-compose.sqlite.yml up -d api-server
 When you need a fresh start:
 
 ```bash
-docker compose down
-docker compose build
-docker compose up -d
+podman compose down
+podman compose build
+podman compose up -d
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -94,7 +94,7 @@ docker exec sonobuoy-e2e-job-*_e2e cat /tmp/sonobuoy/results/e2e.log | tail -50
 
 ```bash
 # Terminal 1: cluster running
-docker compose up -d
+podman compose up -d
 
 # Terminal 2: console dev server
 cd console
@@ -105,8 +105,8 @@ npm run dev
 ### Rebuild console in Docker
 
 ```bash
-docker compose -f docker-compose.sqlite.yml build api-server
-docker compose -f docker-compose.sqlite.yml up -d --force-recreate api-server
+podman compose -f compose.sqlite.yml build api-server
+podman compose -f compose.sqlite.yml up -d --force-recreate api-server
 ```
 
 ## Package Names

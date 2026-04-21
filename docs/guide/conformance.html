@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -273,7 +273,7 @@ bash scripts/conformance-progress.sh
 
 <span class="comment"># View raw e2e output (inside the e2e container)</span>
 <span class="comment"># Log location: /tmp/sonobuoy/results/e2e.log</span>
-docker compose exec e2e tail <span class="flag">-f</span> /tmp/sonobuoy/results/e2e.log</code>
+podman compose exec e2e tail <span class="flag">-f</span> /tmp/sonobuoy/results/e2e.log</code>
       </pre>
 
       <div class="admonition tip">

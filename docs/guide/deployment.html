@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html" class="active">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -103,8 +103,8 @@
     <main class="doc-content">
       <h1>Deployment Overview</h1>
       <p class="lead">
-        Rūsternetes supports three deployment modes: a full Docker Compose cluster with etcd,
-        a lighter Docker Compose cluster with SQLite (via Rhino), and a single all-in-one binary
+        Rūsternetes supports three deployment modes: a full compose cluster with etcd,
+        a lighter compose cluster with SQLite (via Rhino), and a single all-in-one binary
         that embeds every component in one process. Choose the mode that matches your needs.
       </p>
 
@@ -121,8 +121,8 @@
         <tbody>
           <tr>
             <td>Orchestration</td>
-            <td><code>docker compose</code></td>
-            <td><code>docker compose</code></td>
+            <td><code>podman compose</code> or <code>docker compose</code></td>
+            <td><code>podman compose</code> or <code>docker compose</code></td>
             <td>Single process</td>
           </tr>
           <tr>
@@ -150,16 +150,16 @@
             <td>Optional (<code>--tls</code> flag)</td>
           </tr>
           <tr>
-            <td>Docker required</td>
-            <td>Yes (compose + container runtime)</td>
-            <td>Yes (compose + container runtime)</td>
+            <td>Container runtime</td>
+            <td>Yes (Podman or Docker)</td>
+            <td>Yes (Podman or Docker)</td>
             <td>Only for pods (not the binary)</td>
           </tr>
           <tr>
             <td>External dependencies</td>
-            <td>etcd, Docker</td>
-            <td>Rhino, Docker</td>
-            <td>Docker (for pod containers)</td>
+            <td>etcd, Podman or Docker</td>
+            <td>Rhino, Podman or Docker</td>
+            <td>Podman or Docker (for pod containers)</td>
           </tr>
           <tr>
             <td>State persistence</td>
@@ -190,7 +190,7 @@
 
       <h2>Architecture: Full Cluster (etcd)</h2>
       <p>
-        The standard deployment runs each Kubernetes component as a separate Docker container,
+        The standard deployment runs each Kubernetes component as a separate container,
         communicating over an internal bridge network. etcd provides distributed, consistent
         state storage with support for watches and transactions.
       </p>
@@ -203,7 +203,7 @@
           <span class="code-title">full cluster architecture</span>
         </div>
         <code>
-<span class="comment"># Docker Compose: Full Cluster with etcd</span>
+<span class="comment"># Compose: Full Cluster with etcd</span>
 
   +-----------------------------------------------------+
   |                rusternetes-net (bridge)              |
@@ -243,7 +243,7 @@
           <span class="code-title">sqlite cluster architecture</span>
         </div>
         <code>
-<span class="comment"># Docker Compose: SQLite Cluster with Rhino</span>
+<span class="comment"># Compose: SQLite Cluster with Rhino</span>
 
   +-----------------------------------------------------+
   |                rusternetes-net (bridge)              |
@@ -270,8 +270,9 @@
       <h2>Architecture: All-in-One Binary</h2>
       <p>
         Every component runs as a concurrent tokio task inside a single Rust process. Storage
-        is an embedded SQLite database (no network hop). The binary still requires Docker for
-        running pod containers, but the Kubernetes control plane itself is entirely self-contained.
+        is an embedded SQLite database (no network hop). The binary still requires a container
+        runtime (Podman or Docker) for running pod containers, but the Kubernetes control plane
+        itself is entirely self-contained.
       </p>
 
       <pre>
@@ -304,7 +305,7 @@
   +---------------------------------------------------+
          |
   +------+------+
-  | Docker API  |  <span class="comment"># only for running pod containers</span>
+  | Container   |  <span class="comment"># Podman/Docker API for pod containers</span>
   +-------------+
 </code>
       </pre>
@@ -337,7 +338,7 @@
         <li>You need a Kubernetes API for <strong>CI/CD pipelines</strong> or integration testing</li>
         <li>You are building a <strong>sandbox</strong> environment (like OpenShell) that embeds Kubernetes</li>
         <li>You want the <strong>smallest resource footprint</strong> (~200 MB RAM)</li>
-        <li>You are a <strong>developer</strong> who wants to hack on the codebase without Docker Compose</li>
+        <li>You are a <strong>developer</strong> who wants to hack on the codebase without compose</li>
       </ul>
 
       <div class="admonition tip">
@@ -364,11 +365,11 @@
           </tr>
           <tr>
             <td>Most production-like</td>
-            <td><a href="docker-cluster.html">Docker + etcd</a> &mdash; separate containers, TLS, multi-node</td>
+            <td><a href="docker-cluster.html">Compose + etcd</a> &mdash; separate containers, TLS, multi-node</td>
           </tr>
           <tr>
             <td>Easiest to operate</td>
-            <td><a href="sqlite-cluster.html">Docker + SQLite</a> &mdash; no etcd, state is one file</td>
+            <td><a href="sqlite-cluster.html">Compose + SQLite</a> &mdash; no etcd, state is one file</td>
           </tr>
           <tr>
             <td>Highest availability</td>
@@ -380,7 +381,7 @@
           </tr>
           <tr>
             <td>Best for CI/CD</td>
-            <td><a href="all-in-one.html">All-in-One Binary</a> &mdash; no Docker Compose, instant startup</td>
+            <td><a href="all-in-one.html">All-in-One Binary</a> &mdash; no compose setup, instant startup</td>
           </tr>
         </tbody>
       </table>

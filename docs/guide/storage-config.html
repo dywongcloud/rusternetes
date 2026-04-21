@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -233,7 +233,7 @@ rusternetes-api-server \
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.yml</span>
+          <span class="code-title">compose.yml</span>
         </div>
         <code>etcd:
   image: quay.io/coreos/etcd:v3.5.17
@@ -303,7 +303,7 @@ rusternetes \
       <h3>gRPC Mode (Docker Compose)</h3>
       <p>
         For multi-container deployments without etcd, rhino can run as a separate gRPC
-        service that multiple components connect to. Use <code>docker-compose.sqlite.yml</code>:
+        service that multiple components connect to. Use <code>compose.sqlite.yml</code>:
       </p>
 
       <pre>
@@ -314,7 +314,7 @@ rusternetes \
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Start with SQLite gRPC backend</span>
-docker compose -f docker-compose.sqlite.yml up -d</code>
+podman compose -f compose.sqlite.yml up -d</code>
       </pre>
 
       <h2>Memory Backend</h2>

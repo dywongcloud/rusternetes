@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Docker Compose with etcd - Rūsternetes</title>
+  <title>Compose Cluster with etcd - Rūsternetes</title>
   <link rel="icon" type="image/svg+xml" href="../favicon.svg">
   <link rel="stylesheet" href="../style.css">
 </head>
@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html" class="active">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html" class="active">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -101,16 +101,16 @@
     <div class="doc-overlay"></div>
 
     <main class="doc-content">
-      <h1>Docker Compose with etcd</h1>
+      <h1>Compose Cluster with etcd</h1>
       <p class="lead">
-        The full cluster deployment runs each Rūsternetes component as a separate Docker container,
+        The full cluster deployment runs each Rūsternetes component as a separate container,
         backed by etcd for distributed state storage. This is the production-recommended deployment
         mode and the configuration used for conformance testing.
       </p>
 
       <h2>Services</h2>
       <p>
-        The <code>docker-compose.yml</code> defines seven services that form the complete cluster:
+        The compose file defines seven services that form the complete cluster:
       </p>
 
       <table>
@@ -312,17 +312,17 @@
       <div class="admonition tip">
         <div class="admonition-title">TIP</div>
         <p>
-          Monitor etcd database size with <code>docker compose exec etcd etcdctl endpoint status --write-out=table</code>.
+          Monitor etcd database size with <code>podman compose exec etcd etcdctl endpoint status --write-out=table</code>.
           If the database grows beyond 4 GB, run a manual defragmentation:
-          <code>docker compose exec etcd etcdctl defrag</code>.
+          <code>podman compose exec etcd etcdctl defrag</code>.
         </p>
       </div>
 
       <h2>Network</h2>
       <p>
         All services (except kube-proxy) communicate over the <code>rusternetes-net</code> bridge network.
-        Docker assigns IPs from the bridge subnet (typically <code>172.18.0.0/16</code>). The TLS
-        certificates include SANs for these bridge IPs so that internal component-to-API-server
+        The container runtime assigns IPs from the bridge subnet (typically <code>172.18.0.0/16</code>). The TLS
+        certificates include SANs for these container bridge IPs so that internal component-to-API-server
         communication works over HTTPS.
       </p>
 
@@ -331,7 +331,7 @@
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.yml (network)</span>
+          <span class="code-title">compose.yml (network)</span>
         </div>
         <code>
 networks:
@@ -367,7 +367,7 @@ mkdir -p $KUBELET_VOLUMES_PATH
           <span class="code-title">terminal</span>
         </div>
         <code>
-<span class="comment"># Generates CA + server certs with Docker bridge IP SANs</span>
+<span class="comment"># Generates CA + server certs with container bridge IP SANs</span>
 bash scripts/generate-certs.sh
 </code>
       </pre>
@@ -375,13 +375,13 @@ bash scripts/generate-certs.sh
       <div class="admonition warning">
         <div class="admonition-title">WARNING</div>
         <p>
-          The generated certificates include SANs for Docker bridge IPs (172.18.0.2-5). If your
-          Docker network uses a different subnet, edit <code>scripts/generate-certs.sh</code> to
+          The generated certificates include SANs for container bridge IPs (172.18.0.2-5). If your
+          container network uses a different subnet, edit <code>scripts/generate-certs.sh</code> to
           match your environment before generating certs.
         </p>
       </div>
 
-      <h3>3. Build Docker images</h3>
+      <h3>3. Build container images</h3>
       <pre>
         <div class="code-header">
           <span class="code-dot red"></span>
@@ -391,8 +391,8 @@ bash scripts/generate-certs.sh
         </div>
         <code>
 <span class="comment"># First build takes ~1 hour (Rust compilation), faster with cache</span>
-<span class="comment"># Subsequent builds are faster due to Docker layer caching</span>
-docker compose build
+<span class="comment"># Subsequent builds are faster due to layer caching</span>
+podman compose build   <span class="comment"># or: docker compose build</span>
 </code>
       </pre>
 
@@ -405,7 +405,7 @@ docker compose build
           <span class="code-title">terminal</span>
         </div>
         <code>
-docker compose up -d
+podman compose up -d   <span class="comment"># or: docker compose up -d</span>
 </code>
       </pre>
 
@@ -464,16 +464,16 @@ kubectl get pods -w
         </div>
         <code>
 <span class="comment"># All services</span>
-docker compose logs -f
+podman compose logs -f
 
 <span class="comment"># Single service</span>
-docker compose logs -f api-server
+podman compose logs -f api-server
 
 <span class="comment"># With timestamps</span>
-docker compose logs -f <span class="flag">--timestamps</span> controller-manager
+podman compose logs -f <span class="flag">--timestamps</span> controller-manager
 
 <span class="comment"># Last 100 lines</span>
-docker compose logs <span class="flag">--tail</span>=<span class="value">100</span> scheduler
+podman compose logs <span class="flag">--tail</span>=<span class="value">100</span> scheduler
 </code>
       </pre>
 
@@ -487,12 +487,12 @@ docker compose logs <span class="flag">--tail</span>=<span class="value">100</sp
         </div>
         <code>
 <span class="comment"># Rebuild and restart just the api-server</span>
-docker compose build api-server
-docker compose up -d api-server
+podman compose build api-server
+podman compose up -d api-server
 
 <span class="comment"># Rebuild and restart kubelet node-1</span>
-docker compose build node-1
-docker compose up -d node-1
+podman compose build node-1
+podman compose up -d node-1
 </code>
       </pre>
 
@@ -506,17 +506,17 @@ docker compose up -d node-1
         </div>
         <code>
 <span class="comment"># Stop all services and remove containers</span>
-docker compose down
+podman compose down
 
 <span class="comment"># Remove etcd data for a fresh start</span>
-docker volume rm rusternetes_etcd-data 2>/dev/null
+podman volume rm rusternetes_etcd-data 2>/dev/null
 
 <span class="comment"># Remove pod volumes</span>
 rm -rf .rusternetes/volumes/*
 
 <span class="comment"># Rebuild and start fresh</span>
-docker compose build
-docker compose up -d
+podman compose build
+podman compose up -d
 bash scripts/bootstrap-cluster.sh
 </code>
       </pre>
@@ -531,16 +531,16 @@ bash scripts/bootstrap-cluster.sh
         </div>
         <code>
 <span class="comment"># Endpoint status</span>
-docker compose exec etcd etcdctl endpoint status <span class="flag">--write-out</span>=<span class="value">table</span>
+podman compose exec etcd etcdctl endpoint status <span class="flag">--write-out</span>=<span class="value">table</span>
 
 <span class="comment"># Endpoint health</span>
-docker compose exec etcd etcdctl endpoint health
+podman compose exec etcd etcdctl endpoint health
 
 <span class="comment"># List all keys</span>
-docker compose exec etcd etcdctl get / <span class="flag">--prefix</span> <span class="flag">--keys-only</span>
+podman compose exec etcd etcdctl get / <span class="flag">--prefix</span> <span class="flag">--keys-only</span>
 
 <span class="comment"># Count keys by resource type</span>
-docker compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</span> <span class="flag">--keys-only</span> | \
+podman compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</span> <span class="flag">--keys-only</span> | \
   sed 's|/registry/\([^/]*\)/.*|\1|' | sort | uniq -c | sort -rn
 </code>
       </pre>
@@ -548,7 +548,7 @@ docker compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</spa
       <div class="admonition danger">
         <div class="admonition-title">DANGER</div>
         <p>
-          Never run <code>docker compose down -v</code> unless you intend to destroy all cluster
+          Never run <code>podman compose down -v</code> unless you intend to destroy all cluster
           state. The <code>-v</code> flag removes named volumes including etcd data.
         </p>
       </div>
@@ -571,13 +571,13 @@ docker compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</spa
           </tr>
           <tr>
             <td>TLS certificate errors</td>
-            <td>Docker bridge IPs changed</td>
+            <td>Container bridge IPs changed</td>
             <td>Regenerate certs: <code>bash scripts/generate-certs.sh</code></td>
           </tr>
           <tr>
             <td>kube-proxy permission denied</td>
             <td>Missing <code>CAP_NET_ADMIN</code></td>
-            <td>Ensure the kube-proxy service has <code>cap_add: [NET_ADMIN]</code> in docker-compose.yml</td>
+            <td>Ensure the kube-proxy service has <code>cap_add: [NET_ADMIN]</code> in the compose file</td>
           </tr>
           <tr>
             <td>Pods stuck in Pending</td>
@@ -592,7 +592,7 @@ docker compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</spa
           <tr>
             <td>Volume mount failures</td>
             <td><code>KUBELET_VOLUMES_PATH</code> not set</td>
-            <td>Export the variable with an absolute path before running <code>docker compose up</code></td>
+            <td>Export the variable with an absolute path before running <code>podman compose up</code></td>
           </tr>
         </tbody>
       </table>
@@ -604,7 +604,7 @@ docker compose exec etcd etcdctl get /registry/ <span class="flag">--prefix</spa
         </a>
         <a href="sqlite-cluster.html" class="next">
           <span class="pager-label">Next</span>
-          Docker + SQLite &rarr;
+          Compose + SQLite &rarr;
         </a>
       </div>
     </main>

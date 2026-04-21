@@ -4,23 +4,30 @@ Rusternetes supports three deployment modes from the same codebase. Choose based
 
 | Mode | Storage | Best For | Console |
 |---|---|---|---|
-| Docker Compose + etcd | etcd cluster | Production, multi-node, HA | Included |
-| Docker Compose + SQLite | SQLite via Rhino | Development, simpler ops | Included |
+| Compose + etcd | etcd cluster | Production, multi-node, HA | Included |
+| Compose + SQLite | SQLite via Rhino | Development, simpler ops | Included |
 | All-in-one binary | Embedded SQLite | Edge, CI/CD, single-node, learning | Included |
 
 The web console (`https://localhost:6443/console/`) deploys automatically in all modes.
 
-## Mode 1: Docker Compose + etcd
+## Mode 1: Compose + etcd
 
-The standard deployment. Separate containers for each component with etcd for state storage.
+The standard deployment. Separate containers for each component with etcd for state storage. Works with both Podman and Docker.
 
 ```bash
 git clone https://github.com/calfonso/rusternetes.git
 cd rusternetes
 
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
+
+# Podman
+podman compose build
+podman compose up -d
+
+# Or Docker
 docker compose build
 docker compose up -d
+
 bash scripts/bootstrap-cluster.sh
 
 export KUBECONFIG=~/.kube/rusternetes-config
@@ -39,13 +46,19 @@ kubectl get nodes
 
 **Open the console:** `https://localhost:6443/console/`
 
-## Mode 2: Docker Compose + SQLite
+## Mode 2: Compose + SQLite
 
 Same cluster architecture, but [Rhino](https://github.com/calfonso/rhino) replaces etcd with SQLite. No etcd infrastructure to manage.
 
 ```bash
+# Podman
+podman compose -f compose.sqlite.yml build
+podman compose -f compose.sqlite.yml up -d
+
+# Or Docker
 docker compose -f docker-compose.sqlite.yml build
 docker compose -f docker-compose.sqlite.yml up -d
+
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -69,7 +82,7 @@ cd console && npm install && npm run build && cd ..
 
 This starts the API server, scheduler, controller manager, kubelet, and kube-proxy as concurrent tokio tasks.
 
-**Requirements:** Docker must be running on the host for the kubelet to create containers.
+**Requirements:** Podman or Docker must be running on the host for the kubelet to create containers.
 
 **Open the console:** `https://localhost:6443/console/`
 
@@ -91,6 +104,11 @@ This starts the API server, scheduler, controller manager, kubelet, and kube-pro
 For HA deployments with multiple API servers and etcd nodes, see [HIGH_AVAILABILITY.md](HIGH_AVAILABILITY.md).
 
 ```bash
+# Podman
+podman compose -f compose.ha.yml build
+podman compose -f compose.ha.yml up -d
+
+# Or Docker
 docker compose -f docker-compose.ha.yml build
 docker compose -f docker-compose.ha.yml up -d
 ```
@@ -99,7 +117,7 @@ This starts 3 etcd nodes, 3 API servers behind HAProxy, 2 schedulers, and 2 cont
 
 ## TLS Certificates
 
-TLS certificates are auto-generated during the Docker build in `.rusternetes/certs/`. For custom certificates:
+TLS certificates are auto-generated during the container build in `.rusternetes/certs/`. For custom certificates:
 
 ```bash
 bash scripts/generate-certs.sh
@@ -137,13 +155,13 @@ See [Storage Backends](storage/STORAGE_BACKENDS.md) for etcd vs SQLite details.
 
 ```bash
 # Stop the cluster (preserves state)
-docker compose down
+podman compose down              # or: docker compose down
 
 # Stop and wipe all state
-docker compose down -v
+podman compose down -v
 
 # Clean up dangling containers from conformance tests
-docker ps -a --filter "status=exited" -q | xargs docker rm 2>/dev/null
+podman ps -a --filter "status=exited" -q | xargs podman rm 2>/dev/null
 ```
 
 ## Next Steps

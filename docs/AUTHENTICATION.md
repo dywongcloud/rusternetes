@@ -112,11 +112,11 @@ kubectl config set-context rusternetes --user=rusternetes-admin
 
 Now restart the API server without `--skip-auth`. All requests will require a valid token.
 
-**Docker Compose:** Edit `docker-compose.yml`, remove the `--skip-auth` line from the api-server command, then:
+**Compose cluster:** Edit the compose file, remove the `--skip-auth` line from the api-server command, then:
 
 ```bash
-docker compose build api-server
-docker compose up -d api-server
+podman compose build api-server
+podman compose up -d api-server
 ```
 
 **All-in-one binary:**

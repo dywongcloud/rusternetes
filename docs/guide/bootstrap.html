@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -441,7 +441,7 @@ kubectl <span class="flag">--insecure-skip-tls-verify</span> get nodes</code>
 bash scripts/generate-certs.sh
 
 <span class="comment"># 2. Start the cluster</span>
-docker compose up -d
+podman compose up -d
 
 <span class="comment"># 3. Wait for the API server to be ready</span>
 until kubectl <span class="flag">--insecure-skip-tls-verify</span> get <span class="flag">--raw</span> /healthz 2>/dev/null; do

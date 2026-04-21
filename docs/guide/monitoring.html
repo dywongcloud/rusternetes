@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -159,8 +159,8 @@ curl <span class="flag">-k</span> https://localhost:6443/readyz
       <div class="admonition tip">
         <div class="admonition-title">Docker health checks</div>
         <p>
-          The <code>docker-compose.yml</code> uses these endpoints for container health checks.
-          Run <code>docker compose ps</code> to see the health status of each service.
+          The <code>compose file</code> uses these endpoints for container health checks.
+          Run <code>podman compose ps</code> to see the health status of each service.
         </p>
       </div>
 
@@ -336,26 +336,26 @@ export RUST_LOG=<span class="value">rusternetes_api_server=debug,rusternetes_sch
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Follow logs from all services</span>
-docker compose logs <span class="flag">-f</span>
+podman compose logs <span class="flag">-f</span>
 
 <span class="comment"># Follow logs from a single component</span>
-docker compose logs <span class="flag">-f</span> api-server
-docker compose logs <span class="flag">-f</span> kubelet
-docker compose logs <span class="flag">-f</span> scheduler
-docker compose logs <span class="flag">-f</span> controller-manager
-docker compose logs <span class="flag">-f</span> kube-proxy
+podman compose logs <span class="flag">-f</span> api-server
+podman compose logs <span class="flag">-f</span> kubelet
+podman compose logs <span class="flag">-f</span> scheduler
+podman compose logs <span class="flag">-f</span> controller-manager
+podman compose logs <span class="flag">-f</span> kube-proxy
 
 <span class="comment"># Show last 100 lines from the API server</span>
-docker compose logs <span class="flag">--tail</span> <span class="value">100</span> api-server
+podman compose logs <span class="flag">--tail</span> <span class="value">100</span> api-server
 
 <span class="comment"># Show logs with timestamps</span>
-docker compose logs <span class="flag">-f</span> <span class="flag">-t</span> api-server</code>
+podman compose logs <span class="flag">-f</span> <span class="flag">-t</span> api-server</code>
       </pre>
 
       <h3>Enabling debug logging in Docker Compose</h3>
       <p>
         To enable debug-level logging for a specific service, set the <code>RUST_LOG</code>
-        environment variable in <code>docker-compose.yml</code> or via an override:
+        environment variable in <code>compose file</code> or via an override:
       </p>
 
       <pre>
@@ -385,11 +385,11 @@ docker compose logs <span class="flag">-f</span> <span class="flag">-t</span> ap
 
       <h2>Monitoring Checklist</h2>
       <ul>
-        <li>Verify all services are healthy: <code>docker compose ps</code></li>
+        <li>Verify all services are healthy: <code>podman compose ps</code></li>
         <li>Check API server readiness: <code>curl -k https://localhost:6443/readyz</code></li>
         <li>Verify nodes are reporting: <code>kubectl get nodes</code></li>
         <li>Check pod scheduling: <code>kubectl get pods -A</code></li>
-        <li>Monitor component logs: <code>docker compose logs -f</code></li>
+        <li>Monitor component logs: <code>podman compose logs -f</code></li>
         <li>Scrape Prometheus metrics for dashboards and alerting</li>
       </ul>
 

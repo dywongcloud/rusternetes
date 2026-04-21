@@ -120,8 +120,8 @@ For integration testing against a full cluster:
 
 ```bash
 export KUBELET_VOLUMES_PATH=$(pwd)/.rusternetes/volumes
-docker compose build
-docker compose up -d
+podman compose build        # or: docker compose build
+podman compose up -d        # or: docker compose up -d
 bash scripts/bootstrap-cluster.sh
 ```
 

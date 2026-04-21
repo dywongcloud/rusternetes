@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -803,7 +803,7 @@ EOF</code>
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-lang">docker-compose.yml</span>
+          <span class="code-lang">compose.yml</span>
         </div>
         <code>kubelet:
   volumes:
@@ -815,8 +815,8 @@ EOF</code>
       <div class="admonition note">
         <div class="admonition-title">NOTE</div>
         <p>
-          CNI requires Linux network namespaces. On macOS (Docker Desktop / Podman Machine),
-          the kubelet automatically detects this limitation and falls back to Docker&rsquo;s
+          CNI requires Linux network namespaces. On macOS (Podman Machine / Docker Desktop),
+          the kubelet automatically detects this limitation and falls back to container
           bridge networking. Pods still get IPs and can communicate, but CNI plugins are not invoked.
         </p>
       </div>

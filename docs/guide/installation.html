@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -104,7 +104,7 @@
       <h1>Installation</h1>
       <p class="lead">
         Build Rūsternetes from source, understand feature flags, and set up your development
-        environment. For a quick Docker-based setup without building from source, see the
+        environment. For a quick container-based setup without building from source, see the
         <a href="quickstart.html">Quick Start</a>.
       </p>
 
@@ -266,7 +266,7 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
       <h2>Docker Images</h2>
       <p>
         Each component has its own Dockerfile for containerized deployment. The
-        <code>docker compose build</code> command builds all of them.
+        <code>podman compose build</code> command builds all of them.
       </p>
 
       <table>
@@ -331,10 +331,10 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Build a single image</span>
-docker compose build api-server
+podman compose build api-server
 
 <span class="comment"># Build the all-in-one image directly</span>
-docker build <span class="flag">-t</span> <span class="value">rusternetes:latest</span> <span class="flag">-f</span> <span class="value">Dockerfile</span> .</code>
+podman build <span class="flag">-t</span> <span class="value">rusternetes:latest</span> <span class="flag">-f</span> <span class="value">Dockerfile</span> .</code>
       </pre>
 
       <h2>All-in-One Binary</h2>
@@ -365,10 +365,10 @@ cargo build <span class="flag">-p</span> <span class="value">rusternetes</span> 
       </p>
 
       <div class="admonition tip">
-        <div class="admonition-title">When to use all-in-one vs Docker</div>
+        <div class="admonition-title">When to use all-in-one vs compose cluster</div>
         <p>
           The all-in-one binary is ideal for development, testing, and single-node deployments.
-          For multi-node clusters or production workloads, use the Docker Compose setup with etcd
+          For multi-node clusters or production workloads, use the compose setup with etcd
           for proper distributed state.
         </p>
       </div>
@@ -444,26 +444,17 @@ sudo dnf install -y kubectl</code>
         </thead>
         <tbody>
           <tr>
-            <td>Docker Desktop</td>
-            <td>Recommended</td>
-            <td>Works out of the box on Intel and Apple Silicon</td>
-          </tr>
-          <tr>
             <td>Podman Desktop</td>
             <td>Supported</td>
             <td>Requires rootful mode. CNI networking is not available in Podman Machine &mdash; the kubelet falls back to bridge networking automatically</td>
           </tr>
+          <tr>
+            <td>Docker Desktop</td>
+            <td>Also supported</td>
+            <td>Works out of the box on Intel and Apple Silicon</td>
+          </tr>
         </tbody>
       </table>
-
-      <div class="admonition warning">
-        <div class="admonition-title">macOS Sequoia and Podman</div>
-        <p>
-          macOS Sequoia (15.x) introduced networking changes that can cause issues with Podman Machine.
-          If you experience connection problems, try Docker Desktop or ensure Podman Machine is
-          updated to the latest version.
-        </p>
-      </div>
 
       <h3>Linux</h3>
       <table>
@@ -476,14 +467,14 @@ sudo dnf install -y kubectl</code>
         </thead>
         <tbody>
           <tr>
-            <td>Docker Engine</td>
+            <td>Podman (rootful)</td>
             <td>Recommended</td>
-            <td>Native Docker socket, full CNI support</td>
+            <td>Must run as root or with rootful configuration. Rootless Podman is not supported due to network namespace restrictions.</td>
           </tr>
           <tr>
-            <td>Podman (rootful)</td>
-            <td>Supported</td>
-            <td>Must run as root or with rootful configuration. Rootless Podman is not supported due to network namespace restrictions.</td>
+            <td>Docker Engine</td>
+            <td>Also supported</td>
+            <td>Native Docker socket, full CNI support</td>
           </tr>
         </tbody>
       </table>
@@ -599,8 +590,8 @@ xcode-select --install</code>
 
       <h2>Next Steps</h2>
       <ul>
-        <li><a href="quickstart.html">Quick Start</a> &mdash; get a Docker Compose cluster running in 5 minutes</li>
-        <li><a href="deployment.html">Deployment Overview</a> &mdash; choose between all-in-one, Docker+etcd, and Docker+SQLite</li>
+        <li><a href="quickstart.html">Quick Start</a> &mdash; get a compose cluster running in 5 minutes</li>
+        <li><a href="deployment.html">Deployment Overview</a> &mdash; choose between all-in-one, compose+etcd, and compose+SQLite</li>
         <li><a href="all-in-one.html">All-in-One Binary</a> &mdash; run everything in a single process</li>
         <li><a href="storage-config.html">Storage Backends</a> &mdash; compare etcd, SQLite, and in-memory storage</li>
       </ul>

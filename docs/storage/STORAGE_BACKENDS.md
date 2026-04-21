@@ -8,8 +8,8 @@ configuration flags and which compose file you use.
 
 | Mode | Storage | Compose file | External deps | Use case |
 |------|---------|-------------|---------------|----------|
-| Normal | etcd | `docker-compose.yml` | etcd cluster | Production, HA, multi-node |
-| SQLite (normal) | rhino (gRPC) | `docker-compose.sqlite.yml` | rhino container | Multi-container without etcd |
+| Normal | etcd | `compose.yml` | etcd cluster | Production, HA, multi-node |
+| SQLite (normal) | rhino (gRPC) | `compose.sqlite.yml` | rhino container | Multi-container without etcd |
 | SQLite (embedded) | rhino (in-process) | — | None | All-in-one single binary |
 
 ---
@@ -22,8 +22,8 @@ The standard deployment. Each component runs in its own container. etcd
 provides distributed consensus-based storage.
 
 ```bash
-docker compose build
-docker compose up -d
+podman compose build
+podman compose up -d
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -35,8 +35,8 @@ etcd v3 API, so components use their existing `--etcd-servers` flag pointed
 at `http://rhino:2379`. **No recompilation or feature flags needed.**
 
 ```bash
-docker compose -f docker-compose.sqlite.yml build
-docker compose -f docker-compose.sqlite.yml up -d
+podman compose -f compose.sqlite.yml build
+podman compose -f compose.sqlite.yml up -d
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -151,7 +151,7 @@ when `--storage-backend` is omitted.
 
 ```bash
 # Docker Compose
-docker compose up -d
+podman compose up -d
 
 # Or run binaries directly
 api-server --etcd-servers http://etcd:2379
@@ -163,13 +163,13 @@ kube-proxy --node-name node-1 --etcd-servers http://etcd:2379
 
 ### SQLite via rhino (normal multi-container)
 
-Use `docker-compose.sqlite.yml` to swap etcd for rhino. Components point
+Use `compose.sqlite.yml` to swap etcd for rhino. Components point
 their `--etcd-servers` flag at rhino instead of etcd. Same binaries, no
 recompilation.
 
 ```bash
-docker compose -f docker-compose.sqlite.yml build
-docker compose -f docker-compose.sqlite.yml up -d
+podman compose -f compose.sqlite.yml build
+podman compose -f compose.sqlite.yml up -d
 bash scripts/bootstrap-cluster.sh
 ```
 
@@ -392,14 +392,14 @@ is SQLite.
 
 ---
 
-## Rhino gRPC Mode (docker-compose.sqlite.yml)
+## Rhino gRPC Mode (compose.sqlite.yml)
 
 The simplest way to use SQLite in a normal multi-container deployment.
 Rhino replaces etcd as a drop-in: same gRPC API, backed by SQLite.
 
 **Files:**
 - `Dockerfile.rhino` — builds the rhino-server binary from the adjacent repo
-- `docker-compose.sqlite.yml` — full cluster with rhino instead of etcd
+- `compose.sqlite.yml` — full cluster with rhino instead of etcd
 
 **How it works:** Components use their existing `--etcd-servers` flag pointed
 at `http://rhino:2379`. The `etcd-client` crate in `EtcdStorage` connects to
@@ -455,7 +455,7 @@ and corresponding `StorageBackend` arms — the plumbing is identical.
 - **Embedded watch latency**: When multiple processes share a SQLite file
   directly (embedded mode across containers), watch notifications rely on
   rhino's 1-second poll interval rather than instant gRPC streaming. Use
-  the rhino gRPC mode (`docker-compose.sqlite.yml`) for multi-container
+  the rhino gRPC mode (`compose.sqlite.yml`) for multi-container
   deployments to get proper streaming watches.
 
 ---

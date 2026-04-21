@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -121,9 +121,9 @@
       </p>
       <p><strong>Fix:</strong></p>
       <ul>
-        <li>Restart kube-proxy: <code>docker compose restart kube-proxy</code></li>
-        <li>Verify rules are installed: <code>docker compose exec kube-proxy iptables -t nat -L KUBE-SERVICES</code></li>
-        <li>Check kube-proxy logs for sync errors: <code>docker compose logs kube-proxy</code></li>
+        <li>Restart kube-proxy: <code>podman compose restart kube-proxy</code></li>
+        <li>Verify rules are installed: <code>podman compose exec kube-proxy iptables -t nat -L KUBE-SERVICES</code></li>
+        <li>Check kube-proxy logs for sync errors: <code>podman compose logs kube-proxy</code></li>
       </ul>
 
       <h2>"Watch failed: context canceled"</h2>
@@ -141,7 +141,7 @@
         <li>Ensure the API server's TLS configuration includes ALPN protocols:
           <code>alpn_protocols = [b"h2", b"http/1.1"]</code></li>
         <li>Regenerate TLS certificates if needed: <code>bash scripts/generate-certs.sh</code></li>
-        <li>Restart the API server: <code>docker compose restart api-server</code></li>
+        <li>Restart the API server: <code>podman compose restart api-server</code></li>
       </ul>
 
       <div class="admonition note">
@@ -212,8 +212,8 @@ kubectl get nodes
 kubectl describe node node-1 | grep -A5 Taints
 
 <span class="comment"># Check scheduler is running</span>
-docker compose ps scheduler
-docker compose logs scheduler
+podman compose ps scheduler
+podman compose logs scheduler
 
 <span class="comment"># Describe the pod to see scheduling events</span>
 kubectl describe pod &lt;pod-name&gt;</code>
@@ -292,7 +292,7 @@ kubectl get sc <span class="flag">-o</span> jsonpath='{.items[?(@.metadata.annot
 
       <h2>"Port already in use" on startup</h2>
       <p>
-        <strong>Symptom:</strong> <code>docker compose up</code> fails with
+        <strong>Symptom:</strong> <code>podman compose up</code> fails with
         <code>bind: address already in use</code> on port 6443 or 2379.
       </p>
       <p>
@@ -315,9 +315,9 @@ lsof <span class="flag">-i</span> :6443
 lsof <span class="flag">-i</span> :2379
 
 <span class="comment"># Stop a previous Rūsternetes cluster</span>
-docker compose down
+podman compose down
 
-<span class="comment"># Or change the port mapping in docker-compose.yml</span>
+<span class="comment"># Or change the port mapping in compose.yml</span>
 <span class="comment"># ports: "7443:6443"</span></code>
       </pre>
 
@@ -338,10 +338,10 @@ docker compose down
           <span class="code-title">terminal</span>
         </div>
         <code><span class="comment"># Check all services are running</span>
-docker compose ps
+podman compose ps
 
 <span class="comment"># Check API server logs</span>
-docker compose logs api-server
+podman compose logs api-server
 
 <span class="comment"># Verify TLS certs exist</span>
 ls -la .rusternetes/certs/
@@ -351,26 +351,26 @@ echo $KUBECONFIG
 <span class="comment"># Should be: ~/.kube/rusternetes-config</span>
 
 <span class="comment"># Full restart</span>
-docker compose down
-docker compose up <span class="flag">-d</span>
+podman compose down
+podman compose up <span class="flag">-d</span>
 bash scripts/bootstrap-cluster.sh</code>
       </pre>
 
       <h2>Build is slow</h2>
       <p>
-        <strong>Symptom:</strong> <code>docker compose build</code> takes 10&ndash;15 minutes.
+        <strong>Symptom:</strong> <code>podman compose build</code> takes 10&ndash;15 minutes.
         Test binary compilation takes 5&ndash;10 minutes.
       </p>
       <p>
         <strong>Cause:</strong> This is expected for the first build. Rust compilation of the full
-        workspace (216,000+ lines) is CPU-intensive. Subsequent builds use Docker layer caching and
+        workspace (216,000+ lines) is CPU-intensive. Subsequent builds use layer caching and
         only recompile changed crates.
       </p>
       <p><strong>Fix:</strong></p>
       <ul>
-        <li>Allocate more CPUs and memory to Docker Desktop (Settings &rarr; Resources)</li>
-        <li>Rebuild only the changed service: <code>docker compose build api-server</code></li>
-        <li>Build natively instead of in Docker for faster iteration: <code>cargo build</code></li>
+        <li>Allocate more CPUs and memory to your container runtime</li>
+        <li>Rebuild only the changed service: <code>podman compose build api-server</code></li>
+        <li>Build natively for faster iteration: <code>cargo build</code></li>
         <li>Use <code>cargo test -p rusternetes-kubelet</code> to test a single crate instead of the entire workspace</li>
       </ul>
 
@@ -412,18 +412,10 @@ podman machine start</code>
       </p>
       <p><strong>Fix:</strong></p>
       <ul>
-        <li>Use <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> instead of Podman on macOS</li>
-        <li>If you must use Podman, try updating to the latest Podman version</li>
+        <li>Update Podman to the latest version: <code>brew upgrade podman</code></li>
+        <li>Remove and recreate the machine: <code>podman machine rm -f && podman machine init --memory 8192 --cpus 4 && podman machine set --rootful && podman machine start</code></li>
+        <li>Ensure you are using the ARM-native Homebrew on Apple Silicon (<code>/opt/homebrew/bin/brew</code>)</li>
       </ul>
-
-      <div class="admonition tip">
-        <div class="admonition-title">Docker Desktop is recommended on macOS</div>
-        <p>
-          Docker Desktop provides the most reliable experience on macOS, especially for features
-          like host network mode (used by kube-proxy) and volume mounts. Podman works on Linux
-          with rootful mode.
-        </p>
-      </div>
 
       <h2>Debugging Commands</h2>
       <p>
@@ -452,24 +444,24 @@ kubectl get events <span class="flag">--sort-by</span>='.lastTimestamp'
 kubectl get events <span class="flag">-A</span> <span class="flag">--sort-by</span>='.lastTimestamp'
 
 <span class="comment"># View Docker Compose service logs</span>
-docker compose logs <span class="flag">-f</span> api-server
-docker compose logs <span class="flag">-f</span> scheduler
-docker compose logs <span class="flag">-f</span> controller-manager
-docker compose logs <span class="flag">-f</span> kubelet
-docker compose logs <span class="flag">-f</span> kube-proxy
+podman compose logs <span class="flag">-f</span> api-server
+podman compose logs <span class="flag">-f</span> scheduler
+podman compose logs <span class="flag">-f</span> controller-manager
+podman compose logs <span class="flag">-f</span> kubelet
+podman compose logs <span class="flag">-f</span> kube-proxy
 
 <span class="comment"># Enable debug logging for a service</span>
-RUST_LOG=<span class="value">debug</span> docker compose up api-server
+RUST_LOG=<span class="value">debug</span> podman compose up api-server
 
 <span class="comment"># Check service health</span>
-docker compose ps
+podman compose ps
 curl <span class="flag">-k</span> https://localhost:6443/healthz
 
 <span class="comment"># Check iptables rules (kube-proxy)</span>
-docker compose exec kube-proxy iptables <span class="flag">-t</span> nat <span class="flag">-L</span> KUBE-SERVICES
+podman compose exec kube-proxy iptables <span class="flag">-t</span> nat <span class="flag">-L</span> KUBE-SERVICES
 
 <span class="comment"># Check etcd health</span>
-docker compose exec etcd etcdctl endpoint health</code>
+podman compose exec etcd etcdctl endpoint health</code>
       </pre>
 
       <div class="doc-pager">

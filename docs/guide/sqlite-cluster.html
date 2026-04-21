@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Docker Compose with SQLite - Rūsternetes</title>
+  <title>Compose Cluster with SQLite - Rūsternetes</title>
   <link rel="icon" type="image/svg+xml" href="../favicon.svg">
   <link rel="stylesheet" href="../style.css">
 </head>
@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html" class="active">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html" class="active">Compose + SQLite</a></li>
           <li><a href="high-availability.html">High Availability</a></li>
         </ul>
       </div>
@@ -101,7 +101,7 @@
     <div class="doc-overlay"></div>
 
     <main class="doc-content">
-      <h1>Docker Compose with SQLite (Rhino)</h1>
+      <h1>Compose Cluster with SQLite (Rhino)</h1>
       <p class="lead">
         Run a multi-node Rūsternetes cluster with SQLite as the storage backend instead of etcd.
         The <a href="https://github.com/calfonso/rhino">Rhino</a> server provides an etcd-compatible
@@ -125,7 +125,7 @@
         From the Rūsternetes components' perspective, Rhino is indistinguishable from etcd. The
         API server, scheduler, controller manager, kubelets, and kube-proxy all connect to Rhino
         using the standard etcd client library. No code changes are needed &mdash; you simply
-        swap the service in your Docker Compose file.
+        swap the service in your compose file.
       </p>
 
       <div class="admonition note">
@@ -160,8 +160,8 @@
           </tr>
           <tr>
             <td>Compose file</td>
-            <td><code>docker-compose.yml</code></td>
-            <td><code>docker-compose.sqlite.yml</code></td>
+            <td><code>compose.yml</code> / <code>docker-compose.yml</code></td>
+            <td><code>compose.sqlite.yml</code> / <code>docker-compose.sqlite.yml</code></td>
           </tr>
           <tr>
             <td>State storage</td>
@@ -193,7 +193,7 @@
 
       <h2>Rhino Configuration</h2>
       <p>
-        The Rhino service in <code>docker-compose.sqlite.yml</code> is configured with these settings:
+        The Rhino service in <code>compose.sqlite.yml</code> is configured with these settings:
       </p>
 
       <table>
@@ -228,7 +228,7 @@
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.sqlite.yml (rhino service)</span>
+          <span class="code-title">compose.sqlite.yml (rhino service)</span>
         </div>
         <code>
 services:
@@ -249,7 +249,7 @@ services:
       - ETCD_SERVERS=http://rhino:2379
     depends_on:
       - rhino
-    <span class="comment"># ... rest is identical to docker-compose.yml</span>
+    <span class="comment"># ... rest is identical to compose.yml</span>
 </code>
       </pre>
 
@@ -292,7 +292,7 @@ bash scripts/generate-certs.sh
         </div>
         <code>
 <span class="comment"># Build using the SQLite compose file</span>
-docker compose -f docker-compose.sqlite.yml build
+podman compose -f compose.sqlite.yml build
 </code>
       </pre>
 
@@ -305,7 +305,7 @@ docker compose -f docker-compose.sqlite.yml build
           <span class="code-title">terminal</span>
         </div>
         <code>
-docker compose -f docker-compose.sqlite.yml up -d
+podman compose -f compose.sqlite.yml up -d
 </code>
       </pre>
 
@@ -372,11 +372,11 @@ kubectl get pods -A
         </div>
         <code>
 <span class="comment"># Connect to the Rhino container's database</span>
-docker compose -f docker-compose.sqlite.yml exec rhino \
+podman compose -f compose.sqlite.yml exec rhino \
   sqlite3 /data/rusternetes.db
 
 <span class="comment"># Or copy the database locally and inspect</span>
-docker compose -f docker-compose.sqlite.yml cp rhino:/data/rusternetes.db ./state.db
+podman compose -f compose.sqlite.yml cp rhino:/data/rusternetes.db ./state.db
 sqlite3 ./state.db
 
 <span class="comment"># List all resources</span>
@@ -421,14 +421,14 @@ FROM pragma_page_count(), pragma_page_size();
         </div>
         <code>
 <span class="comment"># Stop the etcd cluster</span>
-docker compose down
+podman compose down
 
 <span class="comment"># Start with SQLite instead</span>
-docker compose -f docker-compose.sqlite.yml up -d
+podman compose -f compose.sqlite.yml up -d
 
 <span class="comment"># Or switch back to etcd</span>
-docker compose -f docker-compose.sqlite.yml down
-docker compose up -d
+podman compose -f compose.sqlite.yml down
+podman compose up -d
 </code>
       </pre>
 
@@ -456,7 +456,7 @@ docker compose up -d
           <tr>
             <td>API server can't connect to storage</td>
             <td>Rhino not ready yet</td>
-            <td>The api-server retries on startup. Check <code>docker compose logs rhino</code> for errors.</td>
+            <td>The api-server retries on startup. Check <code>podman compose logs rhino</code> for errors.</td>
           </tr>
           <tr>
             <td>Watch events not delivered</td>
@@ -474,7 +474,7 @@ docker compose up -d
       <div class="doc-pager">
         <a href="docker-cluster.html" class="prev">
           <span class="pager-label">Previous</span>
-          &larr; Docker + etcd
+          &larr; Compose + etcd
         </a>
         <a href="high-availability.html" class="next">
           <span class="pager-label">Next</span>

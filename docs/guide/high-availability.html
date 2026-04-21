@@ -40,8 +40,8 @@
         <ul class="sidebar-links">
           <li><a href="deployment.html">Overview</a></li>
           <li><a href="all-in-one.html">All-in-One Binary</a></li>
-          <li><a href="docker-cluster.html">Docker + etcd</a></li>
-          <li><a href="sqlite-cluster.html">Docker + SQLite</a></li>
+          <li><a href="docker-cluster.html">Compose + etcd</a></li>
+          <li><a href="sqlite-cluster.html">Compose + SQLite</a></li>
           <li><a href="high-availability.html" class="active">High Availability</a></li>
         </ul>
       </div>
@@ -163,7 +163,7 @@
       <h2>3-Node etcd Cluster</h2>
       <p>
         A 3-node etcd cluster tolerates the failure of one node while maintaining quorum (2/3).
-        The <code>docker-compose.ha.yml</code> file defines three etcd instances with static
+        The <code>compose.ha.yml</code> file defines three etcd instances with static
         bootstrapping.
       </p>
 
@@ -174,7 +174,7 @@
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.ha.yml (etcd cluster)</span>
+          <span class="code-title">compose.ha.yml (etcd cluster)</span>
         </div>
         <code>
 services:
@@ -476,7 +476,7 @@ volumes:
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.ha.yml (scheduler instances)</span>
+          <span class="code-title">compose.ha.yml (scheduler instances)</span>
         </div>
         <code>
   scheduler-1:
@@ -562,7 +562,7 @@ backend api-servers
           <span class="code-dot red"></span>
           <span class="code-dot yellow"></span>
           <span class="code-dot green"></span>
-          <span class="code-title">docker-compose.ha.yml (API servers)</span>
+          <span class="code-title">compose.ha.yml (API servers)</span>
         </div>
         <code>
   api-server-1:
@@ -735,24 +735,24 @@ backend api-servers
         </div>
         <code>
 <span class="comment"># Check etcd cluster health</span>
-docker compose -f docker-compose.ha.yml exec etcd-1 \
+podman compose -f compose.ha.yml exec etcd-1 \
   etcdctl <span class="flag">--endpoints</span>=<span class="value">http://etcd-1:2379,http://etcd-2:2379,http://etcd-3:2379</span> \
   endpoint health <span class="flag">--write-out</span>=<span class="value">table</span>
 
 <span class="comment"># Check etcd cluster member list</span>
-docker compose -f docker-compose.ha.yml exec etcd-1 \
+podman compose -f compose.ha.yml exec etcd-1 \
   etcdctl member list <span class="flag">--write-out</span>=<span class="value">table</span>
 
 <span class="comment"># Check current scheduler leader</span>
-docker compose -f docker-compose.ha.yml exec etcd-1 \
+podman compose -f compose.ha.yml exec etcd-1 \
   etcdctl get /rusternetes/scheduler/leader <span class="flag">--print-value-only</span>
 
 <span class="comment"># Check current controller manager leader</span>
-docker compose -f docker-compose.ha.yml exec etcd-1 \
+podman compose -f compose.ha.yml exec etcd-1 \
   etcdctl get /rusternetes/controller-manager/leader <span class="flag">--print-value-only</span>
 
 <span class="comment"># Watch leader election changes in real time</span>
-docker compose -f docker-compose.ha.yml exec etcd-1 \
+podman compose -f compose.ha.yml exec etcd-1 \
   etcdctl watch /rusternetes/ <span class="flag">--prefix</span>
 </code>
       </pre>
@@ -781,7 +781,7 @@ docker compose -f docker-compose.ha.yml exec etcd-1 \
       <div class="doc-pager">
         <a href="sqlite-cluster.html" class="prev">
           <span class="pager-label">Previous</span>
-          &larr; Docker + SQLite
+          &larr; Compose + SQLite
         </a>
         <a href="bootstrap.html" class="next">
           <span class="pager-label">Next</span>
