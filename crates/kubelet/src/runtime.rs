@@ -3855,8 +3855,11 @@ impl ContainerRuntime {
                             .unwrap_or_default();
                         format!(
                             "nameserver {}{}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
-                            self.cluster_dns,
-                            extra_ns,
+                            // Put host/container DNS first so container names (api-server)
+                            // resolve before CoreDNS returns NXDOMAIN for them.
+                            // CoreDNS handles K8s service names as fallback.
+                            extra_ns.trim_start_matches('\n'),
+                            format!("\nnameserver {}", self.cluster_dns),
                             namespace,
                             self.cluster_domain,
                             self.cluster_domain,
