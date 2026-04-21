@@ -302,26 +302,20 @@ impl RuntimeConfig {
         // In Docker Desktop environments, the ClusterIP (10.96.0.1) is not
         // routable from bridge containers because kube-proxy's iptables DNAT
         // only applies in the host network namespace. Use the API server's
-        // direct container IP instead. The TLS cert includes Docker bridge IPs.
+        // Use the kubernetes service ClusterIP (10.96.0.1) as KUBERNETES_SERVICE_HOST.
+        // This is stable across container restarts (unlike container IPs which change).
+        // The TLS cert includes 10.96.0.1 as a SAN.
+        // Fallback to the override hostname if set.
         let kubernetes_service_host = if let Ok(override_host) =
             std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE")
         {
-            // Resolve hostname to IP for KUBERNETES_SERVICE_HOST
-            use std::net::ToSocketAddrs;
-            if let Ok(mut addrs) = format!("{}:6443", override_host).to_socket_addrs() {
-                if let Some(addr) = addrs.next() {
-                    tracing::info!(
-                        "Resolved KUBERNETES_SERVICE_HOST_OVERRIDE {} -> {}",
-                        override_host,
-                        addr.ip()
-                    );
-                    addr.ip().to_string()
-                } else {
-                    override_host
-                }
-            } else {
+            // Don't resolve to IP — use the hostname or ClusterIP directly.
+            // Container IPs change on restart; ClusterIP and DNS names are stable.
+            tracing::info!(
+                "Using KUBERNETES_SERVICE_HOST_OVERRIDE: {}",
                 override_host
-            }
+            );
+            override_host
         } else {
             first_ip_from_cidr(&cluster_service_cidr).unwrap_or_else(|_| "10.96.0.1".to_string())
         };

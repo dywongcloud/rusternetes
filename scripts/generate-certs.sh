@@ -72,26 +72,6 @@ DNS.6 = kubernetes.default.svc
 DNS.7 = kubernetes.default.svc.cluster.local
 IP.1 = 127.0.0.1
 IP.2 = 10.96.0.1
-# Docker bridge network IPs
-IP.3 = 172.18.0.2
-IP.4 = 172.18.0.3
-IP.5 = 172.18.0.4
-IP.6 = 172.18.0.5
-# Podman network IPs (wide range — podman assigns incrementing IPs)
-IP.7 = 10.89.0.2
-IP.8 = 10.89.0.3
-IP.9 = 10.89.0.4
-IP.10 = 10.89.0.5
-IP.11 = 10.89.0.6
-IP.12 = 10.89.0.7
-IP.13 = 10.89.0.8
-IP.14 = 10.89.0.9
-IP.15 = 10.89.0.10
-IP.16 = 10.89.0.20
-IP.17 = 10.89.0.30
-IP.18 = 10.89.0.40
-IP.19 = 10.89.0.50
-IP.20 = 10.89.0.100
 EOF
 
 # Generate self-signed certificate (valid for 10 years, matching the Rust implementation)
