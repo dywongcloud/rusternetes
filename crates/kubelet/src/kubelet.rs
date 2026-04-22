@@ -54,7 +54,7 @@ pub struct Kubelet {
     pod_sync_locks: Mutex<HashSet<String>>,
     /// Track recently-deleted pod names (from watch events) so orphan cleanup
     /// can skip the grace period for pods that were explicitly deleted from storage.
-    recently_deleted: Arc<Mutex<HashSet<String>>>,
+    recently_deleted: Arc<Mutex<HashMap<String, Option<Pod>>>>,
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
@@ -89,7 +89,7 @@ impl Kubelet {
             eviction_manager: Mutex::new(EvictionManager::new()),
             pod_states: Mutex::new(HashMap::new()),
             pod_sync_locks: Mutex::new(HashSet::new()),
-            recently_deleted: Arc::new(Mutex::new(HashSet::new())),
+            recently_deleted: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -144,9 +144,10 @@ impl Kubelet {
                                         let assigned_node =
                                             pod.pointer("/spec/nodeName").and_then(|v| v.as_str());
                                         if assigned_node == Some(&node_name) {
-                                            // Track the pod name so orphan cleanup skips the grace period
+                                            // Cache the pod spec so orphan cleanup can run preStop hooks
                                             if let Some(pod_name) = pod.pointer("/metadata/name").and_then(|v| v.as_str()) {
-                                                recently_deleted_clone.lock().unwrap().insert(pod_name.to_string());
+                                                let cached_pod = serde_json::from_value::<Pod>(pod.clone()).ok();
+                                                recently_deleted_clone.lock().unwrap().insert(pod_name.to_string(), cached_pod);
                                             }
                                             let _ = watch_tx_clone.try_send(key);
                                         }
@@ -955,7 +956,8 @@ impl Kubelet {
             }
             // Fast path: if this pod was explicitly deleted (via watch event),
             // skip the grace period and clean up immediately.
-            let is_recently_deleted = self.recently_deleted.lock().unwrap().contains(running_pod_name);
+            let cached_pod = self.recently_deleted.lock().unwrap().get(running_pod_name).cloned().flatten();
+            let is_recently_deleted = cached_pod.is_some() || self.recently_deleted.lock().unwrap().contains_key(running_pod_name);
             if !is_recently_deleted {
                 // Check container age — don't kill containers younger than 30s
                 let container_age = self
@@ -972,7 +974,7 @@ impl Kubelet {
                 }
             } else {
                 // Remove from tracker — we're about to clean it up
-                self.recently_deleted.lock().unwrap().remove(running_pod_name);
+                self.recently_deleted.lock().unwrap().remove(running_pod_name.as_str());
                 info!(
                     "Fast-path cleanup for explicitly deleted pod {} — skipping grace period",
                     running_pod_name
@@ -994,7 +996,26 @@ impl Kubelet {
                 "Found orphaned pod {} - not in etcd, stopping and removing containers",
                 running_pod_name
             );
-            if let Err(e) = self.runtime.stop_and_remove_pod(running_pod_name).await {
+            // If we have a cached pod spec, use stop_pod_for to run preStop hooks.
+            // Otherwise fall back to direct stop_and_remove_pod.
+            if let Some(ref pod) = cached_pod {
+                let has_lifecycle = pod.spec.as_ref().map(|s| {
+                    s.containers.iter().any(|c| c.lifecycle.as_ref().map(|l| l.pre_stop.is_some()).unwrap_or(false))
+                }).unwrap_or(false);
+                if has_lifecycle {
+                    let grace = pod.spec.as_ref()
+                        .and_then(|s| s.termination_grace_period_seconds)
+                        .unwrap_or(30);
+                    info!("Running preStop hooks for deleted pod {} (grace {}s)", running_pod_name, grace);
+                    if let Err(e) = self.runtime.stop_pod_for(pod, grace).await {
+                        warn!("preStop hooks failed for pod {}: {}", running_pod_name, e);
+                    }
+                }
+                // Clean up remaining containers and volumes
+                if let Err(e) = self.runtime.stop_and_remove_pod(running_pod_name).await {
+                    warn!("Failed to clean up pod {}: {}", running_pod_name, e);
+                }
+            } else if let Err(e) = self.runtime.stop_and_remove_pod(running_pod_name).await {
                 warn!(
                     "Failed to clean up orphaned pod {}: {}",
                     running_pod_name, e

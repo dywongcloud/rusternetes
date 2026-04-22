@@ -487,27 +487,12 @@ pub async fn get_swagger_spec(
     // message (zero bytes) is valid and parses as an empty Document.
     // This lets client-go's validation proceed without errors — it just
     // won't find definitions for the resource, so validation is skipped.
-    let wants_protobuf = accept.contains("proto-openapi.spec.v2");
-    if wants_protobuf {
-        // Return an empty gnostic openapi.v2.Document protobuf message.
-        // In proto3, an empty message (zero bytes) is valid — all fields
-        // take their default values (empty strings, nil submessages).
-        // This lets client-go's OpenAPISchema() call succeed without errors.
-        // The resulting Document has no definitions, so kubectl validation
-        // is effectively skipped (no schema to validate against).
-        //
-        // We CANNOT return our JSON OpenAPI spec here because the client
-        // does proto.Unmarshal(data, &Document{}) directly — it expects
-        // native gnostic protobuf, not JSON.
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(
-                header::CONTENT_TYPE,
-                "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
-            )
-            .body(Body::empty())
-            .unwrap();
-    }
+    // When protobuf is requested, we can't produce native gnostic protobuf.
+    // Instead, return the JSON swagger spec — client-go's OpenAPI retrieval
+    // code checks Content-Type and falls back to JSON parsing when it doesn't
+    // get protobuf. This allows kubectl explain and other tools that use
+    // OpenAPI discovery to work correctly with CRDs.
+    // Previously we returned an empty protobuf body which broke kubectl explain.
 
     Response::builder()
         .status(StatusCode::OK)
