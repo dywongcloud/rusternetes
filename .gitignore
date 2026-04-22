@@ -30,3 +30,6 @@ configs/local-*
 etcd-data/
 # Local development runtime state
 .rusternetes/
+
+# Work tracking (local only)
+.work/
