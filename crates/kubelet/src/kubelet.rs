@@ -2337,6 +2337,22 @@ impl Kubelet {
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
 
+                                // Apply CrashLoopBackOff delay before restarting.
+                                // K8s uses exponential backoff: 10s * 2^(restarts-1), capped at 300s.
+                                // K8s ref: pkg/kubelet/kubelet.go — computePodActions / backOff
+                                let max_restart_count = prev_counts.values().copied().max().unwrap_or(0);
+                                if max_restart_count > 0 {
+                                    let backoff_secs = std::cmp::min(
+                                        10u64 * 2u64.pow((max_restart_count - 1).min(8)),
+                                        300,
+                                    );
+                                    debug!(
+                                        "CrashLoopBackOff: waiting {}s before restarting containers in pod {}/{}",
+                                        backoff_secs, namespace, pod_name
+                                    );
+                                    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                                }
+
                                 // Restart only the terminated containers (not the entire pod).
                                 // start_pod() would redo init containers, networking, etc.
                                 // We just need to remove and recreate the exited containers.

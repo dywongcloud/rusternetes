@@ -716,16 +716,50 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
             });
         }
 
-        // Update pod in storage
+        // Update pod in storage with retry on conflict
         let key = rusternetes_storage::build_key(
             "pods",
             pod.metadata.namespace.as_deref(),
             &pod.metadata.name,
         );
-        self.storage.update(&key, &pod).await?;
 
-        info!("Successfully bound pod to node {}", node_name);
-        Ok(())
+        match self.storage.update(&key, &pod).await {
+            Ok(_) => {
+                info!("Successfully bound pod to node {}", node_name);
+                Ok(())
+            }
+            Err(rusternetes_common::Error::Conflict(_)) => {
+                // ResourceVersion conflict — re-read and retry once
+                debug!("Bind conflict for pod {}, retrying", pod.metadata.name);
+                let mut fresh_pod: Pod = self.storage.get(&key).await?;
+                if let Some(ref mut spec) = fresh_pod.spec {
+                    spec.node_name = Some(node_name.to_string());
+                }
+                let condition = rusternetes_common::resources::PodCondition {
+                    condition_type: "PodScheduled".to_string(),
+                    status: "True".to_string(),
+                    last_transition_time: Some(chrono::Utc::now()),
+                    reason: Some("Scheduled".to_string()),
+                    message: Some(format!("Successfully assigned to {}", node_name)),
+                    observed_generation: None,
+                };
+                if let Some(ref mut status) = fresh_pod.status {
+                    let conditions = status.conditions.get_or_insert_with(Vec::new);
+                    if let Some(existing) = conditions
+                        .iter_mut()
+                        .find(|c| c.condition_type == "PodScheduled")
+                    {
+                        *existing = condition;
+                    } else {
+                        conditions.push(condition);
+                    }
+                }
+                self.storage.update(&key, &fresh_pod).await?;
+                info!("Successfully bound pod to node {} (retry)", node_name);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Try to preempt lower-priority pods to make room for a high-priority pod

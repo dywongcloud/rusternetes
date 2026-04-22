@@ -653,22 +653,30 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                 }
             }
 
-            // First, delete unavailable old pods (they're already not serving, free deletions)
+            // Delete old pods within the maxUnavailable budget.
+            // Unavailable old pods are preferred (they're already not serving) but ALL
+            // deletions count against the budget. K8s maxSurge=0 means we can never have
+            // more than maxUnavailable pods missing at any time.
+            let allowed_deletions = (max_unavailable - num_unavailable).max(0);
+            let mut deleted_count: i32 = 0;
+
+            // First, delete unavailable old pods (preferred — already not serving)
             for (node_name, pod) in &old_unavailable_pods {
+                if deleted_count >= allowed_deletions {
+                    break;
+                }
                 let pod_name = &pod.metadata.name;
                 let pod_key = format!("/registry/pods/{}/{}", namespace, pod_name);
                 if let Ok(()) = self.storage.delete(&pod_key).await {
                     info!(
-                        "Rolling update: deleted unavailable old pod {} on node {} (hash != {})",
-                        pod_name, node_name, template_hash
+                        "Rolling update: deleted unavailable old pod {} on node {} (budget {}/{})",
+                        pod_name, node_name, deleted_count + 1, allowed_deletions
                     );
+                    deleted_count += 1;
                 }
             }
 
-            // Then, delete available old pods within the maxUnavailable budget.
-            // Each deletion makes one more pod unavailable.
-            let allowed_deletions = (max_unavailable - num_unavailable).max(0);
-            let mut deleted_count = 0;
+            // Then, delete available old pods with remaining budget
             for (node_name, pod) in &old_available_pods {
                 if deleted_count >= allowed_deletions {
                     break;

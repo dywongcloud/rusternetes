@@ -2540,15 +2540,9 @@ impl ContainerRuntime {
             // Determine the default file mode: spec defaultMode, or 0644 (Kubernetes default)
             let da_default_mode = downward_api.default_mode.unwrap_or(0o644);
 
-            // Set directory permissions to match defaultMode
+            // Compute final directory permissions (applied after files are written)
             #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(
-                    &volume_dir,
-                    std::fs::Permissions::from_mode(da_default_mode as u32 | 0o111),
-                )?;
-            }
+            let da_dir_mode = da_default_mode as u32 | 0o111;
 
             if let Some(items) = &downward_api.items {
                 for item in items {
@@ -2590,6 +2584,17 @@ impl ContainerRuntime {
                         file_path, item.path
                     );
                 }
+            }
+
+            // Set directory permissions after files are written so that restrictive
+            // defaultMode values don't prevent file creation.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    &volume_dir,
+                    std::fs::Permissions::from_mode(da_dir_mode),
+                )?;
             }
 
             info!(
@@ -4271,6 +4276,15 @@ impl ContainerRuntime {
                 } else {
                     None
                 },
+                // Share UTS namespace with pause container so app containers
+                // inherit the pod hostname. Without this, containers get their
+                // container ID as hostname instead of the pod name.
+                // K8s CRI shares UTS via the pod sandbox; Docker/Podman need explicit uts_mode.
+                uts_mode: if using_container_network {
+                    Some(format!("container:{}_pause", pod_name))
+                } else {
+                    None
+                },
                 // Resource limits enforcement via cgroups
                 memory: memory_limit,
                 cpu_period,
@@ -5191,15 +5205,36 @@ impl ContainerRuntime {
                                 )
                             }
                         } else {
-                            // No previous status — container hasn't been created yet
-                            (
-                                ContainerState::Waiting {
-                                    reason: Some("PodInitializing".to_string()),
-                                    message: None,
-                                },
-                                None,
-                                None,
-                            )
+                            // No previous status — check if pod is in terminal phase.
+                            // If the pod succeeded, init containers must have completed.
+                            let pod_phase = pod
+                                .status
+                                .as_ref()
+                                .and_then(|s| s.phase.as_ref());
+                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed)) {
+                                (
+                                    ContainerState::Terminated {
+                                        exit_code: 0,
+                                        reason: Some("Completed".to_string()),
+                                        message: None,
+                                        started_at: None,
+                                        finished_at: None,
+                                        container_id: None,
+                                        signal: None,
+                                    },
+                                    None,
+                                    None,
+                                )
+                            } else {
+                                (
+                                    ContainerState::Waiting {
+                                        reason: Some("PodInitializing".to_string()),
+                                        message: None,
+                                    },
+                                    None,
+                                    None,
+                                )
+                            }
                         }
                     }
                 };

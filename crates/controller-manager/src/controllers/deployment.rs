@@ -1189,6 +1189,18 @@ impl<S: Storage + 'static> DeploymentController<S> {
         }
 
         updated_rs.spec.replicas = replicas;
+
+        // Update desired-replicas annotation so proportional scaling detection works.
+        // K8s ref: pkg/controller/deployment/util/deployment_util.go — SetReplicasAnnotations
+        let annotations = updated_rs
+            .metadata
+            .annotations
+            .get_or_insert_with(std::collections::HashMap::new);
+        annotations.insert(
+            "deployment.kubernetes.io/desired-replicas".to_string(),
+            replicas.to_string(),
+        );
+
         self.storage.update(&key, &updated_rs).await?;
 
         info!(

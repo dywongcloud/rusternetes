@@ -56,6 +56,9 @@ where
 {
     info!("Patching {} {}/{}", resource_type, namespace, name);
 
+    // Save user info for webhooks before RBAC check consumes it
+    let webhook_user = auth_ctx.user.clone();
+
     // Check authorization - use 'patch' verb for RBAC
     let attrs = RequestAttributes::new(auth_ctx.user, "patch", resource_type)
         .with_namespace(&namespace)
@@ -232,7 +235,7 @@ where
     }
 
     // Convert back to resource type — use lenient deserialization
-    let patched_resource: T = serde_json::from_value(patched_json.clone()).map_err(|e| {
+    let mut patched_resource: T = serde_json::from_value(patched_json.clone()).map_err(|e| {
         // If strict deserialization fails, try storing as raw JSON and retrieving
         tracing::warn!("Patch result deserialization warning (storing raw): {}", e);
         rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e))
@@ -240,6 +243,78 @@ where
 
     // For resources with metadata, ensure name/namespace can't be changed via patch
     // This is handled by updating in storage with the original key
+
+    // Run admission webhooks on the patched resource (same as update path)
+    {
+        use rusternetes_common::admission;
+        let gvk = admission::GroupVersionKind {
+            group: api_group.to_string(),
+            version: "v1".to_string(),
+            kind: resource_type.to_string(),
+        };
+        let gvr = admission::GroupVersionResource {
+            group: api_group.to_string(),
+            version: "v1".to_string(),
+            resource: resource_type.to_string(),
+        };
+        let user_info = admission::UserInfo {
+            username: webhook_user.username.clone(),
+            uid: webhook_user.uid.clone(),
+            groups: webhook_user.groups.clone(),
+        };
+
+        // Mutating webhooks
+        let (response, mutated_obj) = state
+            .webhook_manager
+            .run_mutating_webhooks(
+                &admission::Operation::Update,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &name,
+                Some(patched_json.clone()),
+                Some(current_json.clone()),
+                &user_info,
+            )
+            .await?;
+        if let admission::AdmissionResponse::Deny(reason) = &response {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
+        }
+        if let Some(mutated) = mutated_obj {
+            if let Ok(m) = serde_json::from_value::<T>(mutated) {
+                patched_resource = m;
+                patched_json = serde_json::to_value(&patched_resource)
+                    .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+            }
+        }
+
+        // Validating webhooks
+        match state
+            .webhook_manager
+            .run_validating_webhooks(
+                &admission::Operation::Update,
+                &gvk,
+                &gvr,
+                Some(&namespace),
+                &name,
+                Some(patched_json),
+                Some(current_json),
+                &user_info,
+            )
+            .await?
+        {
+            admission::AdmissionResponse::Deny(reason) => {
+                return Err(rusternetes_common::Error::Forbidden(format!(
+                    "admission webhook denied the request: {}",
+                    reason
+                )));
+            }
+            _ => {}
+        }
+    }
 
     // Check if this is a dry-run request
     let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);

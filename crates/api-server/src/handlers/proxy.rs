@@ -467,8 +467,12 @@ pub async fn proxy_pod(
     let path = path.trim_start_matches('/');
     let target_url = format!("{}://{}:{}/{}", url_scheme, pod_ip, port, path);
 
-    // Forward the request
-    proxy_request(target_url, method, headers, params, body).await
+    // Forward the request with URL rewriting for HTML responses
+    let proxy_base = format!(
+        "/api/v1/namespaces/{}/pods/{}/proxy",
+        namespace, pod_name
+    );
+    proxy_request_with_rewrite(target_url, method, headers, params, body, Some(proxy_base)).await
 }
 
 /// Create a shared reqwest client for proxy requests.
@@ -503,6 +507,21 @@ async fn proxy_request(
     headers: HeaderMap,
     params: HashMap<String, String>,
     body: Body,
+) -> Result<Response> {
+    proxy_request_with_rewrite(target_url, method, headers, params, body, None).await
+}
+
+/// Proxy request with optional URL rewriting for HTML responses.
+/// When `proxy_base_path` is Some, absolute URLs in HTML responses are
+/// rewritten to include the API proxy path prefix — matching K8s behavior.
+/// K8s ref: staging/src/k8s.io/apimachinery/pkg/util/proxy/upgradeaware.go
+async fn proxy_request_with_rewrite(
+    target_url: String,
+    method: Method,
+    headers: HeaderMap,
+    params: HashMap<String, String>,
+    body: Body,
+    proxy_base_path: Option<String>,
 ) -> Result<Response> {
     // Build query string from params
     let query_string = if !params.is_empty() {
@@ -602,9 +621,30 @@ async fn proxy_request(
                     }
                 };
 
+                // Rewrite absolute URLs in HTML responses if proxy_base_path is set.
+                // K8s rewrites href="/..." and src="/..." to include the proxy path prefix.
+                let final_body = if let Some(ref base_path) = proxy_base_path {
+                    let content_type = axum_response
+                        .headers_ref()
+                        .and_then(|h| h.get("content-type"))
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    if content_type.contains("text/html") {
+                        let html = String::from_utf8_lossy(&resp_bytes);
+                        let rewritten = html
+                            .replace("href=\"/", &format!("href=\"{}/", base_path))
+                            .replace("src=\"/", &format!("src=\"{}/", base_path));
+                        Body::from(rewritten)
+                    } else {
+                        Body::from(resp_bytes.to_vec())
+                    }
+                } else {
+                    Body::from(resp_bytes.to_vec())
+                };
+
                 // Build final response
                 return axum_response
-                    .body(Body::from(resp_bytes.to_vec()))
+                    .body(final_body)
                     .map_err(|e| {
                         rusternetes_common::Error::Internal(format!(
                             "Failed to build response: {}",
