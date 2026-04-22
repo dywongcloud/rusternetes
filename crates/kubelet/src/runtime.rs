@@ -1307,6 +1307,12 @@ impl ContainerRuntime {
             raw_hostname.to_string()
         };
 
+        // Ensure busybox image is available (critical for podman which may not auto-pull)
+        // Use IfNotPresent policy to avoid unnecessary pulls on every pod start
+        self.ensure_image("busybox:latest", Some("IfNotPresent"))
+            .await
+            .context("Failed to ensure busybox image for pause container")?;
+
         let config = Config {
             image: Some("busybox:latest".to_string()),
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
