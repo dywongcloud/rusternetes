@@ -536,8 +536,8 @@ fn add_standard_crd_properties(schema: &mut serde_json::Value) {
         if let Some(props) = properties.as_object_mut() {
             props.entry("metadata".to_string()).or_insert_with(|| {
                 serde_json::json!({
-                    "description": "Standard object's metadata. More info: https://git.k8s.io/community/contributors/dede/sig-architecture/api-conventions.md#metadata",
-                    "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+                    "description": "Standard object's metadata.",
+                    "type": "object"
                 })
             });
             props.entry("apiVersion".to_string()).or_insert_with(|| {
