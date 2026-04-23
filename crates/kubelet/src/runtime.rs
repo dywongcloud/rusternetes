@@ -3827,10 +3827,11 @@ impl ContainerRuntime {
                             .and_then(|ed| ed.medium.as_deref())
                             == Some("Memory");
 
-                        let use_tmpfs = is_emptydir && expanded_sub_path.is_none();
+                        let use_tmpfs =
+                            is_emptydir && is_memory_medium && expanded_sub_path.is_none();
 
                         if use_tmpfs {
-                            // Use tmpfs for all emptyDir volumes (both Memory and default medium).
+                            // Memory-backed emptyDir — use tmpfs.
                             // K8s sets mode=0777. The sticky bit is NOT set.
                             // K8s ref: pkg/volume/emptydir/empty_dir.go — setupDir()
                             let opts = if read_only {
