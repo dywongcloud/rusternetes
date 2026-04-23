@@ -326,10 +326,26 @@ where
         return Ok(Json(patched_resource));
     }
 
-    // Update in storage
-    let updated = state.storage.update(&key, &patched_resource).await?;
-
-    Ok(Json(updated))
+    // Update in storage with retry on conflict.
+    // PATCH operations are idempotent — on rv conflict, re-read the resource,
+    // re-apply the patch, and retry. This handles the common case where the
+    // kubelet updates pod status between the client's read and patch.
+    match state.storage.update(&key, &patched_resource).await {
+        Ok(updated) => Ok(Json(updated)),
+        Err(rusternetes_common::Error::Conflict(_)) => {
+            // Re-read, re-apply patch, retry once
+            let fresh: T = state.storage.get(&key).await?;
+            let fresh_json = serde_json::to_value(&fresh)
+                .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
+            let re_patched = apply_patch(&fresh_json, &patch_json, patch_type)
+                .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
+            let re_patched_resource: T = serde_json::from_value(re_patched)
+                .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
+            let updated = state.storage.update(&key, &re_patched_resource).await?;
+            Ok(Json(updated))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Generic PATCH handler for cluster-scoped resources
