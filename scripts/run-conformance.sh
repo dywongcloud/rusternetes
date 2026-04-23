@@ -54,10 +54,21 @@ else
     echo "CoreDNS is already running"
 fi
 
-# Step 5: Run conformance tests
+# Step 5: Pre-pull required images
+# sonobuoy CLI v0.57.4 doesn't have a published container image — use v0.57.3
+echo "[5/7] Pre-pulling required container images..."
+SONOBUOY_IMAGE_TAG="v0.57.3"
+CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-$(command -v podman >/dev/null 2>&1 && echo podman || echo docker)}"
+$CONTAINER_RUNTIME pull "docker.io/sonobuoy/sonobuoy:${SONOBUOY_IMAGE_TAG}" 2>/dev/null || true
+$CONTAINER_RUNTIME tag "docker.io/sonobuoy/sonobuoy:${SONOBUOY_IMAGE_TAG}" "docker.io/sonobuoy/sonobuoy:v0.57.4" 2>/dev/null || true
+$CONTAINER_RUNTIME pull docker.io/sonobuoy/systemd-logs:v0.4 2>/dev/null || true
+$CONTAINER_RUNTIME pull registry.k8s.io/conformance:v1.35.0 2>/dev/null || true
+echo "✓ Images pre-pulled"
+
+# Step 6: Run conformance tests
 # Accept an optional mode argument (default: certified-conformance)
 SONOBUOY_MODE="${1:-certified-conformance}"
-echo "[5/6] Starting conformance tests (this will take several minutes)..."
+echo "[6/7] Starting conformance tests (this will take several minutes)..."
 echo "Running: sonobuoy run --mode=${SONOBUOY_MODE} --wait"
 echo ""
 
@@ -73,9 +84,9 @@ else
     TEST_RESULT="FAILED"
 fi
 
-# Step 6: Retrieve and display results
+# Step 7: Retrieve and display results
 echo ""
-echo "[6/6] Retrieving test results..."
+echo "[7/7] Retrieving test results..."
 echo ""
 
 # Get the results
