@@ -2358,20 +2358,26 @@ impl Kubelet {
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
 
-                                // Apply CrashLoopBackOff delay before restarting.
-                                // K8s backoff: 0s for first restart, then 10s, 20s, 40s... cap 300s.
+                                // Apply CrashLoopBackOff delay before restarting, but only for
+                                // containers that exited with non-zero code. K8s resets backoff
+                                // on successful exit (code 0).
                                 // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_manager.go — backOff
-                                let max_restart_count = prev_counts.values().copied().max().unwrap_or(0);
-                                if max_restart_count > 1 {
-                                    let backoff_secs = std::cmp::min(
-                                        10u64 * 2u64.pow((max_restart_count - 2).min(8)),
-                                        300,
-                                    );
-                                    debug!(
-                                        "CrashLoopBackOff: waiting {}s before restarting containers in pod {}/{}",
-                                        backoff_secs, namespace, pod_name
-                                    );
-                                    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                                let has_failed_container = container_statuses.iter().any(|cs| {
+                                    matches!(&cs.state, Some(ContainerState::Terminated { exit_code, .. }) if *exit_code != 0)
+                                });
+                                if has_failed_container {
+                                    let max_restart_count = prev_counts.values().copied().max().unwrap_or(0);
+                                    if max_restart_count > 1 {
+                                        let backoff_secs = std::cmp::min(
+                                            10u64 * 2u64.pow((max_restart_count - 2).min(8)),
+                                            300,
+                                        );
+                                        debug!(
+                                            "CrashLoopBackOff: waiting {}s before restarting containers in pod {}/{}",
+                                            backoff_secs, namespace, pod_name
+                                        );
+                                        tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                                    }
                                 }
 
                                 // Restart only the terminated containers (not the entire pod).

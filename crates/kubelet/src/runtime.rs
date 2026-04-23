@@ -5213,13 +5213,22 @@ impl ContainerRuntime {
                                 )
                             }
                         } else {
-                            // No previous status — check if pod is in terminal phase.
-                            // If the pod succeeded, init containers must have completed.
+                            // No previous status — the container was cleaned up.
+                            // Check if the pod is in terminal phase OR if the pod has
+                            // already completed all init containers (inferred from the
+                            // fact that app containers exist or the pod reached Running).
                             let pod_phase = pod
                                 .status
                                 .as_ref()
                                 .and_then(|s| s.phase.as_ref());
-                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed)) {
+                            let pod_was_running = pod
+                                .spec
+                                .as_ref()
+                                .and_then(|s| s.node_name.as_ref())
+                                .is_some();
+                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed))
+                                || pod_was_running
+                            {
                                 (
                                     ContainerState::Terminated {
                                         exit_code: 0,
