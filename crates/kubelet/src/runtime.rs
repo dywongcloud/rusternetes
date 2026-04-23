@@ -3916,24 +3916,14 @@ impl ContainerRuntime {
                             ),
                         }
                     } else {
-                        // Include both cluster DNS and the container network DNS
-                        // so pods can resolve both K8s services (via CoreDNS) and
-                        // container hostnames (via podman's aardvark-dns or Docker DNS).
-                        // Get host/container DNS for fallback resolution of container names
-                        let host_dns = std::fs::read_to_string("/etc/resolv.conf")
-                            .ok()
-                            .and_then(|c| c.lines()
-                                .find(|l| l.starts_with("nameserver"))
-                                .map(|l| l.trim_start_matches("nameserver").trim().to_string()));
-                        // Put host/container DNS first so container names (api-server)
-                        // resolve before CoreDNS returns NXDOMAIN for them.
-                        let nameservers = match host_dns {
-                            Some(dns) => format!("nameserver {}\nnameserver {}", dns, self.cluster_dns),
-                            None => format!("nameserver {}", self.cluster_dns),
-                        };
+                        // ClusterFirst: use ONLY the cluster DNS (CoreDNS).
+                        // K8s ClusterFirst means all DNS queries go through cluster DNS.
+                        // Do NOT include host/container DNS — it doesn't know about K8s
+                        // services and causes NXDOMAIN/timeouts for service lookups.
+                        // K8s ref: pkg/kubelet/network/dns/dns.go — getClusterDNS()
                         format!(
-                            "{}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
-                            nameservers,
+                            "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                            self.cluster_dns,
                             namespace,
                             self.cluster_domain,
                             self.cluster_domain,
