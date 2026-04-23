@@ -159,11 +159,14 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    // K8s default watch timeout: minRequestTimeout + random(0, 2*minRequestTimeout)
-    // where minRequestTimeout = 1800s. Without this, watches run forever, accumulating
-    // HTTP/2 streams and causing connection degradation after hours of testing.
-    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go
-    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
+    // Watch timeout: use client-requested timeout or default to 5 minutes.
+    // K8s default is ~30 minutes (minRequestTimeout=1800s + jitter), but that
+    // causes HTTP/2 stream exhaustion during conformance testing — each test
+    // creates watches that persist for 30 minutes after the test ends, consuming
+    // HTTP/2 streams. With 250 max concurrent streams, we exhaust streams after
+    // ~50 tests. 5 minutes is long enough for any single test while allowing
+    // stream reuse. client-go automatically reconnects via RetryWatcher.
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(300)));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
     let requested_rv = params.resource_version.clone();
@@ -455,12 +458,12 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // NEVER filter DELETED events by label selector.
-                                    // The client received an ADDED event when the object matched
-                                    // the selector. If labels changed before deletion, the client
-                                    // MUST still receive the DELETED event to remove the object
-                                    // from its cache. Only filter by field selector (metadata.name).
-                                    if !matches_field_selector(object.metadata(), &field_selector)
+                                    // Filter DELETED events by both label and field selector.
+                                    // Only send DELETED to watchers whose selector matches the
+                                    // deleted object — otherwise watchers receive spurious deletes
+                                    // for objects they never saw as ADDED.
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
@@ -627,11 +630,14 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    // K8s default watch timeout: minRequestTimeout + random(0, 2*minRequestTimeout)
-    // where minRequestTimeout = 1800s. Without this, watches run forever, accumulating
-    // HTTP/2 streams and causing connection degradation after hours of testing.
-    // K8s ref: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go
-    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
+    // Watch timeout: use client-requested timeout or default to 5 minutes.
+    // K8s default is ~30 minutes (minRequestTimeout=1800s + jitter), but that
+    // causes HTTP/2 stream exhaustion during conformance testing — each test
+    // creates watches that persist for 30 minutes after the test ends, consuming
+    // HTTP/2 streams. With 250 max concurrent streams, we exhaust streams after
+    // ~50 tests. 5 minutes is long enough for any single test while allowing
+    // stream reuse. client-go automatically reconnects via RetryWatcher.
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(300)));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
     let requested_rv = params.resource_version.clone();
@@ -882,12 +888,12 @@ where
                                         latest_resource_version = Some(rv.clone());
                                     }
 
-                                    // NEVER filter DELETED events by label selector.
-                                    // The client received an ADDED event when the object matched
-                                    // the selector. If labels changed before deletion, the client
-                                    // MUST still receive the DELETED event to remove the object
-                                    // from its cache. Only filter by field selector (metadata.name).
-                                    if !matches_field_selector(object.metadata(), &field_selector)
+                                    // Filter DELETED events by both label and field selector.
+                                    // Only send DELETED to watchers whose selector matches the
+                                    // deleted object — otherwise watchers receive spurious deletes
+                                    // for objects they never saw as ADDED.
+                                    if !matches_label_selector(object.metadata(), &label_selector)
+                                        || !matches_field_selector(object.metadata(), &field_selector)
                                     {
                                         continue;
                                     }
@@ -2171,7 +2177,7 @@ pub async fn watch_cluster_scoped_json(
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(300)));
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
@@ -2352,7 +2358,7 @@ pub async fn watch_namespaced_json(
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(1800)));
+    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(300)));
     let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);

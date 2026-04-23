@@ -1,6 +1,9 @@
 /// OpenAPI specification handler
 use crate::openapi::generate_openapi_spec;
 use crate::state::ApiServerState;
+use tracing::info;
+
+use crate::gnostic;
 use axum::{
     body::Body,
     extract::State,
@@ -414,6 +417,10 @@ pub async fn get_swagger_spec(
                         }
                         // Add metadata/apiVersion/kind properties (K8s always adds these)
                         add_standard_crd_properties(&mut cleaned);
+                        info!(
+                            "OpenAPI: adding CRD definition {} (group={}, kind={}, version={})",
+                            def_key, group, kind, ver
+                        );
                         definitions.insert(def_key.clone(), cleaned);
                     }
                 }
@@ -471,6 +478,14 @@ pub async fn get_swagger_spec(
         "paths": paths,
         "definitions": definitions
     });
+    let crd_count = definitions.len();
+    if crd_count > 0 {
+        info!(
+            "OpenAPI /v2: serving swagger spec with {} CRD definitions",
+            crd_count
+        );
+    }
+
     let json_bytes = serde_json::to_vec(&spec).unwrap_or_default();
 
     let accept = headers
@@ -478,21 +493,30 @@ pub async fn get_swagger_spec(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Check if protobuf is requested. The client-go OpenAPISchema() method
-    // always requests protobuf and directly calls proto.Unmarshal without
-    // checking Content-Type. It expects a gnostic openapi.v2.Document
-    // (native proto.Marshal, no k8s\0 prefix).
-    //
-    // We can't produce a full gnostic protobuf spec, but an empty proto3
-    // message (zero bytes) is valid and parses as an empty Document.
-    // This lets client-go's validation proceed without errors — it just
-    // won't find definitions for the resource, so validation is skipped.
-    // When protobuf is requested, we can't produce native gnostic protobuf.
-    // Instead, return the JSON swagger spec — client-go's OpenAPI retrieval
-    // code checks Content-Type and falls back to JSON parsing when it doesn't
-    // get protobuf. This allows kubectl explain and other tools that use
-    // OpenAPI discovery to work correctly with CRDs.
-    // Previously we returned an empty protobuf body which broke kubectl explain.
+    // Check if protobuf is requested. client-go's OpenAPISchema() method
+    // requests protobuf and calls proto.Unmarshal on the response body.
+    // It expects a gnostic openapi.v2.Document protobuf.
+    // Convert our JSON swagger spec to gnostic protobuf format.
+    // K8s ref: vendor/k8s.io/kube-openapi/pkg/handler/handler.go — ToProtoBinary()
+    let wants_protobuf = accept.contains("proto-openapi.spec.v2");
+    if wants_protobuf {
+        match gnostic::swagger_json_to_protobuf(&json_bytes) {
+            Ok(proto_bytes) => {
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header(
+                        header::CONTENT_TYPE,
+                        "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
+                    )
+                    .body(Body::from(proto_bytes))
+                    .unwrap();
+            }
+            Err(e) => {
+                info!("Failed to convert swagger to protobuf: {}, falling back to JSON", e);
+                // Fall through to JSON response
+            }
+        }
+    }
 
     Response::builder()
         .status(StatusCode::OK)
@@ -828,6 +852,96 @@ mod tests {
         assert!(
             val["definitions"].is_object(),
             "definitions must be an object"
+        );
+    }
+
+    /// Test that the CRD schema processing (strip_false_extensions + add GVK +
+    /// add standard properties) preserves the schema correctly.
+    /// Simulates the Go conformance test's dropDefaults to verify roundtrip.
+    #[test]
+    fn test_crd_schema_roundtrip_matches_expected() {
+        // Schema matching Go's JSONSchemaProps.MarshalJSON for the schemaFoo YAML
+        let original_schema = serde_json::json!({
+            "description": "Foo CRD for Testing",
+            "type": "object",
+            "properties": {
+                "spec": {
+                    "type": "object",
+                    "description": "Specification of Foo",
+                    "properties": {
+                        "bars": {
+                            "description": "List of Bars and their specs.",
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["name"],
+                                "properties": {
+                                    "name": {"description": "Name of Bar.", "type": "string"},
+                                    "age": {"description": "Age of Bar.", "type": "string"},
+                                    "feeling": {
+                                        "description": "Whether Bar is feeling great.",
+                                        "type": "string",
+                                        "enum": ["Great", "Down"]
+                                    },
+                                    "bazs": {
+                                        "description": "List of Bazs.",
+                                        "items": {"type": "string"},
+                                        "type": "array"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "status": {
+                    "description": "Status of Foo",
+                    "type": "object",
+                    "properties": {
+                        "bars": {
+                            "description": "List of Bars and their statuses.",
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"description": "Name of Bar.", "type": "string"},
+                                    "available": {"description": "Whether the Bar is installed.", "type": "boolean"},
+                                    "quxType": {
+                                        "description": "Indicates to external qux type.",
+                                        "pattern": "in-tree|out-of-tree",
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let mut cleaned = original_schema.clone();
+        strip_false_extensions(&mut cleaned);
+        if let Some(obj) = cleaned.as_object_mut() {
+            obj.insert(
+                "x-kubernetes-group-version-kind".to_string(),
+                serde_json::json!([{"group": "test.example.com", "kind": "Foo", "version": "v1"}]),
+            );
+        }
+        add_standard_crd_properties(&mut cleaned);
+
+        // Simulate Go test's dropDefaults
+        if let Some(obj) = cleaned.as_object_mut() {
+            if let Some(props) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                props.remove("metadata");
+                props.remove("apiVersion");
+                props.remove("kind");
+            }
+            obj.remove("x-kubernetes-group-version-kind");
+        }
+
+        assert_eq!(cleaned, original_schema,
+            "Schema should match after roundtrip.\nExpected:\n{}\n\nActual:\n{}",
+            serde_json::to_string_pretty(&original_schema).unwrap(),
+            serde_json::to_string_pretty(&cleaned).unwrap()
         );
     }
 }

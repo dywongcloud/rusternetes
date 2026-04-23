@@ -4,6 +4,7 @@ mod bootstrap;
 mod conversion;
 mod dynamic_routes;
 mod flow_control;
+mod gnostic;
 mod handlers;
 mod ip_allocator;
 mod middleware;
@@ -346,12 +347,22 @@ async fn main() -> Result<()> {
         // stalls with many concurrent watches — the flow control windows
         // fill up and events can't be delivered, causing client-go's
         // "Watch failed: context canceled" errors.
-        server
-            .http_builder()
-            .http2()
-            .initial_stream_window_size(256 * 1024) // 256KB per stream (K8s: 256KB)
-            .initial_connection_window_size(256 * 1024 * 100) // 25MB total (K8s: 256KB * 100)
-            .max_concurrent_streams(250); // Increased from 100 — conformance tests create many concurrent watches
+        {
+            let builder = server.http_builder();
+            // Set timer first — required for HTTP/2 keepalive to function
+            builder.http2()
+                .timer(hyper_util::rt::TokioTimer::new())
+                .initial_stream_window_size(256 * 1024) // 256KB per stream (K8s: 256KB)
+                .initial_connection_window_size(256 * 1024 * 100) // 25MB total (K8s: 256KB * 100)
+                .max_concurrent_streams(250) // Increased from 100 — conformance tests create many concurrent watches
+                // HTTP/2 PING keepalive: send PING frames to keep connections alive.
+                // Without this, network intermediaries (Podman Machine virtio-net,
+                // Docker Desktop proxy) may close idle TCP connections, killing
+                // watch streams with "context canceled".
+                // K8s Go server uses net.KeepAlive = 3 minutes on the TCP listener.
+                .keep_alive_interval(std::time::Duration::from_secs(30))
+                .keep_alive_timeout(std::time::Duration::from_secs(20));
+        }
 
         server.serve(app.into_make_service()).await?;
     } else {

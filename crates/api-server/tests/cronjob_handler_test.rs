@@ -132,7 +132,7 @@ fn create_test_cronjob(name: &str, namespace: &str, schedule: &str) -> CronJob {
             time_zone: None,
         },
         status: Some(CronJobStatus {
-            active: None,
+            active: Vec::new(),
             last_schedule_time: None,
             last_successful_time: None,
         }),
@@ -402,7 +402,7 @@ async fn test_cronjob_with_status() {
 
     let mut cronjob = create_test_cronjob("test-status", "default", "0 0 * * *");
     cronjob.status = Some(CronJobStatus {
-        active: Some(vec![]),
+        active: vec![],
         last_schedule_time: Some(chrono::Utc::now()),
         last_successful_time: Some(chrono::Utc::now()),
     });

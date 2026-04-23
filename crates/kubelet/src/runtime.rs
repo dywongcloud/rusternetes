@@ -3802,12 +3802,15 @@ impl ContainerRuntime {
                         } else {
                             host_path.clone()
                         };
-                        // emptyDir volumes must be BIND-MOUNTED from the shared host
-                        // directory, NOT tmpfs. tmpfs mounts are per-container and not
-                        // shared between containers in the same pod. K8s emptyDir is
-                        // a shared directory on the node visible to all containers.
+                        // emptyDir volumes: use tmpfs for proper permission support.
+                        // Bind mounts through virtiofs (Podman Machine / Docker Desktop)
+                        // don't respect chmod correctly, causing permission test failures.
+                        // tmpfs enforces mode at the filesystem level.
                         //
-                        // Only use tmpfs for Memory medium emptyDir (sizeLimit from RAM).
+                        // For non-Memory emptyDir, we still also use the bind mount
+                        // for the host-side volume directory (for ConfigMap/Secret data
+                        // already written there). But the tmpfs takes precedence at
+                        // the mount point for files the container creates.
                         let is_emptydir = empty_dir_volumes.contains(&mount.name);
                         let is_memory_medium = pod
                             .spec
@@ -3818,13 +3821,11 @@ impl ContainerRuntime {
                             .and_then(|ed| ed.medium.as_deref())
                             == Some("Memory");
 
-                        let use_tmpfs =
-                            is_emptydir && is_memory_medium && expanded_sub_path.is_none();
+                        let use_tmpfs = is_emptydir && expanded_sub_path.is_none();
 
                         if use_tmpfs {
-                            // Memory-backed emptyDir — use tmpfs
-                            // K8s sets mode=0777 (not 1777). The sticky bit is NOT set
-                            // by K8s for emptyDir tmpfs mounts.
+                            // Use tmpfs for all emptyDir volumes (both Memory and default medium).
+                            // K8s sets mode=0777. The sticky bit is NOT set.
                             // K8s ref: pkg/volume/emptydir/empty_dir.go — setupDir()
                             let opts = if read_only {
                                 "ro,mode=0777".to_string()

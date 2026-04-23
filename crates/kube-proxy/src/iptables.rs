@@ -84,6 +84,32 @@ impl IptablesManager {
     pub fn initialize(&self) -> Result<()> {
         info!("Initializing iptables chains for kube-proxy");
 
+        // Enable bridge-nf-call-iptables so that iptables rules apply to
+        // bridge-forwarded traffic. Without this, pod-to-NodePort traffic
+        // within the container bridge bypasses PREROUTING/OUTPUT DNAT rules.
+        // K8s ref: k8s.io/kubernetes/pkg/proxy/iptables/proxier.go — ensureBridgeNFCallIPTables
+        for sysctl in [
+            "/proc/sys/net/bridge/bridge-nf-call-iptables",
+            "/proc/sys/net/bridge/bridge-nf-call-ip6tables",
+        ] {
+            if std::path::Path::new(sysctl).exists() {
+                if let Err(e) = std::fs::write(sysctl, "1") {
+                    warn!("Failed to enable {}: {} (NodePort from pods may not work)", sysctl, e);
+                } else {
+                    info!("Enabled {}", sysctl);
+                }
+            } else {
+                // Try loading br_netfilter module
+                let _ = Command::new("modprobe").arg("br_netfilter").output();
+                if std::path::Path::new(sysctl).exists() {
+                    let _ = std::fs::write(sysctl, "1");
+                    info!("Loaded br_netfilter and enabled {}", sysctl);
+                } else {
+                    debug!("{} not available (br_netfilter module not loaded)", sysctl);
+                }
+            }
+        }
+
         // Create our custom chains if they don't exist
         self.ensure_chain("nat", &self.services_chain)?;
         self.ensure_chain("nat", &self.nodeports_chain)?;

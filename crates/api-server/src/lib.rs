@@ -4,6 +4,7 @@ pub mod bootstrap;
 pub mod conversion;
 pub mod dynamic_routes;
 pub mod flow_control;
+pub mod gnostic;
 pub mod handlers;
 pub mod ip_allocator;
 pub mod middleware;

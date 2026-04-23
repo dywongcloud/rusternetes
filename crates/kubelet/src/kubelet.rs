@@ -2359,12 +2359,12 @@ impl Kubelet {
                                 let _ = self.storage.update(&key, &new_pod).await;
 
                                 // Apply CrashLoopBackOff delay before restarting.
-                                // K8s uses exponential backoff: 10s * 2^(restarts-1), capped at 300s.
-                                // K8s ref: pkg/kubelet/kubelet.go — computePodActions / backOff
+                                // K8s backoff: 0s for first restart, then 10s, 20s, 40s... cap 300s.
+                                // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_manager.go — backOff
                                 let max_restart_count = prev_counts.values().copied().max().unwrap_or(0);
-                                if max_restart_count > 0 {
+                                if max_restart_count > 1 {
                                     let backoff_secs = std::cmp::min(
-                                        10u64 * 2u64.pow((max_restart_count - 1).min(8)),
+                                        10u64 * 2u64.pow((max_restart_count - 2).min(8)),
                                         300,
                                     );
                                     debug!(

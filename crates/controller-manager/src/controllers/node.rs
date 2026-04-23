@@ -177,18 +177,16 @@ impl<S: Storage + 'static> NodeController<S> {
         if needs_update {
             info!("Node {} ready status changed to: {}", node_name, is_ready);
             self.update_node_status(node, is_ready).await?;
+        }
 
-            // Manage not-ready/unreachable taints (K8s node lifecycle controller pattern)
-            if !is_ready {
-                info!(
-                    "Node {} is NotReady, adding not-ready taint and will evict pods after timeout",
-                    node_name
-                );
-                self.add_not_ready_taint(node).await?;
-            } else {
-                // Node became Ready — remove not-ready taint
-                self.remove_not_ready_taint(node).await?;
-            }
+        // Manage not-ready/unreachable taints (K8s node lifecycle controller pattern).
+        // Always check taints regardless of needs_update — the taint may have been
+        // set during initial registration and never removed.
+        if !is_ready {
+            self.add_not_ready_taint(node).await?;
+        } else {
+            // Node is Ready — ensure not-ready taint is removed
+            self.remove_not_ready_taint(node).await?;
         }
 
         // Evict pods from nodes that have been NotReady for too long
