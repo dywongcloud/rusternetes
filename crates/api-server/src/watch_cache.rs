@@ -12,7 +12,9 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info};
 
 /// Maximum number of events to retain in the history ring buffer per prefix
-const HISTORY_CAPACITY: usize = 5000;
+/// K8s default watch cache capacity is 1000 events.
+/// 5000 × 26 prefixes × ~3KB = ~390MB of memory.
+const HISTORY_CAPACITY: usize = 500;
 
 /// A cached watch event with metadata
 #[derive(Debug, Clone)]
@@ -65,7 +67,9 @@ impl WatchCache {
         }
 
         // Create a new watcher
-        let (tx, rx) = broadcast::channel(16384); // Buffer 16K events to prevent lag
+        // Buffer size: K8s default watch cache is 1000 events. 16384 used ~1.2GB
+        // of memory with 26 prefixes × 16K events × ~3KB each.
+        let (tx, rx) = broadcast::channel(1000);
         {
             let mut watchers = self.watchers.write().await;
             // Double-check after acquiring write lock

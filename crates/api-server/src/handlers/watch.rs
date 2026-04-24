@@ -2173,7 +2173,7 @@ pub async fn watch_cluster_scoped_json(
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(256);
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
@@ -2354,7 +2354,7 @@ pub async fn watch_namespaced_json(
     let current_rev = state.storage.current_revision().await.unwrap_or(1);
     let current_rev_str = current_rev.to_string();
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(8192);
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, std::io::Error>>(256);
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
