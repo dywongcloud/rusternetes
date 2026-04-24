@@ -3827,20 +3827,14 @@ impl ContainerRuntime {
                             .and_then(|ed| ed.medium.as_deref())
                             == Some("Memory");
 
-                        let use_tmpfs =
-                            is_emptydir && is_memory_medium && expanded_sub_path.is_none();
-
-                        if use_tmpfs {
-                            // Memory-backed emptyDir — use tmpfs.
-                            // K8s sets mode=0777. The sticky bit is NOT set.
-                            // K8s ref: pkg/volume/emptydir/empty_dir.go — setupDir()
-                            let opts = if read_only {
-                                "ro,mode=0777".to_string()
-                            } else {
-                                "mode=0777".to_string()
-                            };
-                            tmpfs_mounts.insert(mount.mount_path.clone(), opts);
-                        } else {
+                        // Always use bind mounts for emptyDir volumes (both default
+                        // and Memory medium). In our architecture, containers are
+                        // restarted by removing and recreating them, which destroys
+                        // per-container tmpfs mounts. The host directory persists
+                        // across restarts and is the source of truth.
+                        // K8s pod sandbox keeps tmpfs alive across container restarts,
+                        // but our pause container doesn't share mount namespace.
+                        {
                             let ro_suffix = if read_only { ":ro" } else { "" };
                             let bind = format!(
                                 "{}:{}{}",
@@ -5212,20 +5206,14 @@ impl ContainerRuntime {
                             }
                         } else {
                             // No previous status — the container was cleaned up.
-                            // Check if the pod is in terminal phase OR if the pod has
-                            // already completed all init containers (inferred from the
-                            // fact that app containers exist or the pod reached Running).
+                            // Only mark as Completed if the pod is in a terminal phase
+                            // (Succeeded/Failed). Do NOT infer from node_name — the pod
+                            // can be scheduled but init containers may not have run yet.
                             let pod_phase = pod
                                 .status
                                 .as_ref()
                                 .and_then(|s| s.phase.as_ref());
-                            let pod_was_running = pod
-                                .spec
-                                .as_ref()
-                                .and_then(|s| s.node_name.as_ref())
-                                .is_some();
-                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed))
-                                || pod_was_running
+                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded))
                             {
                                 (
                                     ContainerState::Terminated {

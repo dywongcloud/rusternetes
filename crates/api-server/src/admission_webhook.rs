@@ -244,6 +244,13 @@ impl AdmissionWebhookClient {
             String::from_utf8_lossy(&body_bytes[..body_bytes.len().min(300)])
         );
 
+        // Reject empty responses — the webhook pod may have terminated mid-response
+        if body_bytes.is_empty() {
+            return Err(rusternetes_common::Error::Network(
+                "Webhook returned empty response body".to_string(),
+            ));
+        }
+
         // Try parsing as AdmissionReview first, fall back to parsing as raw Value
         // to extract the response even if there are unknown fields
         let review_response: AdmissionReview = match serde_json::from_slice(&body_bytes) {
