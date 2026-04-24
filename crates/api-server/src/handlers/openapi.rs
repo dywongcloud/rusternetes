@@ -493,15 +493,44 @@ pub async fn get_swagger_spec(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Check if protobuf is requested. client-go's OpenAPISchema() method
-    // requests protobuf and calls proto.Unmarshal on the response body.
-    // It expects a gnostic openapi.v2.Document protobuf.
-    // Convert our JSON swagger spec to gnostic protobuf format.
-    // K8s ref: vendor/k8s.io/kube-openapi/pkg/handler/handler.go — ToProtoBinary()
+    // Cache the protobuf conversion to avoid regenerating on every request.
+    // The swagger spec changes when CRDs are created/deleted. We use a simple
+    // hash of the JSON bytes to detect changes.
+    use std::sync::OnceLock;
+    use std::sync::Mutex;
+    static PROTO_CACHE: OnceLock<Mutex<(u64, Vec<u8>)>> = OnceLock::new();
+    let cache = PROTO_CACHE.get_or_init(|| Mutex::new((0, Vec::new())));
+
     let wants_protobuf = accept.contains("proto-openapi.spec.v2");
     if wants_protobuf {
+        // Simple hash of JSON bytes for cache invalidation
+        let hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            json_bytes.hash(&mut hasher);
+            hasher.finish()
+        };
+        // Check cache
+        {
+            let cached = cache.lock().unwrap();
+            if cached.0 == hash && !cached.1.is_empty() {
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header(
+                        header::CONTENT_TYPE,
+                        "application/com.github.proto-openapi.spec.v2.v1.0+protobuf",
+                    )
+                    .body(Body::from(cached.1.clone()))
+                    .unwrap();
+            }
+        }
         match gnostic::swagger_json_to_protobuf(&json_bytes) {
             Ok(proto_bytes) => {
+                // Cache for future requests
+                {
+                    let mut cached = cache.lock().unwrap();
+                    *cached = (hash, proto_bytes.clone());
+                }
                 return Response::builder()
                     .status(StatusCode::OK)
                     .header(

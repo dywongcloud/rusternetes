@@ -613,7 +613,10 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
             .as_deref()
             .unwrap_or("default");
 
-        let pod_name = format!("{}-{}", replicaset.metadata.name, uuid::Uuid::new_v4());
+        // K8s uses <rs-name>-<5-char-random> to keep pod names under 63 chars
+        // (Linux hostname limit). Full UUIDs make names too long.
+        let suffix: String = uuid::Uuid::new_v4().to_string().chars().take(5).collect();
+        let pod_name = format!("{}-{}", replicaset.metadata.name, suffix);
 
         let mut metadata = ObjectMeta::new(&pod_name);
         metadata.namespace = Some(namespace.to_string());
