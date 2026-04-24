@@ -2317,6 +2317,11 @@ impl Kubelet {
                                     })
                                     .unwrap_or_default();
 
+                                // Check if any container failed (for backoff decision later)
+                                let has_failed_container = container_statuses.iter().any(|cs| {
+                                    matches!(&cs.state, Some(ContainerState::Terminated { exit_code, .. }) if *exit_code != 0)
+                                });
+
                                 // Build updated statuses with incremented restart counts
                                 let updated_statuses: Vec<ContainerStatus> = container_statuses
                                     .into_iter()
@@ -2362,9 +2367,6 @@ impl Kubelet {
                                 // containers that exited with non-zero code. K8s resets backoff
                                 // on successful exit (code 0).
                                 // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_manager.go — backOff
-                                let has_failed_container = container_statuses.iter().any(|cs| {
-                                    matches!(&cs.state, Some(ContainerState::Terminated { exit_code, .. }) if *exit_code != 0)
-                                });
                                 if has_failed_container {
                                     let max_restart_count = prev_counts.values().copied().max().unwrap_or(0);
                                     if max_restart_count > 1 {

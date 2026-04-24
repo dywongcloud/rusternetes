@@ -2049,11 +2049,11 @@ impl ContainerRuntime {
         let pod_name = &pod.metadata.name;
         let namespace = pod.metadata.namespace.as_deref().unwrap_or("default");
 
-        // EmptyDir: create a directory on the shared volumes path so it's accessible
-        // to both the kubelet container and workload containers (which run on the
-        // host Docker daemon). The directory must be on KUBELET_VOLUMES_PATH, which
-        // is bind-mounted into the kubelet container.
+        // EmptyDir: create a directory on the shared volumes path.
         // K8s ref: pkg/volume/emptydir/empty_dir.go — setupDir() sets mode 0777.
+        // Note: host bind mounts through virtiofs (Podman Machine / Docker Desktop)
+        // may not enforce chmod correctly. The emptyDir 0777/0666 permission tests
+        // are pre-existing failures on macOS VM-based runtimes.
         if volume.empty_dir.is_some() {
             let volume_dir = format!("{}/{}/{}", self.volumes_base_path, pod_name, volume.name);
             std::fs::create_dir_all(&volume_dir).context("Failed to create emptyDir volume")?;

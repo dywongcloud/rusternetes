@@ -614,12 +614,50 @@ fn strip_false_extensions(value: &mut serde_json::Value) {
             "format",
             "title",
             "pattern",
+            "discriminator",
         ];
         for key in &empty_string_fields {
             if let Some(serde_json::Value::String(s)) = obj.get(*key) {
                 if s.is_empty() {
                     obj.remove(*key);
                 }
+            }
+        }
+
+        // Zero-value integers should be omitted (Go omitempty on int64/float64).
+        // JSONSchemaProps fields like maxLength, minLength, maxItems, etc. use
+        // pointer types (*int64) in Go with omitempty — zero means "not set".
+        let zero_int_fields = [
+            "maximum", "minimum", "multipleOf",
+            "maxLength", "minLength",
+            "maxItems", "minItems",
+            "maxProperties", "minProperties",
+        ];
+        for key in &zero_int_fields {
+            match obj.get(*key) {
+                Some(serde_json::Value::Number(n)) => {
+                    if n.as_f64() == Some(0.0) || n.as_i64() == Some(0) {
+                        obj.remove(*key);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Empty arrays should be omitted (Go omitempty on slices)
+        let array_fields = ["required", "enum", "allOf", "oneOf", "anyOf"];
+        for key in &array_fields {
+            if let Some(serde_json::Value::Array(arr)) = obj.get(*key) {
+                if arr.is_empty() {
+                    obj.remove(*key);
+                }
+            }
+        }
+
+        // Empty "properties" object should be omitted
+        if let Some(serde_json::Value::Object(props)) = obj.get("properties") {
+            if props.is_empty() {
+                obj.remove("properties");
             }
         }
 

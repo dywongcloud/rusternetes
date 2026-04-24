@@ -203,7 +203,8 @@ where
     let patch_json: serde_json::Value = serde_json::from_slice(&body)
         .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
-    // Apply patch
+    // Apply patch (clone patch_type for potential retry on rv conflict)
+    let patch_type_for_retry = patch_type.clone();
     let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
@@ -337,7 +338,7 @@ where
             let fresh: T = state.storage.get(&key).await?;
             let fresh_json = serde_json::to_value(&fresh)
                 .map_err(|e| rusternetes_common::Error::Internal(e.to_string()))?;
-            let re_patched = apply_patch(&fresh_json, &patch_json, patch_type)
+            let re_patched = apply_patch(&fresh_json, &patch_json, patch_type_for_retry)
                 .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
             let re_patched_resource: T = serde_json::from_value(re_patched)
                 .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid result: {}", e)))?;
@@ -522,7 +523,8 @@ where
     let patch_json: serde_json::Value = serde_json::from_slice(&body)
         .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
-    // Apply patch
+    // Apply patch (clone patch_type for potential retry on rv conflict)
+    let patch_type_for_retry = patch_type.clone();
     let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 
