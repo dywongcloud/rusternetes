@@ -493,7 +493,9 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
     ) -> rusternetes_common::Result<()> {
         let namespace = rc.metadata.namespace.as_deref().unwrap_or("default");
 
-        let pod_name = format!("{}-{}", rc.metadata.name, uuid::Uuid::new_v4());
+        // K8s uses <rc-name>-<5-char-random> to keep pod names under 63 chars
+        let suffix: String = uuid::Uuid::new_v4().to_string().chars().take(5).collect();
+        let pod_name = format!("{}-{}", rc.metadata.name, suffix);
 
         let mut metadata = ObjectMeta::new(&pod_name);
         metadata.namespace = Some(namespace.to_string());

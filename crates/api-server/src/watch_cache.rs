@@ -255,9 +255,9 @@ pub fn broadcast_to_stream_with_history(
         // Replay historical events first
         for cached in history {
             let event = match cached.event {
-                WatchEventData::Added(key, value) => WatchEvent::Added(key, value),
-                WatchEventData::Modified(key, value) => WatchEvent::Modified(key, value),
-                WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, prev),
+                WatchEventData::Added(key, value) => WatchEvent::Added(key, (*value).clone()),
+                WatchEventData::Modified(key, value) => WatchEvent::Modified(key, (*value).clone()),
+                WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, (*prev).clone()),
             };
             yield Ok(event);
         }

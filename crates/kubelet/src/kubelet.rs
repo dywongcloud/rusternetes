@@ -55,6 +55,10 @@ pub struct Kubelet {
     /// Track recently-deleted pod names (from watch events) so orphan cleanup
     /// can skip the grace period for pods that were explicitly deleted from storage.
     recently_deleted: Arc<Mutex<HashMap<String, Option<Pod>>>>,
+    /// Per-pod worker signal channels. K8s uses one goroutine per pod.
+    /// When a watch event arrives for a pod, we signal its channel to
+    /// trigger an immediate reconciliation without a full sync_loop.
+    pod_workers: Arc<Mutex<HashMap<String, mpsc::Sender<()>>>>,
 }
 
 // Kubelet needs Send+Sync for Arc<Kubelet> in spawned tasks
@@ -90,6 +94,7 @@ impl Kubelet {
             pod_states: Mutex::new(HashMap::new()),
             pod_sync_locks: Mutex::new(HashSet::new()),
             recently_deleted: Arc::new(Mutex::new(HashMap::new())),
+            pod_workers: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -273,36 +278,30 @@ impl Kubelet {
             });
         }
 
-        // Debounce watch-triggered syncs to prevent feedback loops:
-        // sync_pod writes status -> triggers watch event -> triggers sync_pod -> ...
-        // Minimum 1 second between watch-triggered syncs (reduced from 3s for
-        // faster pod startup — conformance tests have tight timeouts).
-        let mut last_watch_sync = tokio::time::Instant::now() - Duration::from_secs(10);
-        let watch_sync_cooldown = Duration::from_secs(1);
-
         loop {
             tokio::select! {
-                // Watch-triggered: a pod changed, do a sync if cooldown elapsed
-                Some(_key) = watch_rx.recv() => {
-                    // Drain any additional queued events to batch them
-                    while watch_rx.try_recv().is_ok() {}
+                // Watch-triggered: a specific pod changed, signal its per-pod worker
+                Some(key) = watch_rx.recv() => {
+                    // Extract pod name and namespace from key
+                    // Key format: /registry/pods/{namespace}/{name}
+                    let parts: Vec<&str> = key.split('/').collect();
+                    let pod_name = parts.last().unwrap_or(&"").to_string();
+                    if pod_name.is_empty() { continue; }
 
-                    // Skip if we just synced (prevents status-write feedback loop)
-                    let elapsed = last_watch_sync.elapsed();
-                    if elapsed < watch_sync_cooldown {
-                        debug!("Skipping watch-triggered sync ({}ms since last sync, cooldown {}ms)",
-                            elapsed.as_millis(), watch_sync_cooldown.as_millis());
-                        continue;
-                    }
+                    // Signal the per-pod worker if one exists
+                    let has_worker = {
+                        let workers = self.pod_workers.lock().unwrap();
+                        if let Some(tx) = workers.get(&pod_name) {
+                            let _ = tx.try_send(());
+                            true
+                        } else {
+                            false
+                        }
+                    };
 
-                    last_watch_sync = tokio::time::Instant::now();
-                    match tokio::time::timeout(
-                        Duration::from_secs(5),
-                        self.sync_loop(),
-                    ).await {
-                        Ok(Ok(())) => {},
-                        Ok(Err(e)) => error!("Error in watch-triggered sync: {}", e),
-                        Err(_) => warn!("Watch-triggered sync_loop timed out after 5s"),
+                    // If no worker exists, start one
+                    if !has_worker {
+                        self.ensure_pod_worker(&pod_name).await;
                     }
                 }
                 // Periodic full sync as safety net
@@ -737,24 +736,46 @@ impl Kubelet {
 
         debug!("Found {} pods assigned to this node", node_pods.len());
 
-        // Sync all pods using tokio::spawn — fire and forget.
-        // K8s uses one goroutine per pod (podWorkerLoop). Each pod runs
-        // independently — the kubelet loop does NOT wait for all pods to
-        // complete. This prevents a slow pod (stop_container with 30s
-        // grace period) from blocking the entire sync loop and delaying
-        // other pods from starting.
-        //
-        // Previously used join_all which waited for ALL pods, causing
-        // 28-second delays when one pod was being stopped.
+        // Ensure per-pod workers exist for all assigned pods and signal them.
         // K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop (long-lived)
+        for pod in &node_pods {
+            let pod_name = &pod.metadata.name;
+
+            // Signal existing worker or create a new one
+            let has_worker = {
+                let workers = self.pod_workers.lock().unwrap();
+                if let Some(tx) = workers.get(pod_name.as_str()) {
+                    let _ = tx.try_send(());
+                    true
+                } else {
+                    false
+                }
+            };
+
+            if !has_worker {
+                self.ensure_pod_worker(pod_name).await;
+            }
+        }
+
+        // Clean up workers for pods that are no longer assigned to this node
+        {
+            let worker_names: Vec<String> = self.pod_workers.lock().unwrap().keys().cloned().collect();
+            let pod_names: HashSet<&str> = node_pods.iter().map(|p| p.metadata.name.as_str()).collect();
+            for name in worker_names {
+                if !pod_names.contains(name.as_str()) {
+                    // Pod no longer exists — remove worker (it will shut down on next recv)
+                    self.pod_workers.lock().unwrap().remove(&name);
+                }
+            }
+        }
+
+        // Legacy one-shot sync for backward compatibility during transition.
+        // TODO: Remove once per-pod workers are proven stable.
+        // For now, run one-shot syncs for any pod that doesn't have a worker yet.
         for pod in &node_pods {
             let pod = pod.clone();
             let kubelet = Arc::clone(self);
-            let timeout_secs = if pod.metadata.deletion_timestamp.is_some() {
-                90u64
-            } else {
-                30u64
-            };
+            let timeout_secs = if pod.metadata.deletion_timestamp.is_some() { 90u64 } else { 30u64 };
             tokio::spawn(async move {
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
@@ -1056,6 +1077,114 @@ impl Kubelet {
         }
 
         Ok(())
+    }
+
+    /// Ensure a per-pod worker task exists for the given pod.
+    /// K8s ref: pkg/kubelet/pod_workers.go — podWorkerLoop
+    ///
+    /// Each pod gets a persistent tokio task that:
+    /// 1. Waits for a signal on its channel
+    /// 2. Reads the latest pod state from storage
+    /// 3. Calls sync_pod
+    /// 4. Goes back to waiting
+    ///
+    /// The worker stays alive until the pod is deleted and cleaned up.
+    /// This avoids the full sync_loop on every watch event.
+    async fn ensure_pod_worker(self: &Arc<Self>, pod_name: &str) {
+        let (tx, mut rx) = mpsc::channel::<()>(4);
+
+        // Signal immediately to sync now
+        let _ = tx.try_send(());
+
+        {
+            let mut workers = self.pod_workers.lock().unwrap();
+            if workers.contains_key(pod_name) {
+                // Worker already exists — just signal it
+                if let Some(existing_tx) = workers.get(pod_name) {
+                    let _ = existing_tx.try_send(());
+                }
+                return;
+            }
+            workers.insert(pod_name.to_string(), tx);
+        }
+
+        let kubelet = Arc::clone(self);
+        let name = pod_name.to_string();
+        let pod_workers = Arc::clone(&self.pod_workers);
+        let node_name = self.node_name.clone();
+
+        tokio::spawn(async move {
+            // Per-pod worker loop — stays alive for the lifetime of the pod
+            loop {
+                // Wait for signal (or timeout for periodic re-check)
+                let signaled = tokio::time::timeout(
+                    Duration::from_secs(30), // periodic fallback re-sync
+                    rx.recv(),
+                ).await;
+
+                // If channel closed, pod worker is being removed
+                if matches!(signaled, Ok(None)) {
+                    debug!("Pod worker for {} shutting down (channel closed)", name);
+                    break;
+                }
+
+                // Drain any additional queued signals
+                while rx.try_recv().is_ok() {}
+
+                // Read the latest pod state from storage by scanning for this pod.
+                // We need to find the namespace since it's not stored in the worker key.
+                // Search all namespaces for this pod name assigned to our node.
+                let pod = {
+                    let prefix = build_prefix("pods", None);
+                    match kubelet.storage.list::<Pod>(&prefix).await {
+                        Ok(pods) => pods.into_iter().find(|p| {
+                            p.metadata.name == name
+                                && p.spec
+                                    .as_ref()
+                                    .and_then(|s| s.node_name.as_ref())
+                                    .map(|n| n == &node_name)
+                                    .unwrap_or(false)
+                        }),
+                        Err(e) => {
+                            debug!("Pod worker {}: storage error: {}", name, e);
+                            continue;
+                        }
+                    }
+                };
+
+                match pod {
+                    Some(pod) => {
+                        match tokio::time::timeout(
+                            Duration::from_secs(30),
+                            kubelet.sync_pod(&pod),
+                        ).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                let err_str = e.to_string();
+                                if err_str.contains("Failed to create container")
+                                    || err_str.contains("Failed to pull image")
+                                {
+                                    let _ = kubelet.update_pod_status_error(&pod, &err_str).await;
+                                }
+                                debug!("Pod worker {}: sync error: {}", name, err_str);
+                            }
+                            Err(_) => {
+                                warn!("Pod worker {}: sync timed out", name);
+                            }
+                        }
+                    }
+                    None => {
+                        // Pod no longer exists for this node — stop the worker
+                        debug!("Pod worker {}: pod not found, shutting down", name);
+                        break;
+                    }
+                }
+            }
+
+            // Clean up worker entry
+            pod_workers.lock().unwrap().remove(&name);
+            debug!("Pod worker for {} removed", name);
+        });
     }
 
     async fn sync_pod(&self, pod: &Pod) -> Result<()> {
