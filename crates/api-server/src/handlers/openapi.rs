@@ -114,8 +114,11 @@ pub async fn get_openapi_spec_path(
     State(state): State<Arc<ApiServerState>>,
     axum::extract::Path(gv_path): axum::extract::Path<String>,
 ) -> Response {
-    // Start with the static OpenAPI v3 spec
-    let spec = generate_openapi_spec();
+    // Cache the static OpenAPI v3 spec — it doesn't change at runtime
+    // (CRD definitions are in v2, not v3 for our implementation)
+    use std::sync::OnceLock;
+    static V3_SPEC: OnceLock<openapiv3::OpenAPI> = OnceLock::new();
+    let spec = V3_SPEC.get_or_init(generate_openapi_spec).clone();
     let mut spec_json = serde_json::to_value(&spec).unwrap_or_default();
 
     // Parse the requested group/version from the path.

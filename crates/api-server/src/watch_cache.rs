@@ -23,12 +23,14 @@ pub struct CachedWatchEvent {
     pub revision: i64,
 }
 
-/// The event data (simplified from WatchEvent)
+/// The event data (simplified from WatchEvent).
+/// Uses Arc<String> for value JSON to avoid cloning large JSON strings
+/// across multiple broadcast subscribers and the history buffer.
 #[derive(Debug, Clone)]
 pub enum WatchEventData {
-    Added(String, String),    // key, value JSON
-    Modified(String, String), // key, value JSON
-    Deleted(String, String),  // key, previous value JSON
+    Added(String, Arc<String>),    // key, value JSON
+    Modified(String, Arc<String>), // key, value JSON
+    Deleted(String, Arc<String>),  // key, previous value JSON
 }
 
 /// WatchCache manages shared watch streams for resource prefixes.
@@ -116,21 +118,21 @@ impl WatchCache {
                                 Ok(WatchEvent::Added(key, value)) => {
                                     let rev = extract_rv(&value);
                                     CachedWatchEvent {
-                                        event: WatchEventData::Added(key, value),
+                                        event: WatchEventData::Added(key, Arc::new(value)),
                                         revision: rev,
                                     }
                                 }
                                 Ok(WatchEvent::Modified(key, value)) => {
                                     let rev = extract_rv(&value);
                                     CachedWatchEvent {
-                                        event: WatchEventData::Modified(key, value),
+                                        event: WatchEventData::Modified(key, Arc::new(value)),
                                         revision: rev,
                                     }
                                 }
                                 Ok(WatchEvent::Deleted(key, prev_value)) => {
                                     let rev = extract_rv(&prev_value);
                                     CachedWatchEvent {
-                                        event: WatchEventData::Deleted(key, prev_value),
+                                        event: WatchEventData::Deleted(key, Arc::new(prev_value)),
                                         revision: rev,
                                     }
                                 }
@@ -221,9 +223,9 @@ pub fn broadcast_to_stream(mut rx: broadcast::Receiver<CachedWatchEvent>) -> Wat
             match rx.recv().await {
                 Ok(cached) => {
                     let event = match cached.event {
-                        WatchEventData::Added(key, value) => WatchEvent::Added(key, value),
-                        WatchEventData::Modified(key, value) => WatchEvent::Modified(key, value),
-                        WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, prev),
+                        WatchEventData::Added(key, value) => WatchEvent::Added(key, (*value).clone()),
+                        WatchEventData::Modified(key, value) => WatchEvent::Modified(key, (*value).clone()),
+                        WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, (*prev).clone()),
                     };
                     yield Ok(event);
                 }
@@ -269,9 +271,9 @@ pub fn broadcast_to_stream_with_history(
                         continue;
                     }
                     let event = match cached.event {
-                        WatchEventData::Added(key, value) => WatchEvent::Added(key, value),
-                        WatchEventData::Modified(key, value) => WatchEvent::Modified(key, value),
-                        WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, prev),
+                        WatchEventData::Added(key, value) => WatchEvent::Added(key, (*value).clone()),
+                        WatchEventData::Modified(key, value) => WatchEvent::Modified(key, (*value).clone()),
+                        WatchEventData::Deleted(key, prev) => WatchEvent::Deleted(key, (*prev).clone()),
                     };
                     yield Ok(event);
                 }
