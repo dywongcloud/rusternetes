@@ -3916,14 +3916,27 @@ impl ContainerRuntime {
                             ),
                         }
                     } else {
-                        // ClusterFirst: use ONLY the cluster DNS (CoreDNS).
-                        // K8s ClusterFirst means all DNS queries go through cluster DNS.
-                        // Do NOT include host/container DNS — it doesn't know about K8s
-                        // services and causes NXDOMAIN/timeouts for service lookups.
+                        // ClusterFirst: cluster DNS (CoreDNS) first, then host/container
+                        // DNS as fallback. K8s ClusterFirst means cluster DNS is primary.
+                        // The host DNS fallback is needed because our KUBERNETES_SERVICE_HOST
+                        // uses the container hostname "api-server" which only resolves via
+                        // the container network DNS (Podman aardvark-dns / Docker DNS).
+                        // Cluster DNS MUST be first so K8s service lookups go to CoreDNS.
                         // K8s ref: pkg/kubelet/network/dns/dns.go — getClusterDNS()
+                        let host_dns = std::fs::read_to_string("/etc/resolv.conf")
+                            .ok()
+                            .and_then(|c| c.lines()
+                                .find(|l| l.starts_with("nameserver"))
+                                .map(|l| l.trim_start_matches("nameserver").trim().to_string()));
+                        let nameservers = match host_dns {
+                            Some(dns) if dns != self.cluster_dns => {
+                                format!("nameserver {}\nnameserver {}", self.cluster_dns, dns)
+                            }
+                            _ => format!("nameserver {}", self.cluster_dns),
+                        };
                         format!(
-                            "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
-                            self.cluster_dns,
+                            "{}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                            nameservers,
                             namespace,
                             self.cluster_domain,
                             self.cluster_domain,
