@@ -3916,15 +3916,22 @@ impl ContainerRuntime {
                             ),
                         }
                     } else {
-                        // ClusterFirst: use ONLY cluster DNS (CoreDNS).
-                        // CoreDNS forwards unknown queries to /etc/resolv.conf which
-                        // includes the container network DNS (Podman/Docker). This means
-                        // pods can resolve both K8s services AND container hostnames
-                        // through a single nameserver.
+                        // ClusterFirst: include both container DNS and cluster DNS.
+                        // Container DNS first so container hostnames (api-server) resolve.
+                        // Cluster DNS second for K8s service names.
                         // K8s ref: pkg/kubelet/network/dns/dns.go — getClusterDNS()
+                        let host_dns = std::fs::read_to_string("/etc/resolv.conf")
+                            .ok()
+                            .and_then(|c| c.lines()
+                                .find(|l| l.starts_with("nameserver"))
+                                .map(|l| l.trim_start_matches("nameserver").trim().to_string()));
+                        let nameservers = match host_dns {
+                            Some(dns) => format!("nameserver {}\nnameserver {}", dns, self.cluster_dns),
+                            None => format!("nameserver {}", self.cluster_dns),
+                        };
                         format!(
-                            "nameserver {}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
-                            self.cluster_dns,
+                            "{}\nsearch {}.svc.{} svc.{} {}\noptions ndots:5\n",
+                            nameservers,
                             namespace,
                             self.cluster_domain,
                             self.cluster_domain,
