@@ -43,6 +43,8 @@ pub enum FieldType {
     IntOrString,
     /// map<string, Message> — encoded as repeated MapEntry with key=string, value=message
     MessageMap(String),
+    /// K8s JSON type — a message with a single `raw` bytes field containing JSON
+    JsonRaw,
 }
 
 /// Schema for a single protobuf message type
@@ -1617,7 +1619,7 @@ impl ProtoRegistry {
                     (5, ("type".into(), FieldType::String)),
                     (6, ("format".into(), FieldType::String)),
                     (7, ("title".into(), FieldType::String)),
-                    // field 8: default (JSON) — complex, skip for now
+                    (8, ("default".into(), FieldType::JsonRaw)),
                     (9, ("maximum".into(), FieldType::Int)),
                     (10, ("exclusiveMaximum".into(), FieldType::Bool)),
                     (11, ("minimum".into(), FieldType::Int)),
@@ -1628,6 +1630,14 @@ impl ProtoRegistry {
                     (16, ("maxItems".into(), FieldType::Int)),
                     (17, ("minItems".into(), FieldType::Int)),
                     (18, ("uniqueItems".into(), FieldType::Bool)),
+                    (19, ("multipleOf".into(), FieldType::Int)), // double, but Int works for decode
+                    (
+                        20,
+                        (
+                            "enum".into(),
+                            FieldType::Repeated(Box::new(FieldType::JsonRaw)),
+                        ),
+                    ),
                     (21, ("maxProperties".into(), FieldType::Int)),
                     (22, ("minProperties".into(), FieldType::Int)),
                     (
@@ -2803,6 +2813,51 @@ impl ProtoRegistry {
                 // K8s IntOrString: in protobuf, encoded as a message with
                 // field 1 (type: int32), field 2 (intVal: int32), field 3 (strVal: string)
                 decode_int_or_string(data)
+            }
+            FieldType::JsonRaw => {
+                // K8s JSON type: a message with field 1 = bytes containing raw JSON.
+                // Decode the message to extract the raw bytes, then parse as JSON.
+                let mut pos = 0;
+                while pos < data.len() {
+                    let (tag, new_pos) = match read_varint(data, pos) {
+                        Some(v) => v,
+                        None => break,
+                    };
+                    pos = new_pos;
+                    let field_num = (tag >> 3) as u32;
+                    let wire_type = (tag & 0x07) as u8;
+                    if wire_type == WIRE_LENGTH_DELIMITED && field_num == 1 {
+                        // field 1: raw bytes containing JSON
+                        let (len, new_pos) = match read_varint(data, pos) {
+                            Some(v) => v,
+                            None => break,
+                        };
+                        pos = new_pos;
+                        let len = len as usize;
+                        if pos + len <= data.len() {
+                            let raw = &data[pos..pos + len];
+                            if let Ok(v) = serde_json::from_slice(raw) {
+                                return v;
+                            }
+                            // If not valid JSON, return as string
+                            return Value::String(String::from_utf8_lossy(raw).to_string());
+                        }
+                    } else {
+                        // Skip unknown fields
+                        match wire_type {
+                            WIRE_VARINT => { let _ = read_varint(data, pos).map(|(_, p)| pos = p); }
+                            WIRE_64BIT => { pos += 8; }
+                            WIRE_LENGTH_DELIMITED => {
+                                if let Some((len, new_pos)) = read_varint(data, pos) {
+                                    pos = new_pos + len as usize;
+                                } else { break; }
+                            }
+                            WIRE_32BIT => { pos += 4; }
+                            _ => break,
+                        }
+                    }
+                }
+                Value::Null
             }
         }
     }
