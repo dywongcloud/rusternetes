@@ -1139,7 +1139,7 @@ impl<S: Storage + 'static> JobController<S> {
                 .as_ref()
                 .map(|c| {
                     c.iter()
-                        .any(|cond| cond.condition_type == "Complete" && cond.status == "True")
+                        .any(|cond| (cond.condition_type == "Complete" || cond.condition_type == "SuccessCriteriaMet") && cond.status == "True")
                 })
                 .unwrap_or(false);
 
