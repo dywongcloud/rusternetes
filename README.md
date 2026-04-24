@@ -2,7 +2,7 @@
 
 **A ground-up reimplementation of Kubernetes in Rust.**
 
-216,000+ lines of Rust across 10 crates. 31 controllers. 3,100+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 90% of conformance tests (398/441) across 149 rounds of testing.
+216,000+ lines of Rust across 10 crates. 31 controllers. 3,100+ tests. Actively conformance-tested against the official Kubernetes e2e test suite — currently passing 91% of conformance tests (403/441) across 155+ rounds of testing.
 
 This isn't a wrapper around the Go codebase or a partial mock. Every component — API server, scheduler, controller manager, kubelet, kube-proxy — is written from scratch in Rust, implementing the actual Kubernetes API surface, wire format, and behavioral semantics.
 
@@ -225,7 +225,7 @@ Rusternetes is actively tested against the official Kubernetes v1.35 conformance
 | 101 | 245 | 441 | 56% | 76 fixes deployed |
 | 141 | 368 | 441 | 83% | Watch + storage fixes |
 | 146 | 379 | 441 | 86% | CRD + scheduler fixes |
-| 149 | 398 | 441 | 90% | Latest full run |
+| 155 | 403 | 441 | 91.4% | Latest full run |
 
 ```bash
 # Run conformance tests

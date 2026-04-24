@@ -6,8 +6,8 @@ scratch, implementing the real Kubernetes API surface, wire format, and
 behavioral semantics.
 
 **By the numbers:** 216,000+ lines of Rust across 10 crates. 31 controllers.
-76 API handler files. 307+ registered routes. 3,100+ tests. 90% conformance
-pass rate (398/441) across 149 rounds of testing against the official K8s e2e suite.
+76 API handler files. 307+ registered routes. 3,100+ tests. 91% conformance
+pass rate (403/441) across 155+ rounds of testing against the official K8s e2e suite.
 Built-in web console with real-time topology visualization and live metrics.
 
 ---

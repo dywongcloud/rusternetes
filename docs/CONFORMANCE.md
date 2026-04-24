@@ -26,11 +26,12 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 133   | 2026-04-10 | 370  | 71   | 83.9%     | 47 fixes deployed, 18 staged |
 | 135   | 2026-04-11 | 373  | 68   | 84.6%     | Previous high score |
 | 146   | 2026-04-15 | 379  | 62   | 85.9%     | 16 fixes deployed |
-| 147   | 2026-04-16 | 398  | 43   | 90.2%     | New high score, 31 fixes deployed |
+| 147   | 2026-04-16 | 398  | 43   | 90.2%     | 31 fixes deployed |
+| 155   | 2026-04-24 | 403  | 38   | 91.4%     | New high score |
 
-**Current best deployed**: Round 149 at 90.2% (398/441).
+**Current best deployed**: Round 155 at 91.4% (403/441).
 
-**Latest status (Round 147)**: 398/441 conformance tests passing with 43 failures. Key remaining failure areas: CRD OpenAPI publishing (9), webhook admission (5), service networking/session affinity (6), apps controller timing (3), EmptyDir volume permissions (4), init containers (2), proxy/aggregator (3), node lifecycle (3), other (8). 31 total fixes deployed through Round 147.
+**Latest status (Round 155)**: 403/441 conformance tests passing with 38 failures.
 
 **Total commits**: 1,534+ across 30+ rounds of iterative testing and debugging.
 
