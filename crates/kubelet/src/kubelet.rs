@@ -563,26 +563,36 @@ impl Kubelet {
             }
         }
 
-        // Update heartbeat and ensure Ready=True
+        // Update heartbeat and ensure Ready=True.
+        // Only write to storage if the heartbeat is stale (>10s old) or status changed.
+        // This prevents rv churn that causes PATCH conflicts for external node updates.
+        let mut needs_write = false;
         if let Some(ref mut status) = node.status {
             if let Some(ref mut conditions) = status.conditions {
                 for condition in conditions.iter_mut() {
                     if condition.condition_type == "Ready" {
-                        let now = Some(chrono::Utc::now());
-                        condition.last_heartbeat_time = now;
-                        // Always assert Ready=True — the kubelet is running
+                        let now = chrono::Utc::now();
+                        let last = condition.last_heartbeat_time.unwrap_or(now - chrono::Duration::seconds(60));
+                        let stale = (now - last).num_seconds() > 10;
+                        if stale {
+                            condition.last_heartbeat_time = Some(now);
+                            needs_write = true;
+                        }
                         if condition.status != "True" {
                             condition.status = "True".to_string();
-                            condition.last_transition_time = now;
+                            condition.last_transition_time = Some(now);
                             condition.reason = Some("KubeletReady".to_string());
                             condition.message = Some("kubelet is posting ready status".to_string());
+                            needs_write = true;
                         }
                     }
                 }
             }
         }
 
-        self.storage.update(&key, &node).await?;
+        if needs_write {
+            self.storage.update(&key, &node).await?;
+        }
 
         // Collect and publish node metrics to storage
         self.publish_node_metrics().await;

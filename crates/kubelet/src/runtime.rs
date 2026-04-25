@@ -3827,14 +3827,23 @@ impl ContainerRuntime {
                             .and_then(|ed| ed.medium.as_deref())
                             == Some("Memory");
 
-                        // Always use bind mounts for emptyDir volumes (both default
-                        // and Memory medium). In our architecture, containers are
-                        // restarted by removing and recreating them, which destroys
-                        // per-container tmpfs mounts. The host directory persists
-                        // across restarts and is the source of truth.
-                        // K8s pod sandbox keeps tmpfs alive across container restarts,
-                        // but our pause container doesn't share mount namespace.
-                        {
+                        // Use tmpfs for Memory medium emptyDir (matches K8s behavior
+                        // and conformance test expectations for mount type).
+                        // Note: per-container tmpfs is destroyed on container restart,
+                        // which breaks data persistence. K8s keeps tmpfs alive via
+                        // the pod sandbox mount namespace. We don't share mounts yet.
+                        // Default medium uses bind mounts which persist across restarts.
+                        let use_tmpfs =
+                            is_emptydir && is_memory_medium && expanded_sub_path.is_none();
+
+                        if use_tmpfs {
+                            let opts = if read_only {
+                                "ro,mode=0777".to_string()
+                            } else {
+                                "mode=0777".to_string()
+                            };
+                            tmpfs_mounts.insert(mount.mount_path.clone(), opts);
+                        } else {
                             let ro_suffix = if read_only { ":ro" } else { "" };
                             let bind = format!(
                                 "{}:{}{}",
