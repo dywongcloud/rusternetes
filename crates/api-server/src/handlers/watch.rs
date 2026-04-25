@@ -297,12 +297,10 @@ where
 
     // If no initial events were sent, send an immediate bookmark so the
     // client sees data right away and doesn't timeout waiting for the
-    // first HTTP/2 DATA frame. K8s always sends initial data on a watch
-    // connection; without it, client-go's context deadline fires and
-    // RetryWatcher reports "context canceled" in a tight loop.
-    // Send regardless of allowWatchBookmarks — even clients that don't
-    // request bookmarks need initial data to keep the connection alive.
-    if !should_send_initial || existing_resources.is_empty() {
+    // first HTTP/2 DATA frame.
+    // ONLY send when allowWatchBookmarks is true — clients that don't
+    // request bookmarks treat them as unexpected events and fail.
+    if (!should_send_initial || existing_resources.is_empty()) && allow_bookmarks {
         let rv = initial_latest_rv
             .clone()
             .or_else(|| requested_rv.clone())
@@ -751,11 +749,11 @@ where
             }
         } // end should_send_initial
 
-        // If no initial events were sent, send an immediate bookmark so the
-        // client sees data right away and doesn't timeout waiting for the
-        // first HTTP/2 DATA frame. Without initial data, client-go's context
-        // deadline fires and RetryWatcher reports "context canceled".
-        if !should_send_initial || existing_resources.is_empty() {
+        // If no initial events were sent and client supports bookmarks,
+        // send an immediate bookmark so the client sees data right away.
+        // Only send when allow_bookmarks is true — clients that don't
+        // request bookmarks treat them as unexpected events and fail.
+        if (!should_send_initial || existing_resources.is_empty()) && allow_bookmarks {
             let rv = latest_resource_version
                 .clone()
                 .or_else(|| requested_rv.clone())
