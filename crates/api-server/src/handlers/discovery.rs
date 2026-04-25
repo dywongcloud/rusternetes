@@ -222,11 +222,31 @@ pub async fn get_api_groups(
             }));
         }
 
-        // Dynamically add CRD groups from storage
+        // Dynamically add CRD groups from storage.
+        // Multiple CRDs can share the same group (e.g., different test CRDs under
+        // "test.example.com"). Each CRD is a separate resource within the group.
+        // K8s aggregated discovery returns one group entry with ALL resources nested
+        // under their respective versions.
         if let Some(axum::extract::State(ref st)) = state {
             use rusternetes_storage::Storage;
             let crd_prefix = rusternetes_storage::build_prefix("customresourcedefinitions", None);
             if let Ok(crds) = st.storage.list::<serde_json::Value>(&crd_prefix).await {
+                // Collect resources per group+version, then emit one group entry per group.
+                // Key: (group, version) → Vec<resource_entry>
+                let mut group_version_resources: std::collections::HashMap<
+                    (String, String),
+                    Vec<serde_json::Value>,
+                > = std::collections::HashMap::new();
+                let all_verbs = vec![
+                    "create",
+                    "delete",
+                    "deletecollection",
+                    "get",
+                    "list",
+                    "patch",
+                    "update",
+                    "watch",
+                ];
                 for crd in &crds {
                     let group = crd.pointer("/spec/group").and_then(|v| v.as_str());
                     let names = crd.pointer("/spec/names");
@@ -234,31 +254,23 @@ pub async fn get_api_groups(
                     if let (Some(group), Some(names), Some(versions_arr)) =
                         (group, names, versions_arr)
                     {
-                        if seen_groups.contains(group) {
-                            continue;
-                        }
-                        seen_groups.insert(group.to_string());
                         let plural = names.get("plural").and_then(|v| v.as_str()).unwrap_or("");
-                        let singular = names.get("singular").and_then(|v| v.as_str()).unwrap_or("");
+                        let singular =
+                            names.get("singular").and_then(|v| v.as_str()).unwrap_or("");
                         let kind = names.get("kind").and_then(|v| v.as_str()).unwrap_or("");
                         let scope = crd
                             .pointer("/spec/scope")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Namespaced");
-                        let all_verbs = vec![
-                            "create",
-                            "delete",
-                            "deletecollection",
-                            "get",
-                            "list",
-                            "patch",
-                            "update",
-                            "watch",
-                        ];
-                        let mut crd_versions = Vec::new();
                         for ver in versions_arr {
+                            let served = ver
+                                .get("served")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if !served {
+                                continue;
+                            }
                             if let Some(ver_name) = ver.get("name").and_then(|v| v.as_str()) {
-                                // Build subresources array for v2 format (nested, not flat)
                                 let mut subresources = Vec::new();
                                 if ver.pointer("/subresources/status").is_some()
                                     || crd.pointer("/spec/subresources/status").is_some()
@@ -289,13 +301,33 @@ pub async fn get_api_groups(
                                         serde_json::json!(subresources),
                                     );
                                 }
-                                let resources = vec![resource_entry];
-                                crd_versions.push(serde_json::json!({ "version": ver_name, "resources": resources, "freshness": "Current" }));
+                                group_version_resources
+                                    .entry((group.to_string(), ver_name.to_string()))
+                                    .or_default()
+                                    .push(resource_entry);
                             }
                         }
-                        if !crd_versions.is_empty() {
-                            groups.push(serde_json::json!({ "metadata": { "name": group }, "versions": crd_versions }));
-                        }
+                    }
+                }
+                // Build one group entry per unique group, with all versions and resources
+                let mut crd_groups: std::collections::HashMap<String, Vec<serde_json::Value>> =
+                    std::collections::HashMap::new();
+                for ((group, version), resources) in &group_version_resources {
+                    crd_groups
+                        .entry(group.clone())
+                        .or_default()
+                        .push(serde_json::json!({
+                            "version": version,
+                            "resources": resources,
+                            "freshness": "Current"
+                        }));
+                }
+                for (group, versions) in crd_groups {
+                    if !seen_groups.contains(&group) {
+                        seen_groups.insert(group.clone());
+                        groups.push(
+                            serde_json::json!({ "metadata": { "name": group }, "versions": versions }),
+                        );
                     }
                 }
             }

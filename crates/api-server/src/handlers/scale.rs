@@ -210,9 +210,9 @@ pub async fn patch_scale(
     let patch: Value = serde_json::from_str(&body)
         .map_err(|e| Error::InvalidResource(format!("Invalid patch body: {}", e)))?;
 
-    // Get the current resource
+    // Get the current resource and apply patch with retry on conflict.
+    // K8s PATCH reads the latest version and re-applies on RV mismatch.
     let key = build_key(&resource, Some(&namespace), &name);
-    let mut resource_obj: Value = state.storage.get(&key).await?;
 
     // Extract the new replicas from the patch
     // Patch may be {"spec":{"replicas":N}} or a full Scale object
@@ -222,17 +222,34 @@ pub async fn patch_scale(
         .and_then(|r| r.as_i64())
         .map(|r| r as i32);
 
-    if let Some(replicas) = new_replicas {
-        // Update the replicas in the resource spec
-        if let Some(spec) = resource_obj.get_mut("spec") {
-            if let Some(spec_obj) = spec.as_object_mut() {
-                spec_obj.insert("replicas".to_string(), Value::Number(replicas.into()));
+    let mut updated_resource: Value = Value::Null;
+    for _retry in 0..5 {
+        let mut resource_obj: Value = state.storage.get(&key).await?;
+
+        if let Some(replicas) = new_replicas {
+            // Update the replicas in the resource spec
+            if let Some(spec) = resource_obj.get_mut("spec") {
+                if let Some(spec_obj) = spec.as_object_mut() {
+                    spec_obj.insert("replicas".to_string(), Value::Number(replicas.into()));
+                }
             }
         }
-    }
 
-    // Save the updated resource
-    let updated_resource: Value = state.storage.update(&key, &resource_obj).await?;
+        // Save the updated resource — retry on conflict
+        match state.storage.update(&key, &resource_obj).await {
+            Ok(v) => {
+                updated_resource = v;
+                break;
+            }
+            Err(Error::Conflict(_)) => {
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    if updated_resource.is_null() {
+        return Err(Error::Conflict("scale patch failed after retries".to_string()));
+    }
 
     // Extract and return the updated scale
     let updated_scale = extract_scale(&updated_resource, &namespace, &name, &group, &version)?;
