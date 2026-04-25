@@ -296,28 +296,31 @@ where
     }
 
     // If no initial events were sent, send an immediate bookmark so the
-    // client sees data right away and doesn't timeout.
+    // client sees data right away and doesn't timeout waiting for the
+    // first HTTP/2 DATA frame. K8s always sends initial data on a watch
+    // connection; without it, client-go's context deadline fires and
+    // RetryWatcher reports "context canceled" in a tight loop.
+    // Send regardless of allowWatchBookmarks — even clients that don't
+    // request bookmarks need initial data to keep the connection alive.
     if !should_send_initial || existing_resources.is_empty() {
         let rv = initial_latest_rv
             .clone()
             .or_else(|| requested_rv.clone())
             .unwrap_or_else(|| current_rev_str.clone());
-        if allow_bookmarks {
-            let bookmark = BookmarkObject {
-                kind: Some(bookmark_kind.clone()),
-                api_version: Some(bookmark_api_version.clone()),
-                metadata: ObjectMeta {
-                    resource_version: Some(rv),
-                    ..Default::default()
-                },
-            };
-            let k8s_event = K8sWatchEvent {
-                event_type: WatchEventType::Bookmark,
-                object: bookmark,
-            };
-            if let Ok(json) = serde_json::to_string(&k8s_event) {
-                let _ = tx.try_send(Ok(format!("{}\n", json)));
-            }
+        let bookmark = BookmarkObject {
+            kind: Some(bookmark_kind.clone()),
+            api_version: Some(bookmark_api_version.clone()),
+            metadata: ObjectMeta {
+                resource_version: Some(rv),
+                ..Default::default()
+            },
+        };
+        let k8s_event = K8sWatchEvent {
+            event_type: WatchEventType::Bookmark,
+            object: bookmark,
+        };
+        if let Ok(json) = serde_json::to_string(&k8s_event) {
+            let _ = tx.try_send(Ok(format!("{}\n", json)));
         }
     }
 
@@ -719,7 +722,7 @@ where
 
         // Send initial state as ADDED events (only when appropriate)
         if should_send_initial {
-            for object in existing_resources {
+            for object in &existing_resources {
                 // Update latest resourceVersion
                 if let Some(rv) = object.metadata().resource_version.as_ref() {
                     latest_resource_version = Some(rv.clone());
@@ -747,6 +750,32 @@ where
                 }
             }
         } // end should_send_initial
+
+        // If no initial events were sent, send an immediate bookmark so the
+        // client sees data right away and doesn't timeout waiting for the
+        // first HTTP/2 DATA frame. Without initial data, client-go's context
+        // deadline fires and RetryWatcher reports "context canceled".
+        if !should_send_initial || existing_resources.is_empty() {
+            let rv = latest_resource_version
+                .clone()
+                .or_else(|| requested_rv.clone())
+                .unwrap_or_else(|| current_rev_str.clone());
+            let bookmark = BookmarkObject {
+                kind: Some(bookmark_kind.clone()),
+                api_version: Some(bookmark_api_version.clone()),
+                metadata: ObjectMeta {
+                    resource_version: Some(rv),
+                    ..Default::default()
+                },
+            };
+            let k8s_event = K8sWatchEvent {
+                event_type: WatchEventType::Bookmark,
+                object: bookmark,
+            };
+            if let Ok(json) = serde_json::to_string(&k8s_event) {
+                let _ = tx.try_send(Ok(format!("{}\n", json)));
+            }
+        }
 
         // When sendInitialEvents=true, send an initial BOOKMARK after the ADDED
         // events to signal "initial list is complete". The bookmark must have the

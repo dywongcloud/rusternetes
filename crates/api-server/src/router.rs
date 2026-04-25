@@ -781,10 +781,12 @@ pub fn build_router(state: Arc<ApiServerState>, console_dir: Option<&Path>) -> R
             "/.well-known/openid-configuration",
             get(handlers::health::openid_configuration),
         )
-        .route("/openid/v1/jwks", get(handlers::health::openid_jwks))
-        // Discovery API endpoints
-        // K8s serves identical responses with/without trailing slashes.
-        // The middleware approach doesn't work with Axum's routing, so add explicit routes.
+        .route("/openid/v1/jwks", get(handlers::health::openid_jwks));
+
+    // Discovery and OpenAPI endpoints get Cache-Control: no-cache, private
+    // so kubectl always re-fetches and sees newly created CRDs.
+    // K8s ref: aggregated discovery uses ETag; non-aggregated uses no-cache.
+    let discovery_routes = Router::new()
         .route("/api", get(handlers::discovery::get_core_api))
         .route("/api/", get(handlers::discovery::get_core_api))
         .route("/api/v1", get(handlers::discovery::get_core_resources))
@@ -910,7 +912,16 @@ pub fn build_router(state: Arc<ApiServerState>, console_dir: Option<&Path>) -> R
             "/openapi/v3/*path",
             get(handlers::openapi::get_openapi_spec_path),
         )
-        .route("/swagger.json", get(handlers::openapi::get_swagger_spec));
+        .route("/swagger.json", get(handlers::openapi::get_swagger_spec))
+        .layer(axum_middleware::map_response(|mut response: Response| async move {
+            response.headers_mut().insert(
+                axum::http::header::CACHE_CONTROL,
+                "no-cache, private".parse().unwrap(),
+            );
+            response
+        }));
+
+    let public_routes = public_routes.merge(discovery_routes);
 
     // Routes that require authentication (unless skip_auth is enabled)
     let mut protected_routes = Router::new()

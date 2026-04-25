@@ -478,6 +478,31 @@ pub async fn update_cluster_status(
         // Update status
         obj.insert("status".to_string(), new_status);
 
+        // For nodes: sync capacity keys to allocatable.
+        // K8s kubelet copies extended resources from capacity to allocatable
+        // (extended resources have no system reservation). Without this, the
+        // scheduler can't see extended resources patched onto nodes.
+        if resource_type == "nodes" {
+            if let Some(status_obj) = obj.get_mut("status").and_then(|s| s.as_object_mut()) {
+                // Collect capacity keys first to avoid borrow conflict
+                let capacity_entries: Vec<(String, Value)> = status_obj
+                    .get("capacity")
+                    .and_then(|c| c.as_object())
+                    .map(|c| c.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
+                if !capacity_entries.is_empty() {
+                    let allocatable = status_obj
+                        .entry("allocatable")
+                        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                    if let Some(alloc_obj) = allocatable.as_object_mut() {
+                        for (key, value) in capacity_entries {
+                            alloc_obj.entry(key).or_insert(value);
+                        }
+                    }
+                }
+            }
+        }
+
         // Merge metadata: start with current, then apply annotations/labels
         // from the request. K8s status updates can modify metadata annotations.
         if let Some(metadata_obj) = current_metadata.as_object() {

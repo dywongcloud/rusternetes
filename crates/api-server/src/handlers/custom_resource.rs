@@ -1045,6 +1045,8 @@ pub async fn delete_custom_resource(
             groups: user_for_webhook.groups.clone(),
         };
         let cr_value = serde_json::to_value(&cr).ok();
+        // K8s DELETE AdmissionReview: object is nil, oldObject has the resource being deleted.
+        // The webhook inspects oldObject to decide whether to allow deletion.
         match state
             .webhook_manager
             .run_validating_webhooks(
@@ -1053,8 +1055,8 @@ pub async fn delete_custom_resource(
                 &gvr,
                 namespace.as_deref(),
                 &name,
-                cr_value,
                 None,
+                cr_value,
                 &user_info,
             )
             .await?
