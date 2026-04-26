@@ -249,7 +249,71 @@ pub async fn get_openapi_spec_path(
                     .pointer_mut("/components/schemas")
                     .and_then(|v| v.as_object_mut())
                 {
-                    schemas.insert(def_key, schema_value);
+                    schemas.insert(def_key.clone(), schema_value);
+                }
+
+                // Add OpenAPI paths for this CRD resource.
+                // kubectl explain requires paths to map resource names to schemas.
+                let plural = crd
+                    .pointer("/spec/names/plural")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let scope = crd
+                    .pointer("/spec/scope")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Namespaced");
+                if !plural.is_empty() {
+                    let schema_ref =
+                        serde_json::json!({"$ref": format!("#/components/schemas/{}", def_key)});
+                    let ok_response = serde_json::json!({
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": schema_ref
+                            }
+                        }
+                    });
+                    let get_op = serde_json::json!({
+                        "operationId": format!("read{}{}{}",
+                            if scope == "Namespaced" { "Namespaced" } else { "" }, kind, ver),
+                        "responses": { "200": ok_response },
+                        "tags": [format!("{}_v1", group.replace('.', "_"))],
+                        "x-kubernetes-group-version-kind": {
+                            "group": group, "version": ver, "kind": kind
+                        }
+                    });
+                    if let Some(paths) = spec_json
+                        .pointer_mut("/paths")
+                        .and_then(|v| v.as_object_mut())
+                    {
+                        if scope == "Namespaced" {
+                            let list_path = format!(
+                                "/apis/{}/{}/namespaces/{{namespace}}/{}",
+                                group, ver, plural
+                            );
+                            let item_path = format!(
+                                "/apis/{}/{}/namespaces/{{namespace}}/{}/{{name}}",
+                                group, ver, plural
+                            );
+                            paths.entry(list_path).or_insert_with(|| {
+                                serde_json::json!({"get": get_op})
+                            });
+                            paths.entry(item_path).or_insert_with(|| {
+                                serde_json::json!({"get": get_op})
+                            });
+                        } else {
+                            let list_path =
+                                format!("/apis/{}/{}/{}", group, ver, plural);
+                            let item_path =
+                                format!("/apis/{}/{}/{}/{{name}}", group, ver, plural);
+                            paths.entry(list_path).or_insert_with(|| {
+                                serde_json::json!({"get": get_op})
+                            });
+                            paths.entry(item_path).or_insert_with(|| {
+                                serde_json::json!({"get": get_op})
+                            });
+                        }
+                    }
                 }
             }
         }
