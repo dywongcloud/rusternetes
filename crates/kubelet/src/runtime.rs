@@ -983,7 +983,7 @@ impl ContainerRuntime {
             .unwrap_or("Always");
         if restart_policy == "Never" {
             // Brief delay for containers to exit
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
             // Check if all containers have terminated
             if let Ok(statuses) = self.get_container_statuses(pod).await {
@@ -1411,12 +1411,12 @@ impl ContainerRuntime {
                     {
                         Ok(_) => {
                             // Wait briefly for the runtime to release the container name
-                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         }
                         Err(rm_err) => {
                             warn!("Failed to remove pause container {}: {}", pause_name, rm_err);
                             // Try waiting longer — runtime may still be processing
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         }
                     }
                     self.docker
@@ -1540,8 +1540,10 @@ impl ContainerRuntime {
                 }
             }
 
-            // Wait a bit before checking again
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            // Wait before checking again. K8s uses Docker event streaming
+            // for instant notification; we poll. 100ms is fast enough to not
+            // add noticeable latency to init container completion.
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
@@ -5252,6 +5254,7 @@ impl ContainerRuntime {
                 };
 
             let is_terminated = matches!(state, ContainerState::Terminated { .. });
+            let is_running = matches!(state, ContainerState::Running { .. });
 
             // Preserve restart_count and last_state from the pod's existing status.
             // When we remove and recreate a failed init container, the Docker state
@@ -5325,6 +5328,9 @@ impl ContainerRuntime {
                 }
             }
 
+            // Init container started=true if it's running or has terminated.
+            // K8s sets started=true once the container has been started at least once.
+            let has_started = is_running || is_terminated;
             statuses.push(ContainerStatus {
                 name: ic.name.clone(),
                 ready: is_terminated && matches!(&state, ContainerState::Terminated { exit_code, .. } if *exit_code == 0),
@@ -5334,7 +5340,7 @@ impl ContainerRuntime {
                 image: Some(ic.image.clone()),
                 image_id,
                 container_id,
-                started: Some(false),
+                started: Some(has_started),
                 allocated_resources: ic.resources.as_ref().and_then(|r| r.requests.clone()),
                 allocated_resources_status: None,
                 resources: ic.resources.clone(),

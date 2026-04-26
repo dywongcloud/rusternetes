@@ -851,41 +851,14 @@ impl Kubelet {
 
     /// Garbage-collect terminal pods (Succeeded/Failed) from storage.
     /// K8s has a terminated-pod-gc-threshold (default 12500) and the kubelet's
-    /// pod lifecycle manager removes finished pods. Without this cleanup,
-    /// terminal pod records accumulate and block namespace deletion.
-    async fn cleanup_terminal_pods(&self, node_pods: &[Pod]) {
-        for pod in node_pods {
-            let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
-            if !matches!(phase, Some(Phase::Succeeded) | Some(Phase::Failed)) {
-                continue;
-            }
-
-            let ns = pod.metadata.namespace.as_deref().unwrap_or("default");
-            let name = &pod.metadata.name;
-
-            // Verify containers are actually stopped before deleting the record
-            let containers_stopped = self
-                .runtime
-                .list_running_pods()
-                .await
-                .map(|running| !running.contains(&pod.metadata.name))
-                .unwrap_or(false);
-
-            if !containers_stopped {
-                continue;
-            }
-
-            // Pod is terminal and containers are stopped — safe to delete from storage
-            let key = build_key("pods", Some(ns), name);
-            if let Err(e) = self.storage.delete(&key).await {
-                debug!("Failed to delete terminal pod {}/{}: {}", ns, name, e);
-            } else {
-                info!(
-                    "Cleaned up terminal pod {}/{} (phase: {:?})",
-                    ns, name, phase
-                );
-            }
-        }
+    /// In real K8s, the kubelet does NOT delete pods from the API server.
+    /// Pod lifecycle is managed by the API server — pods are cleaned up by
+    /// namespace deletion, GC (owner reference), or Job TTL controller.
+    /// The kubelet only reports status changes.
+    /// Previously this deleted Failed/Succeeded pods, which broke tests that
+    /// need to observe terminal pod status (e.g., terminated reason check).
+    async fn cleanup_terminal_pods(&self, _node_pods: &[Pod]) {
+        // No-op: let the API server manage pod lifecycle.
     }
 
     /// Startup cleanup: remove all containers that don't correspond to pods
@@ -1128,7 +1101,7 @@ impl Kubelet {
             loop {
                 // Wait for signal (or timeout for periodic re-check)
                 let signaled = tokio::time::timeout(
-                    Duration::from_secs(30), // periodic fallback re-sync
+                    Duration::from_secs(5), // periodic fallback re-sync
                     rx.recv(),
                 ).await;
 
