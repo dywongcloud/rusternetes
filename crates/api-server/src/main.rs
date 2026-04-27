@@ -354,7 +354,7 @@ async fn main() -> Result<()> {
                 .timer(hyper_util::rt::TokioTimer::new())
                 .initial_stream_window_size(256 * 1024) // 256KB per stream (K8s: 256KB)
                 .initial_connection_window_size(256 * 1024 * 100) // 25MB total (K8s: 256KB * 100)
-                .max_concurrent_streams(250) // Increased from 100 — conformance tests create many concurrent watches
+                .max_concurrent_streams(1000) // High limit — watch timeout (2min) handles stream recycling
                 // HTTP/2 PING keepalive: send PING frames to keep connections alive.
                 // Without this, network intermediaries (Podman Machine virtio-net,
                 // Docker Desktop proxy) may close idle TCP connections, killing
