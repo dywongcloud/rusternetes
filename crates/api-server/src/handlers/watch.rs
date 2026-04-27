@@ -159,17 +159,12 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    // Watch timeout: cap at 2 minutes regardless of client request.
-    // K8s default is ~30 minutes but our single-process architecture shares
-    // one HTTP/2 connection pool (250 max concurrent streams). Each conformance
-    // test creates 3-5 watches with client-requested timeouts of 300-600s.
-    // With 441 tests, lingering watches exhaust the stream pool after ~80 tests,
-    // causing all subsequent watches to fail with "context canceled".
-    // 2 minutes is long enough for any individual watch operation while ensuring
-    // streams are recycled fast enough for the full test suite.
-    // client-go's RetryWatcher automatically reconnects on timeout.
+    // Watch timeout: use client-requested timeout, capped at 5 minutes.
+    // K8s default is ~30 minutes but lingering watches from completed tests
+    // consume HTTP/2 streams. 5 minutes balances test needs (some watches
+    // need 300s) with stream recycling. client-go RetryWatcher auto-reconnects.
     let timeout_duration = Some(Duration::from_secs(
-        params.timeout_seconds.unwrap_or(120).min(120),
+        params.timeout_seconds.unwrap_or(300).min(300),
     ));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
@@ -635,17 +630,12 @@ where
     // Extract parameters
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    // Watch timeout: cap at 2 minutes regardless of client request.
-    // K8s default is ~30 minutes but our single-process architecture shares
-    // one HTTP/2 connection pool (250 max concurrent streams). Each conformance
-    // test creates 3-5 watches with client-requested timeouts of 300-600s.
-    // With 441 tests, lingering watches exhaust the stream pool after ~80 tests,
-    // causing all subsequent watches to fail with "context canceled".
-    // 2 minutes is long enough for any individual watch operation while ensuring
-    // streams are recycled fast enough for the full test suite.
-    // client-go's RetryWatcher automatically reconnects on timeout.
+    // Watch timeout: use client-requested timeout, capped at 5 minutes.
+    // K8s default is ~30 minutes but lingering watches from completed tests
+    // consume HTTP/2 streams. 5 minutes balances test needs (some watches
+    // need 300s) with stream recycling. client-go RetryWatcher auto-reconnects.
     let timeout_duration = Some(Duration::from_secs(
-        params.timeout_seconds.unwrap_or(120).min(120),
+        params.timeout_seconds.unwrap_or(300).min(300),
     ));
     let label_selector = params.label_selector.clone();
     let field_selector = params.field_selector.clone();
