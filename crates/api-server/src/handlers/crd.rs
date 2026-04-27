@@ -274,7 +274,16 @@ pub async fn create_crd(
         }
     }
 
-    let created: serde_json::Value = state.storage.create(&key, &crd_value).await?;
+    let created: serde_json::Value = match state.storage.create(&key, &crd_value).await {
+        Ok(v) => v,
+        Err(rusternetes_common::Error::AlreadyExists(_)) => {
+            return Err(rusternetes_common::Error::AlreadyExists(format!(
+                "customresourcedefinitions.apiextensions.k8s.io \"{}\" already exists",
+                crd_name
+            )));
+        }
+        Err(e) => return Err(e),
+    };
     info!("CRD created: {}", crd_name);
 
     // Generate a MODIFIED watch event by touching the CRD status.
