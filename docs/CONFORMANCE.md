@@ -28,11 +28,12 @@ We run the official Kubernetes conformance test suite (441 tests) via Sonobuoy a
 | 146   | 2026-04-15 | 379  | 62   | 85.9%     | 16 fixes deployed |
 | 147   | 2026-04-16 | 398  | 43   | 90.2%     | 31 fixes deployed |
 | 155   | 2026-04-24 | 403  | 38   | 91.4%     | Previous high score |
-| 159   | 2026-04-25 | 410  | 31   | 93.0%     | New high score |
+| 159   | 2026-04-25 | 410  | 31   | 93.0%     | Previous high score |
+| 160   | 2026-04-26 | 415  | 26   | 94.1%     | New high score |
 
-**Current best deployed**: Round 159 at 93.0% (410/441).
+**Current best deployed**: Round 160 at 94.1% (415/441).
 
-**Latest status (Round 159)**: 410/441 conformance tests passing with 31 failures.
+**Latest status (Round 160)**: 415/441 conformance tests passing with 26 failures.
 
 **Total commits**: 1,534+ across 30+ rounds of iterative testing and debugging.
 
