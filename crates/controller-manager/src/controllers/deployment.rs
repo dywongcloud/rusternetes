@@ -603,6 +603,35 @@ impl<S: Storage + 'static> DeploymentController<S> {
             let active_name = active.metadata.name.clone();
             let active_replicas = active.spec.replicas;
 
+            // K8s scale() — simple scaling: if only one active RS (no old RSes
+            // with pods), scale it directly to the desired replica count.
+            // K8s ref: pkg/controller/deployment/sync.go:310-316
+            if old_rs_total == 0 && active_replicas != desired_replicas {
+                info!(
+                    "Scaling active ReplicaSet {}/{} from {} to {} (no old RSes)",
+                    namespace, active_name, active_replicas, desired_replicas
+                );
+                self.update_replicaset_replicas(active, desired_replicas).await?;
+                return self.update_deployment_status(deployment).await;
+            }
+
+            // Also handle the case where the new RS has the right count but old
+            // RSes still have pods — need to scale them down even without a
+            // rolling update in progress.
+            // K8s ref: sync.go:320-327 — IsSaturated check
+            if active_replicas >= desired_replicas && old_rs_total > 0 && !is_scaling_event {
+                // New RS is saturated — scale all old RSes to 0
+                for rs in owned_replicasets.iter() {
+                    if rs.metadata.name != active_name && rs.spec.replicas > 0 {
+                        info!(
+                            "Saturated new RS: scaling down old ReplicaSet {}/{} to 0",
+                            namespace, rs.metadata.name
+                        );
+                        self.update_replicaset_replicas(rs, 0).await?;
+                    }
+                }
+            }
+
             if is_rolling_update && active_replicas < desired_replicas && old_rs_total > 0 {
                 // Rolling update in progress: gradually scale new RS up and old RS down.
                 // K8s ref: pkg/controller/deployment/rolling.go — rolloutRolling()
