@@ -5204,8 +5204,35 @@ impl ContainerRuntime {
                                     None,
                                     None,
                                 )
+                            } else if matches!(&prev_status.state, Some(ContainerState::Running { .. })) {
+                                // Previous state was Running but container is gone.
+                                // For init containers, this means it completed and Docker
+                                // removed it before we could capture the exit status.
+                                // Treat as successful completion (exit code 0) since the
+                                // next init container or app containers wouldn't have
+                                // started if this one failed.
+                                (
+                                    ContainerState::Terminated {
+                                        exit_code: 0,
+                                        reason: Some("Completed".to_string()),
+                                        message: None,
+                                        started_at: prev_status.state.as_ref().and_then(|s| {
+                                            if let ContainerState::Running { started_at } = s {
+                                                started_at.clone()
+                                            } else {
+                                                None
+                                            }
+                                        }),
+                                        finished_at: Some(chrono::Utc::now().to_rfc3339()),
+                                        container_id: prev_status.container_id.clone(),
+                                        signal: None,
+                                    },
+                                    prev_status.container_id.clone(),
+                                    prev_status.image_id.clone(),
+                                )
                             } else {
-                                // Previous state wasn't Terminated or CrashLoopBackOff — fall back
+                                // Previous state was Waiting/PodInitializing — container
+                                // was never started or still initializing
                                 (
                                     ContainerState::Waiting {
                                         reason: Some("PodInitializing".to_string()),
