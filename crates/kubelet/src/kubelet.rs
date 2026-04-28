@@ -2464,14 +2464,27 @@ impl Kubelet {
                                     })
                                     .collect();
 
-                                // Update pod status — re-read from storage for fresh resourceVersion
+                                // Write restart counts to storage so they persist across
+                                // container removal/recreation (Docker resets restart_count).
+                                // But keep the state as-is (Terminated) rather than setting
+                                // Waiting/CrashLoopBackOff — the post-restart update will
+                                // set the actual Running state. This avoids a window where
+                                // tests observe the wrong intermediate state.
                                 let key = build_key("pods", Some(namespace), pod_name);
                                 let mut new_pod: Pod = match self.storage.get(&key).await {
                                     Ok(p) => p,
                                     _ => pod.clone(),
                                 };
                                 if let Some(ref mut status) = new_pod.status {
-                                    status.container_statuses = Some(updated_statuses);
+                                    // Only update restart_count and last_state, keep current state
+                                    if let Some(ref mut cs_list) = status.container_statuses {
+                                        for cs in cs_list.iter_mut() {
+                                            if let Some(updated) = updated_statuses.iter().find(|u| u.name == cs.name) {
+                                                cs.restart_count = updated.restart_count;
+                                                cs.last_state = updated.last_state.clone();
+                                            }
+                                        }
+                                    }
                                 }
                                 let _ = self.storage.update(&key, &new_pod).await;
 
@@ -2565,7 +2578,7 @@ impl Kubelet {
                                                 );
                                             } else {
                                                 info!(
-                                                    "Restarted container {} in pod {}/{}",
+                                                    "Restarted container {} in pod {}/{}, updating status immediately",
                                                     c.name, namespace, pod_name
                                                 );
                                             }
