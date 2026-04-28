@@ -1222,7 +1222,10 @@ impl Kubelet {
                 .insert(pod_uid.clone(), PodWorkerState::TerminatingPod);
         }
 
-        // Handle TerminatedPod: delete from storage, clean up state
+        // Handle TerminatedPod: update status but do NOT delete from storage.
+        // In real K8s, the kubelet never deletes pods from the API server.
+        // Pod lifecycle is managed by namespace deletion, GC, or Job TTL.
+        // Deleting here breaks tests that need to observe terminal pod status.
         if matches!(current_state, Some(PodWorkerState::TerminatedPod)) {
             let key = build_key("pods", Some(namespace), pod_name);
             let has_finalizers = pod
@@ -1232,17 +1235,21 @@ impl Kubelet {
                 .map(|f| !f.is_empty())
                 .unwrap_or(false);
             if !has_finalizers {
-                if let Err(e) = self.storage.delete(&key).await {
-                    warn!(
-                        "Error deleting terminated pod {}/{}: {}",
-                        namespace, pod_name, e
-                    );
-                } else {
-                    debug!(
-                        "Pod {}/{} deleted from storage (terminated)",
-                        namespace, pod_name
-                    );
+                // Don't delete — just update status to terminal phase
+                if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
+                    if let Some(ref mut status) = p.status {
+                        if status.phase != Some(Phase::Failed)
+                            && status.phase != Some(Phase::Succeeded)
+                        {
+                            status.phase = Some(Phase::Succeeded);
+                        }
+                    }
+                    let _ = self.storage.update(&key, &p).await;
                 }
+                debug!(
+                    "Pod {}/{} marked terminal (not deleted from storage)",
+                    namespace, pod_name
+                );
             } else {
                 // Pod has finalizers — update status to Failed but don't delete
                 if let Ok(mut p) = self.storage.get::<Pod>(&key).await {
@@ -1318,7 +1325,41 @@ impl Kubelet {
                         if status.phase != Some(Phase::Failed) {
                             status.phase = Some(Phase::Succeeded);
                         }
-                        // Preserve existing conditions — don't overwrite
+                        // Refresh init container statuses — they may have been
+                        // last written while the containers were still running.
+                        // Now that the pod is Succeeded, all init containers
+                        // must have completed successfully (ready=true).
+                        if let Some(ref mut ics) = status.init_container_statuses {
+                            for ic in ics.iter_mut() {
+                                if let Some(ContainerState::Terminated { exit_code, .. }) = &ic.state {
+                                    if *exit_code == 0 {
+                                        ic.ready = true;
+                                        ic.started = Some(true);
+                                    }
+                                } else {
+                                    // Init container state not Terminated but pod succeeded —
+                                    // Docker removed the container. Mark as completed.
+                                    ic.state = Some(ContainerState::Terminated {
+                                        exit_code: 0,
+                                        reason: Some("Completed".to_string()),
+                                        message: None,
+                                        started_at: None,
+                                        finished_at: None,
+                                        container_id: None,
+                                        signal: None,
+                                    });
+                                    ic.ready = true;
+                                    ic.started = Some(true);
+                                }
+                            }
+                        }
+                    }
+                    // Refresh container statuses outside the mutable borrow
+                    let fresh_statuses = self.runtime.get_container_statuses(&p).await.ok();
+                    if let Some(ref mut status) = p.status {
+                        if let Some(cs) = fresh_statuses {
+                            status.container_statuses = Some(cs);
+                        }
                     }
                     let _ = self.storage.update(&key, &p).await;
                 }
