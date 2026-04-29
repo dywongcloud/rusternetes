@@ -970,9 +970,54 @@ impl<S: Storage + 'static> DeploymentController<S> {
             {
                 labels.remove("pod-template-hash");
             }
+            // Also remove fields that are defaulted differently between the
+            // deployment template and the RS template. K8s normalizes templates
+            // before comparison; we strip fields that vary due to defaulting.
+            if let Some(spec) = template.pointer_mut("/spec") {
+                if let Some(obj) = spec.as_object_mut() {
+                    // Remove fields that are empty/null/default — these may differ
+                    // between deployment template (from API) and RS template (from clone)
+                    obj.remove("nodeName");
+                    obj.remove("nodeSelector");
+                    obj.remove("hostname");
+                    obj.remove("subdomain");
+                    obj.remove("priority");
+                    obj.remove("runtimeClassName");
+                    obj.remove("overhead");
+                    // Remove container fields that get defaulted
+                    if let Some(containers) = obj.get_mut("containers").and_then(|c| c.as_array_mut()) {
+                        for container in containers.iter_mut() {
+                            if let Some(cobj) = container.as_object_mut() {
+                                // Remove terminationMessagePath/Policy if default
+                                if cobj.get("terminationMessagePath") == Some(&serde_json::json!("/dev/termination-log")) {
+                                    cobj.remove("terminationMessagePath");
+                                }
+                                if cobj.get("terminationMessagePolicy") == Some(&serde_json::json!("File")) {
+                                    cobj.remove("terminationMessagePolicy");
+                                }
+                                if cobj.get("imagePullPolicy") == Some(&serde_json::json!("IfNotPresent"))
+                                    || cobj.get("imagePullPolicy") == Some(&serde_json::json!("Always"))
+                                {
+                                    cobj.remove("imagePullPolicy");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        rs_template == deploy_template
+        let matches = rs_template == deploy_template;
+        if !matches {
+            debug!(
+                "Template mismatch for RS {} vs deployment {}: RS={}, Deploy={}",
+                rs.metadata.name,
+                deployment.metadata.name,
+                serde_json::to_string(&rs_template).unwrap_or_default(),
+                serde_json::to_string(&deploy_template).unwrap_or_default()
+            );
+        }
+        matches
     }
 
     async fn create_replicaset(&self, deployment: &Deployment) -> rusternetes_common::Result<()> {
