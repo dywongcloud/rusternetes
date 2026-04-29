@@ -107,8 +107,8 @@ impl<S: Storage + 'static> DaemonSetController<S> {
             let mut node_watch = node_watch;
             let mut pod_watch = pod_watch;
 
-            // Periodic full resync as safety net (every 30s)
-            let mut resync = tokio::time::interval(Duration::from_secs(30));
+            // Periodic full resync as safety net
+            let mut resync = tokio::time::interval(Duration::from_secs(5));
             resync.tick().await; // consume first immediate tick
 
             let mut watch_broken = false;

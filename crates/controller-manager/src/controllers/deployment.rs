@@ -86,8 +86,8 @@ impl<S: Storage + 'static> DeploymentController<S> {
                 }
             };
 
-            // Periodic full resync as safety net (every 30s)
-            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            // Periodic full resync as safety net
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(5));
             resync.tick().await; // consume first immediate tick
 
             let mut watch_broken = false;
