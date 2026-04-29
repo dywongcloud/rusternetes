@@ -1,5 +1,7 @@
 mod advanced;
+#[allow(dead_code)]
 mod framework;
+#[allow(dead_code)]
 mod plugins;
 mod scheduler;
 
