@@ -3,7 +3,7 @@
 // This module provides CEL expression evaluation for ValidatingAdmissionPolicy
 
 use anyhow::{anyhow, Result};
-use cel_interpreter::{
+use cel::{
     objects::{Key, Map},
     Context, Program, Value,
 };
