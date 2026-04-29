@@ -1668,8 +1668,8 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                 .and_then(|v| v.as_array())
             {
                 let mut var_map: std::collections::HashMap<
-                    cel_interpreter::objects::Key,
-                    cel_interpreter::Value,
+                    cel::objects::Key,
+                    cel::objects::Value,
                 > = std::collections::HashMap::new();
                 for var_def in vars {
                     let var_name = var_def.get("name").and_then(|n| n.as_str()).unwrap_or("");
@@ -1684,7 +1684,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                     match evaluator.evaluate_to_value(var_expr, &context) {
                         Ok(val) => {
                             var_map.insert(
-                                cel_interpreter::objects::Key::String(std::sync::Arc::new(
+                                cel::objects::Key::String(std::sync::Arc::new(
                                     var_name.to_string(),
                                 )),
                                 val,
@@ -1693,7 +1693,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                             // so later variables can reference earlier ones
                             context.add_variable(
                                 "variables".to_string(),
-                                cel_interpreter::Value::Map(cel_interpreter::objects::Map {
+                                cel::objects::Value::Map(cel::objects::Map {
                                     map: std::sync::Arc::new(var_map.clone()),
                                 }),
                             );
@@ -1769,7 +1769,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                     validation.get("messageExpression").and_then(|m| m.as_str())
                                 {
                                     match evaluator.evaluate_to_value(msg_expr, &context) {
-                                        Ok(cel_interpreter::Value::String(s)) => s.to_string(),
+                                        Ok(cel::objects::Value::String(s)) => s.to_string(),
                                         Ok(other) => format!("{:?}", other),
                                         Err(_) => validation
                                             .get("message")

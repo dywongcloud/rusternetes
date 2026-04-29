@@ -60,7 +60,7 @@ pub async fn create_validating_webhook(
                     let expr_clone = condition.expression.clone();
                     let compile_result =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            cel_interpreter::Program::compile(&expr_clone)
+                            cel::Program::compile(&expr_clone)
                         }));
                     let _program = match compile_result {
                         Ok(Ok(p)) => p,
@@ -330,7 +330,7 @@ pub async fn create_mutating_webhook(
                     let expr_clone = condition.expression.clone();
                     let compile_result =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            cel_interpreter::Program::compile(&expr_clone)
+                            cel::Program::compile(&expr_clone)
                         }));
                     match compile_result {
                         Ok(Ok(_p)) => {}
