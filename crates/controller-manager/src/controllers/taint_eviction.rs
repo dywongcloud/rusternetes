@@ -207,11 +207,31 @@ impl<S: Storage + 'static> TaintEvictionController<S> {
                     namespace, pod_name, node_name
                 );
 
+                // K8s taint eviction: add DisruptionTarget condition then set
+                // deletionTimestamp (graceful delete). The kubelet handles shutdown.
+                // Do NOT delete directly from storage — that bypasses graceful
+                // shutdown and causes "pod not found" errors in tests.
                 let key = build_key("pods", Some(namespace), pod_name);
-                match self.storage.delete(&key).await {
-                    Ok(_) => {
+                match self.storage.get::<Pod>(&key).await {
+                    Ok(mut evict_pod) => {
+                        // Add DisruptionTarget condition
+                        let condition = rusternetes_common::resources::PodCondition {
+                            condition_type: "DisruptionTarget".to_string(),
+                            status: "True".to_string(),
+                            reason: Some("DeletionByTaintManager".to_string()),
+                            message: Some("Taint manager: deleting due to NoExecute taint".to_string()),
+                            last_transition_time: Some(Utc::now()),
+                            observed_generation: None,
+                        };
+                        if let Some(ref mut status) = evict_pod.status {
+                            let conditions = status.conditions.get_or_insert_with(Vec::new);
+                            conditions.push(condition);
+                        }
+                        // Set deletionTimestamp for graceful delete
+                        evict_pod.metadata.deletion_timestamp = Some(Utc::now());
+                        let _ = self.storage.update(&key, &evict_pod).await;
                         info!(
-                            "Evicted pod {}/{} from node {}",
+                            "Evicted pod {}/{} from node {} (set deletionTimestamp)",
                             namespace, pod_name, node_name
                         );
                     }
