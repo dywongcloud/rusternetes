@@ -298,17 +298,15 @@ impl RuntimeConfig {
             .or_else(|| std::env::var("CLUSTER_SERVICE_CIDR").ok())
             .unwrap_or_else(|| "10.96.0.0/12".to_string());
 
-        // Pods should ALWAYS use the kubernetes service ClusterIP (10.96.0.1) for
-        // KUBERNETES_SERVICE_HOST, as kube-proxy will correctly route this to the
-        // API server. The ClusterIP is stable across restarts and works in all
-        // networking configurations.
-        //
-        // Note: KUBERNETES_SERVICE_HOST_OVERRIDE is for the kubelet itself to
-        // connect to the API server (useful in some container environments where
-        // ClusterIP routing doesn't work from the kubelet container), but it
-        // should NOT affect pod environment variables.
-        let kubernetes_service_host =
-            first_ip_from_cidr(&cluster_service_cidr).unwrap_or_else(|_| "10.96.0.1".to_string());
+        // Use KUBERNETES_SERVICE_HOST_OVERRIDE if set — this allows the API server
+        // address to be configured for environments where ClusterIP routing doesn't
+        // work from pod containers (e.g., Podman Machine without br_netfilter).
+        // Falls back to the kubernetes service ClusterIP (10.96.0.1).
+        let kubernetes_service_host = std::env::var("KUBERNETES_SERVICE_HOST_OVERRIDE")
+            .unwrap_or_else(|_| {
+                first_ip_from_cidr(&cluster_service_cidr)
+                    .unwrap_or_else(|_| "10.96.0.1".to_string())
+            });
 
         let config = Self {
             root_dir: PathBuf::from(root_dir),
