@@ -1383,7 +1383,7 @@ fn build_ingress_backend(svc_name: &str, svc_port: &str) -> Value {
 // ── Legacy inline creation ──────────────────────────────────────────────────
 
 /// Execute inline resource creation (e.g., kubectl create namespace foo)
-pub async fn execute_inline(client: &ApiClient, args: &[String], namespace: &str) -> Result<()> {
+pub async fn execute_inline(_client: &ApiClient, args: &[String], namespace: &str) -> Result<()> {
     if args.is_empty() {
         anyhow::bail!("Resource type required");
     }

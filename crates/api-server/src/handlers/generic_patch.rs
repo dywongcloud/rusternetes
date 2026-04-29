@@ -524,7 +524,7 @@ where
         .map_err(|e| rusternetes_common::Error::InvalidResource(format!("Invalid patch: {}", e)))?;
 
     // Apply patch (clone patch_type for potential retry on rv conflict)
-    let patch_type_for_retry = patch_type.clone();
+    let _patch_type_for_retry = patch_type.clone();
     let mut patched_json = apply_patch(&current_json, &patch_json, patch_type)
         .map_err(|e| rusternetes_common::Error::InvalidResource(e.to_string()))?;
 

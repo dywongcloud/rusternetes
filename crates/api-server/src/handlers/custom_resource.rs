@@ -202,7 +202,7 @@ pub async fn create_custom_resource(
     // Run admission webhooks (mutating + validating) for custom resources
     // K8s runs webhooks for ALL resource types including CRDs
     {
-        use crate::admission_webhook::AdmissionWebhookClient;
+        
         let gvk = rusternetes_common::admission::GroupVersionKind {
             group: group.clone(),
             version: version.clone(),
@@ -650,7 +650,7 @@ pub async fn patch_custom_resource(
                         let key = trimmed[..colon_pos].trim().trim_matches('"');
                         if !key.is_empty() && !key.contains(' ') {
                             let map_key = (indent, key.to_string());
-                            if let Some(prev_line) = seen_keys.get(&map_key) {
+                            if let Some(_prev_line) = seen_keys.get(&map_key) {
                                 return Err(rusternetes_common::Error::InvalidResource(format!(
                                     "line {}: key {:?} already set in map",
                                     line_num + 1,
@@ -1027,7 +1027,7 @@ pub async fn delete_custom_resource(
     // K8s runs validating admission (including webhooks) before deletion.
     // Mutating webhooks are NOT called on DELETE in K8s — only validating.
     {
-        use crate::admission_webhook::AdmissionWebhookClient;
+        
         let kind = crd.spec.names.kind.clone();
         let gvk = rusternetes_common::admission::GroupVersionKind {
             group: group.clone(),

@@ -313,7 +313,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
 
         // Re-fetch after adoption
         let all_replicasets: Vec<ReplicaSet> = self.storage.list(&rs_prefix).await?;
-        let mut owned_replicasets: Vec<ReplicaSet> = all_replicasets
+        let owned_replicasets: Vec<ReplicaSet> = all_replicasets
             .into_iter()
             .filter(|rs| self.is_owned_by_deployment(rs, deployment))
             .collect();
@@ -673,7 +673,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
                 //
                 // Count available replicas from all RSes (status-based, matching K8s).
                 // Fall back to counting pods directly if RS status is not yet populated.
-                let all_available: i32 = owned_replicasets.iter().map(|rs| {
+                let _all_available: i32 = owned_replicasets.iter().map(|rs| {
                     if let Some(status) = &rs.status {
                         status.available_replicas
                     } else {

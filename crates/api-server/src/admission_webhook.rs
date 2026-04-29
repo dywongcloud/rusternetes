@@ -382,7 +382,7 @@ impl AdmissionWebhookClient {
             if let Some(cluster_ip) = &svc.spec.cluster_ip {
                 if !cluster_ip.is_empty() && cluster_ip != "None" {
                     // Use the service's target port if available
-                    let target_port = svc
+                    let _target_port = svc
                         .spec
                         .ports
                         .first()
@@ -802,7 +802,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
         let mut all_warnings = Vec::new();
 
         for result in results {
-            let (webhook_name, failure_policy, uid, call_result) = match result {
+            let (webhook_name, failure_policy, _uid, call_result) = match result {
                 Ok(r) => r,
                 Err(e) => {
                     error!("Webhook task panicked: {}", e);

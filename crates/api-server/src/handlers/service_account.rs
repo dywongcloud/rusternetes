@@ -455,7 +455,7 @@ pub async fn deletecollection_serviceaccounts(
 /// Create a token for a service account (TokenRequest API)
 pub async fn create_token(
     State(state): State<Arc<ApiServerState>>,
-    Extension(auth_ctx): Extension<AuthContext>,
+    Extension(_auth_ctx): Extension<AuthContext>,
     Path((namespace, name)): Path<(String, String)>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {

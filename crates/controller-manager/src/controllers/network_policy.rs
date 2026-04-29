@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rusternetes_common::resources::{NetworkPolicy, Pod};
-use rusternetes_storage::{MemoryStorage, Storage, WorkQueue, extract_key, build_key};
+use rusternetes_storage::{Storage, WorkQueue, extract_key, build_key};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};

@@ -24,7 +24,7 @@ pub async fn create_crd(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
     Query(params): Query<HashMap<String, String>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: Bytes,
 ) -> Result<(StatusCode, Json<serde_json::Value>)> {
     // Reject empty request bodies with a clear error message.
@@ -408,7 +408,7 @@ pub async fn update_crd(
     Extension(auth_ctx): Extension<AuthContext>,
     Path(name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<CustomResourceDefinition>> {
     // Reject empty or binary-protobuf request bodies

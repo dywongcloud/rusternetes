@@ -80,7 +80,7 @@ impl StreamMessage {
 }
 
 /// Execute a command in a pod with WebSocket streaming
-pub async fn exec_stream(ws_url: String, stdin_enabled: bool, tty_enabled: bool) -> Result<()> {
+pub async fn exec_stream(ws_url: String, stdin_enabled: bool, _tty_enabled: bool) -> Result<()> {
     // Parse URL
     let url = Url::parse(&ws_url)?;
 

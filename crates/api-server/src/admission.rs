@@ -1,7 +1,7 @@
 /// Pod admission controllers for ResourceQuota, LimitRange enforcement, and ServiceAccount injection
 use rusternetes_common::{
     resources::{
-        LimitRange, Pod, ResourceQuota, SecretVolumeSource, ServiceAccount, Volume, VolumeMount,
+        LimitRange, Pod, ResourceQuota, ServiceAccount, Volume, VolumeMount,
     },
     types::ResourceRequirements,
 };
@@ -995,7 +995,7 @@ pub async fn inject_service_account_token<S: Storage>(
     }
 
     // The service account token secret name follows the pattern: {sa-name}-token
-    let token_secret_name = format!("{}-token", sa_name);
+    let _token_secret_name = format!("{}-token", sa_name);
 
     // Define the service account token volume as a Projected volume
     // with three sources, matching K8s TokenVolumeSource() exactly:

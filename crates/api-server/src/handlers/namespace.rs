@@ -12,7 +12,6 @@ use rusternetes_common::{
     List, Result,
 };
 use rusternetes_storage::{build_key, build_prefix, Storage};
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};

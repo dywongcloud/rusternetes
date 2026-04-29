@@ -3079,7 +3079,7 @@ impl ContainerRuntime {
         let key = build_key("secrets", Some(namespace), &secret_name);
 
         // Try to get the secret; if it doesn't exist, create a basic token mount anyway
-        let secret: Option<Secret> = match storage.get(&key).await {
+        let _secret: Option<Secret> = match storage.get(&key).await {
             Ok(s) => Some(s),
             Err(e) => {
                 warn!(
@@ -3711,7 +3711,7 @@ impl ContainerRuntime {
         // Build volume bindings
         let mut binds = Vec::new();
         let mut tmpfs_mounts: HashMap<String, String> = HashMap::new();
-        let mut docker_vol_mounts: Vec<bollard::models::Mount> = Vec::new();
+        let docker_vol_mounts: Vec<bollard::models::Mount> = Vec::new();
 
         // Identify which volumes are emptyDir (should use tmpfs)
         let empty_dir_volumes: std::collections::HashSet<String> = pod

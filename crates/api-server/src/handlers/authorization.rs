@@ -7,7 +7,7 @@ use rusternetes_common::{
     auth::UserInfo,
     authz::{Decision, RequestAttributes},
     resources::{
-        LocalSubjectAccessReview, NonResourceRule, ResourceRule, SelfSubjectAccessReview,
+        LocalSubjectAccessReview, SelfSubjectAccessReview,
         SelfSubjectRulesReview, SubjectAccessReview, SubjectAccessReviewStatus,
         SubjectRulesReviewStatus,
     },

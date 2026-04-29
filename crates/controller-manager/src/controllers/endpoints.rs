@@ -7,7 +7,7 @@ use rusternetes_common::types::OwnerReference;
 use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 /// EndpointsController watches Services and Pods to automatically maintain Endpoints resources.
 /// It creates/updates Endpoints based on:

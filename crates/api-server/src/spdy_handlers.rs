@@ -7,7 +7,7 @@
 use crate::spdy::{SpdyChannel, SpdyConnection};
 use rusternetes_common::resources::Pod;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Get the kubelet address for a pod's node.
 /// In our Docker Compose setup, kubelets are reachable by container name.

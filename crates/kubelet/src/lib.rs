@@ -4,10 +4,10 @@ pub mod eviction;
 pub mod kubelet;
 pub mod runtime;
 
-use config::{KubeletConfiguration, RuntimeConfig};
+use config::KubeletConfiguration;
 use rusternetes_storage::{StorageBackend, Storage};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Configuration for the kubelet component.
 pub struct KubeletConfig {
@@ -81,7 +81,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: KubeletConfig) -> anyhow:
     info!("Starting kubelet API server on {} (metrics + configz)", metrics_addr);
 
     tokio::spawn(async move {
-        use axum::{routing::{get, post}, Json, Router};
+        use axum::{routing::get, Json, Router};
         let app = Router::new()
             .route("/metrics", get(|| async move { metrics_clone.gather() }))
             .route("/configz", get(|| async move { Json(kubelet_config_clone.as_ref().clone()) }));

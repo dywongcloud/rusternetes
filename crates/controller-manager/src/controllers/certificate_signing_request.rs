@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{Datelike, Utc};
+use chrono::Utc;
 use rusternetes_common::resources::{
     CertificateSigningRequest, CertificateSigningRequestCondition, CertificateSigningRequestStatus,
     KeyUsage,

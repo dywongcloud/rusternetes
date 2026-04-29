@@ -10,7 +10,7 @@ use rusternetes_common::resources::EndpointSlice;
 use rusternetes_storage::{build_key, build_prefix, extract_key, Storage, WorkQueue};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 pub struct APIServiceAvailabilityController<S: Storage> {
     storage: Arc<S>,

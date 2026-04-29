@@ -10,7 +10,7 @@ use rusternetes_common::types::{DeletionPropagation, ObjectMeta};
 use rusternetes_storage::Storage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};

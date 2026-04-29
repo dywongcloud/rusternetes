@@ -8,7 +8,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tracing::{debug, error, info, warn};
 
 use crate::advanced::{
-    calculate_resource_score, check_host_port_conflicts, check_node_affinity, check_pod_affinity,
+    check_host_port_conflicts, check_node_affinity, check_pod_affinity,
     check_pod_anti_affinity, check_preemption, check_taints_tolerations,
     check_topology_spread_constraints, NodeScore,
 };
@@ -1055,7 +1055,7 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
     /// Check if node has available devices for DRA ResourceClaims
     /// Returns true if all required devices are available on the node, or if no resource claims are specified
     async fn check_dra_device_availability(&self, node: &Node, pod: &Pod) -> bool {
-        use rusternetes_common::resources::{DeviceClass, ResourceClaim, ResourceSlice};
+        use rusternetes_common::resources::{ResourceClaim, ResourceSlice};
 
         // Extract resourceClaims from pod.spec
         let spec = match &pod.spec {

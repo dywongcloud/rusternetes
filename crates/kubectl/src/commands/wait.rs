@@ -63,7 +63,7 @@ async fn wait_for_deletion(
     resource_type: &str,
     name: Option<&str>,
     namespace: &str,
-    selector: Option<&str>,
+    _selector: Option<&str>,
     start: Instant,
     timeout: Duration,
 ) -> Result<()> {
@@ -102,7 +102,7 @@ async fn wait_for_condition(
     resource_type: &str,
     name: Option<&str>,
     namespace: &str,
-    selector: Option<&str>,
+    _selector: Option<&str>,
     condition: &str,
     start: Instant,
     timeout: Duration,

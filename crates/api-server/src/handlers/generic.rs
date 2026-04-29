@@ -8,10 +8,7 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use rusternetes_common::{
-    authz::{Decision, RequestAttributes},
-    List,
-};
+use rusternetes_common::authz::{Decision, RequestAttributes};
 use rusternetes_storage::{build_key, build_prefix, Storage};
 use serde_json::Value;
 use std::collections::HashMap;

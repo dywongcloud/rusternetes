@@ -8,9 +8,8 @@ use axum::{
     body::Body,
     extract::State,
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
 };
-use rusternetes_common::resources::crd::{CustomResourceDefinition, ResourceScope};
 use rusternetes_storage::Storage;
 use std::sync::Arc;
 

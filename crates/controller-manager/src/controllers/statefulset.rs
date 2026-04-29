@@ -216,7 +216,7 @@ impl<S: Storage + 'static> StatefulSetController<S> {
         // Filter pods that belong to this StatefulSet via ownerReferences (authoritative)
         // Fall back to label matching for backwards compatibility
         let statefulset_uid = &statefulset.metadata.uid;
-        let mut statefulset_pods: Vec<Pod> = all_pods
+        let statefulset_pods: Vec<Pod> = all_pods
             .into_iter()
             .filter(|pod| {
                 let owned_by_ref = pod

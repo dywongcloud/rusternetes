@@ -25,7 +25,7 @@ pub async fn create(
     info!("Creating cronjob: {}/{}", namespace, cronjob.metadata.name);
 
     // Check if this is a dry-run request
-    let is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
+    let _is_dry_run = crate::handlers::dryrun::is_dry_run(&params);
     // Check authorization
     let attrs = RequestAttributes::new(auth_ctx.user, "create", "cronjobs")
         .with_namespace(&namespace)

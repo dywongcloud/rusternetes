@@ -2388,7 +2388,7 @@ pub async fn watch_namespaced_json(
     let timeout_duration = Some(Duration::from_secs(
         params.timeout_seconds.unwrap_or(300).min(300),
     ));
-    let requested_rv = params.resource_version.clone();
+    let _requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 

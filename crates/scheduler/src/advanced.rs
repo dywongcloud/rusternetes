@@ -1079,7 +1079,7 @@ pub fn check_topology_spread_constraints(
 /// Check a single topology spread constraint
 fn check_single_topology_constraint(
     node: &Node,
-    pod: &Pod,
+    _pod: &Pod,
     constraint: &TopologySpreadConstraint,
     all_pods: &[Pod],
     all_nodes: &[Node],

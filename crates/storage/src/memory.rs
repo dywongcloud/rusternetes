@@ -191,7 +191,7 @@ impl Storage for MemoryStorage {
     }
 
     async fn watch(&self, prefix: &str) -> Result<WatchStream> {
-        use futures::stream::StreamExt;
+        
 
         let mut rx = self.watch_tx.subscribe();
         let prefix = prefix.to_string();

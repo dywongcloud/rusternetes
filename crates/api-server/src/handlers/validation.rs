@@ -452,7 +452,7 @@ pub fn validate_resource_name(name: &str) -> Result<(), Error> {
     }
 
     // Check each character
-    for (i, c) in name.chars().enumerate() {
+    for (_i, c) in name.chars().enumerate() {
         if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '.' {
             return Err(Error::InvalidResource(format!(
                 "name '{}' is invalid: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')",

@@ -1,4 +1,3 @@
-use axum::body::to_bytes;
 use axum::{
     body::Body,
     extract::Request,
@@ -9,7 +8,7 @@ use axum::{
 };
 use rusternetes_common::auth::{BootstrapTokenManager, TokenManager, UserInfo};
 use std::sync::{Arc, LazyLock};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Global protobuf schema registry — initialized once on first use
 static PROTO_REGISTRY: LazyLock<crate::protobuf::ProtoRegistry> =
@@ -285,7 +284,7 @@ pub async fn normalize_content_type_middleware(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let is_watch_request = accept_header.contains("stream=watch")
+    let _is_watch_request = accept_header.contains("stream=watch")
         || request.uri().path().contains("/watch/")
         || request
             .uri()

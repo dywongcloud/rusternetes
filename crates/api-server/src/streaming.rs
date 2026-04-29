@@ -299,7 +299,7 @@ pub async fn handle_attach_websocket(
 
 /// Handle WebSocket port-forward
 pub async fn handle_portforward_websocket(mut socket: WebSocket, pod: Pod, ports: Vec<u16>) {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncReadExt;
     use tokio::net::TcpStream;
 
     let pod_ip = match pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
@@ -315,7 +315,7 @@ pub async fn handle_portforward_websocket(mut socket: WebSocket, pod: Pod, ports
         let target = format!("{}:{}", pod_ip, port);
         match TcpStream::connect(&target).await {
             Ok(tcp) => {
-                let (mut tcp_read, mut tcp_write) = tcp.into_split();
+                let (mut tcp_read, _tcp_write) = tcp.into_split();
                 // Simple forward: read from TCP, send to WebSocket
                 let mut buf = vec![0u8; 8192];
                 loop {

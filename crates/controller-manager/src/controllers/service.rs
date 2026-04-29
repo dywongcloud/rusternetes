@@ -12,7 +12,6 @@
 /// - EndpointSliceController: Maintains endpoint slices for scalability
 use anyhow::Result;
 use futures::StreamExt;
-use rusternetes_common::resources::IntOrString;
 use rusternetes_common::resources::Service;
 use rusternetes_common::resources::ServiceType;
 use rusternetes_storage::{build_key, build_prefix, Storage, WorkQueue, extract_key};

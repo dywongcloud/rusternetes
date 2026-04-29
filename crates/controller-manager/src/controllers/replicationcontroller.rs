@@ -327,7 +327,7 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
             .count() as i32;
 
         // Check for failed pods as a failure signal
-        let failed_pods = rc_pods_after
+        let _failed_pods = rc_pods_after
             .iter()
             .filter(|pod| {
                 matches!(

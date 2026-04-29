@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use futures::StreamExt;
 use rusternetes_common::resources::{Node, NodeCondition, NodeStatus, Pod, PodStatus};
 use rusternetes_common::types::Phase;
@@ -290,7 +290,7 @@ impl<S: Storage + 'static> NodeController<S> {
     /// Check if the node's Lease in kube-node-lease namespace has a
     /// recent renewTime. Returns true if the Lease exists and was
     /// renewed within the grace period.
-    fn is_node_lease_fresh(&self, node_name: &str) -> bool {
+    fn is_node_lease_fresh(&self, _node_name: &str) -> bool {
         // Sync stub — async version in is_node_ready_async
         false
     }
