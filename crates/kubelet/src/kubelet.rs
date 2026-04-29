@@ -881,11 +881,12 @@ impl Kubelet {
             .map(|p| p.metadata.name.clone())
             .collect();
 
-        // Get all running containers from Docker
-        let running_pods = match self.runtime.list_running_pods().await {
+        // Get all containers from Docker (including exited) so orphan cleanup
+        // can remove stopped containers from deleted pods
+        let running_pods = match self.runtime.list_all_pods().await {
             Ok(pods) => pods,
             Err(e) => {
-                warn!("Failed to list running pods for startup cleanup: {}", e);
+                warn!("Failed to list pods for startup cleanup: {}", e);
                 return;
             }
         };
@@ -942,8 +943,9 @@ impl Kubelet {
 
         debug!("Found {} pods in etcd", existing_pod_names.len());
 
-        // Get list of running pod names from the container runtime
-        let running_pods = self.runtime.list_running_pods().await?;
+        // Get all pod names from the container runtime (including exited)
+        // so orphan cleanup removes stopped containers from deleted pods
+        let running_pods = self.runtime.list_all_pods().await?;
         debug!(
             "Found {} running pods in container runtime",
             running_pods.len()

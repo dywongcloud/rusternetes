@@ -7391,6 +7391,34 @@ impl ContainerRuntime {
         Ok(pod_names.into_iter().collect())
     }
 
+    /// List all pods with containers in Docker, including exited/stopped.
+    /// Used by orphan cleanup to find and remove stopped containers from
+    /// pods that have been deleted from storage.
+    pub async fn list_all_pods(&self) -> Result<Vec<String>> {
+        let options = ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        };
+
+        let containers = self.docker.list_containers(Some(options)).await?;
+
+        let mut pod_names = std::collections::HashSet::new();
+        for container in containers {
+            if let Some(names) = container.names {
+                for name in names {
+                    let name = name.trim_start_matches('/');
+                    if let Some(pod_name) = name.split('_').next() {
+                        if !pod_name.starts_with("rusternetes-") {
+                            pod_names.insert(pod_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(pod_names.into_iter().collect())
+    }
+
     /// Get the age of a pod's pause container (time since creation).
     /// Returns Duration::ZERO if the container can't be found.
     pub async fn get_container_age(&self, pod_name: &str) -> Result<std::time::Duration> {
