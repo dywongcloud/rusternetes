@@ -2202,7 +2202,9 @@ pub async fn watch_cluster_scoped_json(
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(300)));
+    let timeout_duration = Some(Duration::from_secs(
+        params.timeout_seconds.unwrap_or(300).min(300),
+    ));
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);
 
@@ -2383,7 +2385,9 @@ pub async fn watch_namespaced_json(
 
     let allow_bookmarks = params.allow_watch_bookmarks.unwrap_or(false);
     let send_initial_events = params.send_initial_events.unwrap_or(false);
-    let timeout_duration = Some(Duration::from_secs(params.timeout_seconds.unwrap_or(300)));
+    let timeout_duration = Some(Duration::from_secs(
+        params.timeout_seconds.unwrap_or(300).min(300),
+    ));
     let requested_rv = params.resource_version.clone();
     let (bookmark_kind, bookmark_api_version) =
         resource_type_to_kind_and_version(resource_type, api_group);

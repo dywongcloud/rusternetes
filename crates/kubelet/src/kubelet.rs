@@ -1243,6 +1243,39 @@ impl Kubelet {
                         {
                             status.phase = Some(Phase::Succeeded);
                         }
+                        // Refresh init container statuses — set ready=true for
+                        // all completed init containers. When the pod reaches
+                        // Succeeded, all init containers must have completed.
+                        if let Some(ref mut ics) = status.init_container_statuses {
+                            for ic in ics.iter_mut() {
+                                if let Some(ContainerState::Terminated { exit_code, .. }) = &ic.state {
+                                    if *exit_code == 0 {
+                                        ic.ready = true;
+                                        ic.started = Some(true);
+                                    }
+                                } else {
+                                    // Docker removed the container — mark as completed
+                                    ic.state = Some(ContainerState::Terminated {
+                                        exit_code: 0,
+                                        reason: Some("Completed".to_string()),
+                                        message: None,
+                                        started_at: None,
+                                        finished_at: None,
+                                        container_id: None,
+                                        signal: None,
+                                    });
+                                    ic.ready = true;
+                                    ic.started = Some(true);
+                                }
+                            }
+                        }
+                    }
+                    // Refresh container statuses
+                    let fresh_statuses = self.runtime.get_container_statuses(&p).await.ok();
+                    if let Some(ref mut status) = p.status {
+                        if let Some(cs) = fresh_statuses {
+                            status.container_statuses = Some(cs);
+                        }
                     }
                     let _ = self.storage.update(&key, &p).await;
                 }
