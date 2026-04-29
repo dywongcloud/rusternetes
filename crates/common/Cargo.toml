@@ -37,7 +37,7 @@ opentelemetry-stdout = { version = "0.3", optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 sha2 = "0.10.9"
 reqwest = { workspace = true }
-cel-interpreter.workspace = true
+cel.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 
