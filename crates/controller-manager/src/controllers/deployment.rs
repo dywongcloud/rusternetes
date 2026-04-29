@@ -973,34 +973,68 @@ impl<S: Storage + 'static> DeploymentController<S> {
             // Also remove fields that are defaulted differently between the
             // deployment template and the RS template. K8s normalizes templates
             // before comparison; we strip fields that vary due to defaulting.
+            // Strip API server defaulted fields from PodSpec so templates
+            // compare equal regardless of whether defaults were applied.
+            // K8s ref: pkg/apis/core/v1/defaults.go SetDefaults_PodSpec/Container
             if let Some(spec) = template.pointer_mut("/spec") {
                 if let Some(obj) = spec.as_object_mut() {
-                    // Remove fields that are empty/null/default — these may differ
-                    // between deployment template (from API) and RS template (from clone)
-                    obj.remove("nodeName");
-                    obj.remove("nodeSelector");
-                    obj.remove("hostname");
-                    obj.remove("subdomain");
-                    obj.remove("priority");
-                    obj.remove("runtimeClassName");
-                    obj.remove("overhead");
-                    // Remove container fields that get defaulted
-                    if let Some(containers) = obj.get_mut("containers").and_then(|c| c.as_array_mut()) {
-                        for container in containers.iter_mut() {
-                            if let Some(cobj) = container.as_object_mut() {
-                                // Remove terminationMessagePath/Policy if default
-                                if cobj.get("terminationMessagePath") == Some(&serde_json::json!("/dev/termination-log")) {
-                                    cobj.remove("terminationMessagePath");
-                                }
-                                if cobj.get("terminationMessagePolicy") == Some(&serde_json::json!("File")) {
-                                    cobj.remove("terminationMessagePolicy");
-                                }
-                                if cobj.get("imagePullPolicy") == Some(&serde_json::json!("IfNotPresent"))
-                                    || cobj.get("imagePullPolicy") == Some(&serde_json::json!("Always"))
-                                {
+                    // PodSpec defaults (SetDefaults_PodSpec)
+                    if obj.get("dnsPolicy") == Some(&serde_json::json!("ClusterFirst")) {
+                        obj.remove("dnsPolicy");
+                    }
+                    if obj.get("restartPolicy") == Some(&serde_json::json!("Always")) {
+                        obj.remove("restartPolicy");
+                    }
+                    if obj.get("schedulerName") == Some(&serde_json::json!("default-scheduler")) {
+                        obj.remove("schedulerName");
+                    }
+                    if obj.get("terminationGracePeriodSeconds") == Some(&serde_json::json!(30)) {
+                        obj.remove("terminationGracePeriodSeconds");
+                    }
+                    // Remove empty/null securityContext
+                    if let Some(sc) = obj.get("securityContext") {
+                        if sc.is_null() || sc == &serde_json::json!({}) {
+                            obj.remove("securityContext");
+                        }
+                    }
+                    // Remove null/empty optional fields
+                    for field in &["nodeName", "nodeSelector", "hostname", "subdomain",
+                                   "priority", "runtimeClassName", "overhead",
+                                   "serviceAccountName", "serviceAccount",
+                                   "automountServiceAccountToken", "preemptionPolicy"] {
+                        if let Some(v) = obj.get(*field) {
+                            if v.is_null() || v == &serde_json::json!("") {
+                                obj.remove(*field);
+                            }
+                        }
+                    }
+                    // Container defaults (SetDefaults_Container)
+                    for key in &["containers", "initContainers"] {
+                        if let Some(containers) = obj.get_mut(*key).and_then(|c| c.as_array_mut()) {
+                            for container in containers.iter_mut() {
+                                if let Some(cobj) = container.as_object_mut() {
+                                    if cobj.get("terminationMessagePath") == Some(&serde_json::json!("/dev/termination-log")) {
+                                        cobj.remove("terminationMessagePath");
+                                    }
+                                    if cobj.get("terminationMessagePolicy") == Some(&serde_json::json!("File")) {
+                                        cobj.remove("terminationMessagePolicy");
+                                    }
+                                    // ImagePullPolicy depends on tag — just remove it
                                     cobj.remove("imagePullPolicy");
+                                    // Remove empty resources
+                                    if let Some(r) = cobj.get("resources") {
+                                        if r == &serde_json::json!({}) {
+                                            cobj.remove("resources");
+                                        }
+                                    }
                                 }
                             }
+                        }
+                    }
+                    // Remove empty volumes array
+                    if let Some(v) = obj.get("volumes") {
+                        if v == &serde_json::json!([]) || v.is_null() {
+                            obj.remove("volumes");
                         }
                     }
                 }

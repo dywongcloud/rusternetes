@@ -91,7 +91,7 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
             let mut svc_watch = svc_watch;
             let mut pod_watch = pod_watch;
             let mut ep_watch = ep_watch;
-            let mut resync = tokio::time::interval(std::time::Duration::from_secs(30));
+            let mut resync = tokio::time::interval(std::time::Duration::from_secs(5));
             resync.tick().await;
 
             let mut watch_broken = false;
