@@ -455,12 +455,24 @@ impl Storage for EtcdStorage {
                                 }
                             }
                             etcd_client::EventType::Delete => {
-                                let raw_prev = event
-                                    .prev_kv()
-                                    .map(|kv| String::from_utf8_lossy(kv.value()).to_string())
-                                    .unwrap_or_default();
                                 let mod_revision = event.kv().map(|kv| kv.mod_revision()).unwrap_or(0);
-                                let prev_value = Self::inject_resource_version(&raw_prev, mod_revision);
+                                // Use prev_kv for the deleted object's value.
+                                // If prev_kv is missing (etcd compaction), construct a
+                                // minimal JSON object with just metadata so watchers
+                                // can still deliver the DELETE event.
+                                let prev_value = if let Some(prev_kv) = event.prev_kv() {
+                                    let raw = String::from_utf8_lossy(prev_kv.value()).to_string();
+                                    Self::inject_resource_version(&raw, mod_revision)
+                                } else {
+                                    // Extract name from key: /registry/{type}/{ns}/{name}
+                                    let parts: Vec<&str> = key.split('/').collect();
+                                    let name = parts.last().unwrap_or(&"");
+                                    let ns = if parts.len() >= 4 { parts[parts.len()-2] } else { "" };
+                                    format!(
+                                        r#"{{"metadata":{{"name":"{}","namespace":"{}","resourceVersion":"{}"}}}}"#,
+                                        name, ns, mod_revision
+                                    )
+                                };
                                 Ok(WatchEvent::Deleted(key, prev_value))
                             }
                         }
