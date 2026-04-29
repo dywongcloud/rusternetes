@@ -143,9 +143,12 @@ pub fn init_tracing(config: TracingConfig) -> Result<()> {
 
                 let provider = TracerProvider::builder()
                     .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-                    .with_sampler(sampler)
-                    .with_id_generator(RandomIdGenerator::default())
-                    .with_resource(resource)
+                    .with_config(
+                        opentelemetry_sdk::trace::Config::default()
+                            .with_sampler(sampler)
+                            .with_id_generator(RandomIdGenerator::default())
+                            .with_resource(resource),
+                    )
                     .build();
 
                 let tracer = provider.tracer("rusternetes");
@@ -175,9 +178,12 @@ pub fn init_tracing(config: TracingConfig) -> Result<()> {
 
                 let provider = TracerProvider::builder()
                     .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-                    .with_sampler(sampler)
-                    .with_id_generator(RandomIdGenerator::default())
-                    .with_resource(resource)
+                    .with_config(
+                        opentelemetry_sdk::trace::Config::default()
+                            .with_sampler(sampler)
+                            .with_id_generator(RandomIdGenerator::default())
+                            .with_resource(resource),
+                    )
                     .build();
 
                 let tracer = provider.tracer("rusternetes");
