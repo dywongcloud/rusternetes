@@ -1070,13 +1070,13 @@ fn matches_label_selector(metadata: &ObjectMeta, selector: &Option<String>) -> b
             match captures {
                 SetRequirement::In(key, values) => {
                     let label_val = labels.get(key);
-                    if !values.iter().any(|v| label_val.map_or(false, |lv| lv == v)) {
+                    if !values.iter().any(|v| label_val.is_some_and(|lv| lv == v)) {
                         return false;
                     }
                 }
                 SetRequirement::NotIn(key, values) => {
                     let label_val = labels.get(key);
-                    if values.iter().any(|v| label_val.map_or(false, |lv| lv == v)) {
+                    if values.iter().any(|v| label_val.is_some_and(|lv| lv == v)) {
                         return false;
                     }
                 }
@@ -1098,19 +1098,18 @@ fn matches_label_selector(metadata: &ObjectMeta, selector: &Option<String>) -> b
             // Handle != (key!=value)
             if key.ends_with('!') {
                 let key = key.trim_end_matches('!');
-                if labels.get(key).map_or(false, |v| v == value) {
+                if labels.get(key).is_some_and(|v| v == value) {
                     return false; // Must NOT equal
                 }
             } else {
                 // key=value or key==value: must match
                 let value = value.trim_start_matches('='); // handle ==
-                if labels.get(key).map_or(true, |v| v != value) {
+                if labels.get(key).is_none_or(|v| v != value) {
                     return false;
                 }
             }
-        } else if requirement.starts_with('!') {
+        } else if let Some(key) = requirement.strip_prefix('!') {
             // !key — key must not exist
-            let key = &requirement[1..];
             if labels.contains_key(key) {
                 return false;
             }

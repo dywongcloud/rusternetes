@@ -144,11 +144,11 @@ fn pod_matches_quota_scopes(pod: &Pod, quota: &ResourceQuota) -> bool {
                         "In" => req
                             .values
                             .as_ref()
-                            .map_or(false, |v| v.iter().any(|val| val == pod_priority_class)),
+                            .is_some_and(|v| v.iter().any(|val| val == pod_priority_class)),
                         "NotIn" => req
                             .values
                             .as_ref()
-                            .map_or(true, |v| !v.iter().any(|val| val == pod_priority_class)),
+                            .is_none_or(|v| !v.iter().any(|val| val == pod_priority_class)),
                         "Exists" => !pod_priority_class.is_empty(),
                         "DoesNotExist" => pod_priority_class.is_empty(),
                         _ => true,
@@ -431,6 +431,7 @@ pub async fn check_resource_quota<S: Storage>(
 }
 
 /// Apply LimitRange defaults and validate constraints
+#[allow(dead_code)]
 pub async fn apply_limit_range<S: Storage>(
     storage: &Arc<S>,
     namespace: &str,
@@ -472,14 +473,13 @@ pub fn apply_limit_range_with(
 
                         // Apply default limits
                         if let Some(default_limits) = &limit_item.default {
-                            if resources.limits.is_none() {
-                                resources.limits = Some(default_limits.clone());
-                            } else {
+                            if let Some(limits) = resources.limits.as_mut() {
                                 // Merge with existing limits
-                                let limits = resources.limits.as_mut().unwrap();
                                 for (key, value) in default_limits {
                                     limits.entry(key.clone()).or_insert_with(|| value.clone());
                                 }
+                            } else {
+                                resources.limits = Some(default_limits.clone());
                             }
                         }
 

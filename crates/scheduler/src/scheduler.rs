@@ -447,11 +447,10 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         let schedulable_nodes: Vec<&Node> = nodes
             .iter()
             .filter(|n| {
-                n.spec
+                !n.spec
                     .as_ref()
                     .and_then(|s| s.unschedulable)
                     .unwrap_or(false)
-                    == false
             })
             .collect();
 

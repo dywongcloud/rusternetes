@@ -181,6 +181,7 @@ impl<S: Storage + 'static> JobController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         let jobs: Vec<Job> = self.storage.list("/registry/jobs/").await?;
 
@@ -223,7 +224,7 @@ impl<S: Storage + 'static> JobController<S> {
                         .iter()
                         .filter(|p| {
                             let owned =
-                                p.metadata.owner_references.as_ref().map_or(false, |refs| {
+                                p.metadata.owner_references.as_ref().is_some_and(|refs| {
                                     refs.iter().any(|r| r.uid == *job_uid && r.kind == "Job")
                                 });
                             let is_terminating = p.metadata.deletion_timestamp.is_some()
@@ -326,7 +327,7 @@ impl<S: Storage + 'static> JobController<S> {
             if let Some(sel) = selector {
                 let labels = pod.metadata.labels.as_ref();
                 let matches =
-                    labels.map_or(false, |l| sel.iter().all(|(k, v)| l.get(k) == Some(v)));
+                    labels.is_some_and(|l| sel.iter().all(|(k, v)| l.get(k) == Some(v)));
                 if !matches {
                     // Pod no longer matches selector — release it by removing ownerReference
                     // Use CAS retry to handle concurrent updates
@@ -869,7 +870,7 @@ impl<S: Storage + 'static> JobController<S> {
             info!("Job {}/{} met success policy criteria", namespace, name);
 
             // Terminate remaining active pods and count how many we're terminating
-            let mut terminating_count = 0i32;
+            let mut _terminating_count = 0i32;
             for pod in job_pods.iter() {
                 let phase = pod.status.as_ref().and_then(|s| s.phase.as_ref());
                 if matches!(phase, Some(Phase::Running) | Some(Phase::Pending)) {
@@ -877,7 +878,7 @@ impl<S: Storage + 'static> JobController<S> {
                     let mut term_pod = pod.clone();
                     term_pod.metadata.deletion_timestamp = Some(chrono::Utc::now());
                     let _ = self.storage.update(&pod_key, &term_pod).await;
-                    terminating_count += 1;
+                    _terminating_count += 1;
                 }
             }
 
@@ -1080,7 +1081,7 @@ impl<S: Storage + 'static> JobController<S> {
                                 "Created pod for Job {}/{} ({}/{})",
                                 namespace,
                                 name,
-                                fresh_job_pods.len() + i as usize + 1,
+                                fresh_job_pods.len() + i + 1,
                                 completions
                             );
                         }
@@ -3025,7 +3026,7 @@ mod tests {
 
         // Job should be complete via success policy
         assert!(
-            status.conditions.as_ref().map_or(false, |c| c
+            status.conditions.as_ref().is_some_and(|c| c
                 .iter()
                 .any(|cond| cond.condition_type == "SuccessCriteriaMet" && cond.status == "True")),
             "Job should have SuccessCriteriaMet condition"

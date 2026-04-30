@@ -116,6 +116,7 @@ impl<S: Storage + 'static> PodDisruptionBudgetController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
         debug!("Reconciling all PodDisruptionBudgets");
 
@@ -163,7 +164,7 @@ impl<S: Storage + 'static> PodDisruptionBudgetController<S> {
         );
 
         // 4. Calculate desired_healthy based on min_available or max_unavailable
-        let desired_healthy = self.calculate_desired_healthy(&pdb, total_pods)?;
+        let desired_healthy = self.calculate_desired_healthy(pdb, total_pods)?;
 
         // 5. Calculate disruptions_allowed
         // disruptions_allowed = current_healthy - desired_healthy

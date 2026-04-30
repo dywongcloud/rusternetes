@@ -59,7 +59,7 @@ fn create_test_daemonset(name: &str, namespace: &str) -> DaemonSet {
             },
             template: PodTemplateSpec {
                 metadata: Some({
-                    let mut meta = ObjectMeta::new(&format!("{}-pod", name));
+                    let mut meta = ObjectMeta::new(format!("{}-pod", name));
                     meta.labels = Some(labels);
                     meta
                 }),

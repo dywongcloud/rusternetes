@@ -217,7 +217,7 @@ fn detect_conflicts(
 ) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
 
-    for (field, _value) in modified_fields {
+    for field in modified_fields.keys() {
         // Skip metadata fields (always allowed to update)
         if field == "metadata" {
             continue;

@@ -322,11 +322,7 @@ fn extract_scale(
                     .collect();
                 Some(parts.join(","))
             }
-        } else if let Some(str_val) = s.as_str() {
-            Some(str_val.to_string())
-        } else {
-            None
-        }
+        } else { s.as_str().map(|str_val| str_val.to_string()) }
     });
 
     Ok(Scale {

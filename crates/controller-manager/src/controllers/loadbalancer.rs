@@ -162,6 +162,7 @@ impl<S: Storage + 'static> LoadBalancerController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Reconciling LoadBalancer services");
 

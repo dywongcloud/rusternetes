@@ -349,6 +349,7 @@ impl AuditLogger {
     }
 
     /// Log an API response
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_response(
         &self,
         audit_id: String,

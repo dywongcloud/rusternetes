@@ -26,6 +26,7 @@ where
 /// This prevents serializing empty structs as {} when all fields are None.
 macro_rules! skip_if_empty {
     ($fn_name:ident, $type:ty, $($field:ident),+) => {
+        #[allow(dead_code)]
         fn $fn_name(value: &Option<$type>) -> bool {
             match value {
                 None => true,

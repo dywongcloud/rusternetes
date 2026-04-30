@@ -57,9 +57,11 @@ pub struct LogsQuery {
     pub container: Option<String>,
     /// Follow the log stream
     #[serde(default)]
+    #[allow(dead_code)]
     pub follow: bool,
     /// Return previous terminated container logs
     #[serde(default)]
+    #[allow(dead_code)]
     pub previous: bool,
     /// Show timestamps
     #[serde(default)]
@@ -204,7 +206,7 @@ pub async fn get_logs(
         Ok(ws.on_upgrade(move |mut socket| async move {
             use axum::extract::ws::Message;
             // Send logs as a text message
-            if let Err(e) = socket.send(Message::Text(logs_clone.into())).await {
+            if let Err(e) = socket.send(Message::Text(logs_clone)).await {
                 info!("Failed to send logs over WebSocket: {}", e);
             }
             // Close the WebSocket
@@ -352,7 +354,7 @@ fn generate_pod_logs(
     let base_time = pod
         .metadata
         .creation_timestamp
-        .unwrap_or_else(|| Utc::now());
+        .unwrap_or_else(Utc::now);
 
     let mut log_lines = vec![
         format!(
@@ -516,7 +518,7 @@ pub async fn exec(
             "container": query.container.as_deref().unwrap_or(""),
             "command": query.command
         });
-        match state
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &Operation::Connect,
@@ -528,15 +530,11 @@ pub async fn exec(
                 None,
                 &webhook_user_info,
             )
-            .await?
-        {
-            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
-                return Err(Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 
@@ -808,7 +806,7 @@ pub async fn attach(
             "tty": query.tty,
             "container": query.container.as_deref().unwrap_or("")
         });
-        match state
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &Operation::Connect,
@@ -820,15 +818,11 @@ pub async fn attach(
                 None,
                 &webhook_user_info,
             )
-            .await?
-        {
-            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
-                return Err(Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 
@@ -1177,8 +1171,7 @@ pub async fn create_eviction(
             let mut updated_pdb = pdb.clone();
             let disrupted_pods = updated_pdb
                 .status
-                .get_or_insert_with(
-                    || rusternetes_common::resources::PodDisruptionBudgetStatus {
+                .get_or_insert(rusternetes_common::resources::PodDisruptionBudgetStatus {
                         current_healthy: 0,
                         desired_healthy: 0,
                         disruptions_allowed: 0,
@@ -1186,8 +1179,7 @@ pub async fn create_eviction(
                         observed_generation: None,
                         conditions: None,
                         disrupted_pods: None,
-                    },
-                )
+                    })
                 .disrupted_pods
                 .get_or_insert_with(std::collections::HashMap::new);
             disrupted_pods.insert(name.clone(), chrono::Utc::now());

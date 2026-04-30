@@ -126,6 +126,7 @@ impl<S: Storage + 'static> CronJobController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         let cronjobs: Vec<CronJob> = self.storage.list("/registry/cronjobs/").await?;
 
@@ -199,9 +200,7 @@ impl<S: Storage + 'static> CronJobController<S> {
 
         let concurrency_policy = cronjob
             .spec
-            .concurrency_policy
-            .as_ref()
-            .map(|s| s.as_str())
+            .concurrency_policy.as_deref()
             .unwrap_or("Allow");
 
         match concurrency_policy {

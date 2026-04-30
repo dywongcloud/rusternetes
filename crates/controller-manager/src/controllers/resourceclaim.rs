@@ -354,8 +354,7 @@ struct AllocatedDevice {
 mod tests {
     use super::*;
     use rusternetes_common::resources::{
-        Device, DeviceAllocationMode, DeviceClaim, DeviceClassSpec, DeviceRequest,
-        ExactDeviceRequest, ResourceClaimSpec, ResourcePool, ResourceSliceSpec,
+        DeviceClaim, DeviceClassSpec, ResourceClaimSpec,
     };
     use rusternetes_storage::memory::MemoryStorage;
 

@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 /// Patch types supported by the API
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatchType {
     /// Strategic merge patch (Kubernetes-specific merge semantics)
@@ -126,7 +127,7 @@ fn apply_merge_patch(original: &Value, patch: &Value) -> Result<Value, PatchErro
         if value.is_null() {
             // Null value deletes the key
             result_obj.remove(key);
-        } else if value.is_object() && result_obj.get(key).map_or(false, |v| v.is_object()) {
+        } else if value.is_object() && result_obj.get(key).is_some_and(|v| v.is_object()) {
             // Both are objects - recursively merge
             let merged = apply_merge_patch(&result_obj[key], value)?;
             result_obj.insert(key.clone(), merged);
@@ -246,7 +247,7 @@ fn remove_operation(value: &Value, path: &str) -> Result<Value, PatchError> {
 fn replace_operation(value: &Value, path: &str, new_value: &Value) -> Result<Value, PatchError> {
     let mut result = value.clone();
 
-    if path == "" || path == "/" {
+    if path.is_empty() || path == "/" {
         return Ok(new_value.clone());
     }
 
@@ -373,7 +374,7 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
             // Delete the object entirely
             return Ok(Value::Null);
         }
-        "merge" | _ => {
+        _ => {
             // Default merge strategy
             for (key, patch_value) in patch_obj {
                 // Skip directive keys
@@ -385,7 +386,7 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
                     // Null deletes the key
                     result_obj.remove(key);
                 } else if patch_value.is_array()
-                    && result_obj.get(key).map_or(false, |v| v.is_array())
+                    && result_obj.get(key).is_some_and(|v| v.is_array())
                 {
                     // Check for $deleteFromPrimitiveList directive
                     let delete_list: Option<Vec<Value>> = if let Some(obj) = patch_value.as_array()
@@ -394,8 +395,7 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
                         obj.iter().find_map(|item| {
                             item.as_object()
                                 .and_then(|o| o.get("$deleteFromPrimitiveList"))
-                                .and_then(|v| v.as_array())
-                                .map(|arr| arr.clone())
+                                .and_then(|v| v.as_array()).cloned()
                         })
                     } else {
                         None
@@ -415,7 +415,7 @@ fn apply_strategic_merge_patch(original: &Value, patch: &Value) -> Result<Value,
                         result_obj.insert(key.clone(), Value::Array(merged_array));
                     }
                 } else if patch_value.is_object()
-                    && result_obj.get(key).map_or(false, |v| v.is_object())
+                    && result_obj.get(key).is_some_and(|v| v.is_object())
                 {
                     // Recursively merge objects
                     let merged = apply_strategic_merge_patch(&result_obj[key], patch_value)?;

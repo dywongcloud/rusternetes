@@ -246,6 +246,7 @@ impl<S: Storage + 'static> DaemonSetController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         let daemonsets: Vec<DaemonSet> = self.storage.list("/registry/daemonsets/").await?;
 
@@ -1727,7 +1728,7 @@ mod tests {
                 p.metadata
                     .owner_references
                     .as_ref()
-                    .map_or(false, |refs| refs.iter().any(|r| r.name == "fail-ds"))
+                    .is_some_and(|refs| refs.iter().any(|r| r.name == "fail-ds"))
             })
             .collect();
         assert_eq!(ds_pods.len(), 1, "Should have 1 DS pod");
@@ -1764,7 +1765,7 @@ mod tests {
                 p.metadata
                     .owner_references
                     .as_ref()
-                    .map_or(false, |refs| refs.iter().any(|r| r.name == "fail-ds"))
+                    .is_some_and(|refs| refs.iter().any(|r| r.name == "fail-ds"))
             })
             .collect();
         assert_eq!(

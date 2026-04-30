@@ -60,8 +60,8 @@ pub async fn auth_middleware(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    let user = if auth_header.starts_with("Bearer ") {
-        let token = &auth_header[7..]; // Skip "Bearer "
+    let user = if let Some(token) = auth_header.strip_prefix("Bearer ") {
+        // Skip "Bearer "
 
         // Try to validate as a service account token first
         if let Ok(claims) = token_manager.validate_token(token) {
@@ -405,6 +405,7 @@ fn wrap_json_in_protobuf_with_type_meta(json: &[u8], api_version: &str, kind: &s
 }
 
 /// Wrap JSON bytes in the K8s protobuf envelope: "k8s\0" + Unknown{raw: json}
+#[allow(dead_code)]
 fn wrap_json_in_protobuf(json: &[u8]) -> Vec<u8> {
     // K8s runtime.Unknown protobuf message (from k8s.io/apimachinery generated.proto):
     //   field 1 (typeMeta, TypeMeta): nested message (empty for responses)
@@ -1130,7 +1131,7 @@ fn decode_k8s_protobuf_to_json(data: &[u8]) -> Option<Vec<u8>> {
         }
     });
 
-    Some(serde_json::to_vec(&json).ok()?)
+    serde_json::to_vec(&json).ok()
 }
 
 /// Scan for a balanced JSON object starting from data[0] which must be `{`.

@@ -3,6 +3,7 @@ pub mod admission_webhook;
 pub mod bootstrap;
 pub mod conversion;
 pub mod dynamic_routes;
+#[allow(dead_code)]
 pub mod flow_control;
 pub mod gnostic;
 pub mod handlers;
@@ -12,11 +13,15 @@ pub mod openapi;
 pub mod patch;
 pub mod prometheus_client;
 pub mod protobuf;
+#[allow(dead_code)]
 pub mod response;
 pub mod router;
+#[allow(dead_code)]
 pub mod spdy;
+#[allow(dead_code)]
 pub mod spdy_handlers;
 pub mod state;
+#[allow(dead_code)]
 pub mod streaming;
 pub mod watch_cache;
 
@@ -107,7 +112,7 @@ pub async fn run(storage: Arc<StorageBackend>, config: ApiServerConfig) -> anyho
     };
 
     // Bootstrap kubernetes Service
-    let api_port = config.bind_address.split(':').last()
+    let api_port = config.bind_address.split(':').next_back()
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(6443);
 

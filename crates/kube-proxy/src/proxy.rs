@@ -224,6 +224,7 @@ impl KubeProxy {
     }
 
     /// Sync a single service
+    #[allow(clippy::type_complexity)]
     async fn sync_service(
         &mut self,
         service: &Service,
@@ -423,7 +424,6 @@ impl Drop for KubeProxy {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rusternetes_common::resources::endpointslice::EndpointPort as ESEndpointPort;
     use rusternetes_common::resources::{Endpoint, EndpointConditions, EndpointSlice};
     use rusternetes_common::types::ObjectMeta;

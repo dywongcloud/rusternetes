@@ -9,6 +9,7 @@ use rusternetes_common::resources::Pod;
 use tracing::{debug, error, info};
 
 /// Handle WebSocket exec by proxying to the kubelet
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_ws_exec(
     mut socket: WebSocket,
     pod: Pod,
@@ -113,7 +114,7 @@ pub async fn handle_ws_exec(
     // K8s protocol requires channel 1 (stdout) to appear before channel 3 (status).
     // Send an initial empty stdout frame so the client sees ch1 first, even if the
     // exec command produces no output or finishes before we read from the stream.
-    let _ = ws_sender.send(Message::Binary(vec![1u8].into())).await;
+    let _ = ws_sender.send(Message::Binary(vec![1u8])).await;
 
     if let StartExecResults::Attached {
         output: mut stream, ..
@@ -126,14 +127,14 @@ pub async fn handle_ws_exec(
                         bollard::container::LogOutput::StdOut { message } => {
                             let mut data = vec![1u8]; // stdout channel
                             data.extend_from_slice(&message);
-                            if ws_sender.send(Message::Binary(data.into())).await.is_err() {
+                            if ws_sender.send(Message::Binary(data)).await.is_err() {
                                 break;
                             }
                         }
                         bollard::container::LogOutput::StdErr { message } => {
                             let mut data = vec![2u8]; // stderr channel
                             data.extend_from_slice(&message);
-                            if ws_sender.send(Message::Binary(data.into())).await.is_err() {
+                            if ws_sender.send(Message::Binary(data)).await.is_err() {
                                 break;
                             }
                         }
@@ -180,7 +181,7 @@ pub async fn handle_ws_exec(
         };
         let mut status_data = vec![3u8];
         status_data.extend_from_slice(status_json.as_bytes());
-        let _ = ws_sender.send(Message::Binary(status_data.into())).await;
+        let _ = ws_sender.send(Message::Binary(status_data)).await;
     }
 
     // Send proper close frame. The client (client-go) expects a 1000 close after
@@ -230,6 +231,7 @@ fn urlencoding_encode(s: &str) -> String {
 }
 
 /// Alias for backward compatibility with pod_subresources.rs
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_exec_websocket(
     socket: WebSocket,
     pod: Pod,
@@ -254,6 +256,7 @@ pub async fn handle_exec_websocket(
 }
 
 /// Exec with protocol awareness — v1 doesn't use channel 3 for status
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_exec_websocket_with_protocol(
     socket: WebSocket,
     pod: Pod,
@@ -323,7 +326,7 @@ pub async fn handle_portforward_websocket(mut socket: WebSocket, pod: Pod, ports
                         Ok(0) => break,
                         Ok(n) => {
                             if socket
-                                .send(Message::Binary(buf[..n].to_vec().into()))
+                                .send(Message::Binary(buf[..n].to_vec()))
                                 .await
                                 .is_err()
                             {
@@ -337,7 +340,7 @@ pub async fn handle_portforward_websocket(mut socket: WebSocket, pod: Pod, ports
             Err(e) => {
                 let _ = socket
                     .send(Message::Text(
-                        format!("Failed to connect to {}: {}", target, e).into(),
+                        format!("Failed to connect to {}: {}", target, e),
                     ))
                     .await;
             }

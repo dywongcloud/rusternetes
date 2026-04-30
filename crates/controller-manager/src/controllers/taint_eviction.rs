@@ -111,6 +111,7 @@ impl<S: Storage + 'static> TaintEvictionController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting taint eviction reconciliation");
 
@@ -282,14 +283,13 @@ impl<S: Storage + 'static> TaintEvictionController<S> {
         taint: &rusternetes_common::resources::Taint,
     ) -> bool {
         // Empty key with Exists operator matches all taints
-        if toleration.key.as_ref().map_or(true, |k| k.is_empty()) {
-            if toleration.operator.as_deref() == Some("Exists") {
+        if toleration.key.as_ref().is_none_or(|k| k.is_empty())
+            && toleration.operator.as_deref() == Some("Exists") {
                 return true;
             }
-        }
 
         // Key must match
-        let key_matches = toleration.key.as_ref().map_or(false, |k| k == &taint.key);
+        let key_matches = toleration.key.as_ref() == Some(&taint.key);
         if !key_matches {
             return false;
         }
@@ -298,7 +298,7 @@ impl<S: Storage + 'static> TaintEvictionController<S> {
         let effect_matches = toleration
             .effect
             .as_ref()
-            .map_or(true, |e| e.is_empty() || e == &taint.effect);
+            .is_none_or(|e| e.is_empty() || e == &taint.effect);
         if !effect_matches {
             return false;
         }

@@ -278,8 +278,6 @@ pub async fn create_self_subject_rules_review(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn test_subject_access_review_allowed() {
         // This test would verify that a user with permissions gets allowed=true

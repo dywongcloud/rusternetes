@@ -123,6 +123,7 @@ impl<S: Storage + 'static> ResourceQuotaController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting resource quota reconciliation");
 
@@ -344,10 +345,10 @@ impl<S: Storage + 'static> ResourceQuotaController<S> {
                             .unwrap_or("");
                         let matches =
                             match req.operator.as_str() {
-                                "In" => req.values.as_ref().map_or(false, |v| {
+                                "In" => req.values.as_ref().is_some_and(|v| {
                                     v.iter().any(|val| val == pod_priority_class)
                                 }),
-                                "NotIn" => req.values.as_ref().map_or(true, |v| {
+                                "NotIn" => req.values.as_ref().is_none_or(|v| {
                                     !v.iter().any(|val| val == pod_priority_class)
                                 }),
                                 "Exists" => !pod_priority_class.is_empty(),

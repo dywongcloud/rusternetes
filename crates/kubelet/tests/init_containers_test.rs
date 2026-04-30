@@ -459,8 +459,8 @@ fn test_multiple_init_containers_sequential_execution() {
     assert_eq!(init_containers.len(), 5);
 
     // Verify init container names are in order
-    for i in 0..5 {
-        assert_eq!(init_containers[i].name, format!("init-{}", i));
+    for (i, container) in init_containers.iter().enumerate().take(5) {
+        assert_eq!(container.name, format!("init-{}", i));
     }
 
     // Verify app containers defined

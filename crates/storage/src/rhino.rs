@@ -83,12 +83,12 @@ impl Storage for RhinoStorage {
             let mut raw = Self::serialize(value)?;
             if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw) {
                 if v.get("metadata").is_none()
-                    || v.get("metadata").map_or(false, |m| m.is_null())
+                    || v.get("metadata").is_some_and(|m| m.is_null())
                 {
                     v["metadata"] = serde_json::json!({});
                 }
                 if let Some(metadata) = v.get_mut("metadata") {
-                    if metadata.get("generation").map_or(true, |g| g.is_null()) {
+                    if metadata.get("generation").is_none_or(|g| g.is_null()) {
                         metadata["generation"] = serde_json::json!(1);
                     }
                 }

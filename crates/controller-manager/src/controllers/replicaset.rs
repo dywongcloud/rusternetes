@@ -182,6 +182,7 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
         debug!("Reconciling all replicasets");
 
@@ -366,6 +367,7 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
         mut all_pods: Vec<Pod>,
         namespace: &str,
     ) -> rusternetes_common::Result<Vec<Pod>> {
+        #[allow(clippy::needless_range_loop)]
         for i in 0..all_pods.len() {
             let pod = &all_pods[i];
 
@@ -492,7 +494,7 @@ impl<S: Storage + 'static> ReplicaSetController<S> {
 
     /// Check if a pod is ready by examining its conditions
     fn is_pod_ready(&self, pod: &Pod) -> bool {
-        if let Some(ref conditions) = pod.status.as_ref().and_then(|s| s.conditions.as_ref()) {
+        if let Some(conditions) = pod.status.as_ref().and_then(|s| s.conditions.as_ref()) {
             conditions
                 .iter()
                 .any(|c| c.condition_type == "Ready" && c.status == "True")

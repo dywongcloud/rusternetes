@@ -239,7 +239,7 @@ pub async fn create_custom_resource(
             }
         }
         // Run validating webhooks
-        match state
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &rusternetes_common::admission::Operation::Create,
@@ -251,15 +251,11 @@ pub async fn create_custom_resource(
                 None,
                 &user_info,
             )
-            .await?
-        {
-            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
-                return Err(rusternetes_common::Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 
@@ -416,15 +412,14 @@ pub async fn update_custom_resource(
 
     // Strict field validation: reject unknown top-level fields for CRDs
     let is_strict = params.get("fieldValidation").map(|v| v.as_str()) == Some("Strict");
-    if is_strict {
-        if !cr.extra.is_empty() {
+    if is_strict
+        && !cr.extra.is_empty() {
             let unknown: Vec<&String> = cr.extra.keys().collect();
             return Err(rusternetes_common::Error::InvalidResource(format!(
                 "strict decoding error: unknown field \"{}\"",
                 unknown[0]
             )));
         }
-    }
     crate::handlers::validation::validate_strict_fields(&params, &body, &cr)?;
 
     // Find the CRD for this resource type
@@ -514,7 +509,7 @@ pub async fn update_custom_resource(
             groups: vec!["system:masters".to_string()],
         };
         let cr_value = serde_json::to_value(&cr).ok();
-        match state
+        if let AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &Operation::Update,
@@ -526,12 +521,8 @@ pub async fn update_custom_resource(
                 None,
                 &user_info,
             )
-            .await?
-        {
-            AdmissionResponse::Deny(reason) => {
-                return Err(rusternetes_common::Error::Forbidden(reason));
-            }
-            _ => {}
+            .await? {
+            return Err(rusternetes_common::Error::Forbidden(reason));
         }
     }
 
@@ -1047,7 +1038,7 @@ pub async fn delete_custom_resource(
         let cr_value = serde_json::to_value(&cr).ok();
         // K8s DELETE AdmissionReview: object is nil, oldObject has the resource being deleted.
         // The webhook inspects oldObject to decide whether to allow deletion.
-        match state
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &rusternetes_common::admission::Operation::Delete,
@@ -1059,15 +1050,11 @@ pub async fn delete_custom_resource(
                 cr_value,
                 &user_info,
             )
-            .await?
-        {
-            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
-                return Err(rusternetes_common::Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 

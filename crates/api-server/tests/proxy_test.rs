@@ -1,6 +1,5 @@
 //! Integration tests for proxy handlers (node, service, pod)
 
-use axum::http::StatusCode;
 use rusternetes_common::resources::{
     IntOrString, Node, NodeStatus, Pod, PodSpec, PodStatus, Service, ServicePort, ServiceSpec,
     ServiceType,
@@ -246,5 +245,4 @@ fn test_proxy_handlers_header_filtering() {
     // Accept, User-Agent, etc.
 
     // This is verified in the proxy.rs module tests
-    assert!(true);
 }

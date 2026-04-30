@@ -122,6 +122,7 @@ impl<S: Storage + 'static> CRDController<S> {
     }
 
     /// Main reconciliation loop - processes all CRD resources
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting CRD reconciliation");
 
@@ -259,6 +260,7 @@ impl<S: Storage + 'static> CRDController<S> {
     }
 
     /// Create or update CRD status with conditions
+    #[allow(dead_code)]
     pub async fn update_crd_status(
         &self,
         crd_name: &str,

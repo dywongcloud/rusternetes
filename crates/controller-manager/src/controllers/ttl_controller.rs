@@ -145,6 +145,7 @@ impl<S: Storage + 'static> TTLController<S> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn check_and_cleanup(&self) -> rusternetes_common::Result<()> {
         debug!("Checking for expired Jobs");
 

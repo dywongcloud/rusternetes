@@ -176,6 +176,7 @@ pub struct CustomResourceValidation {
 /// This is a simplified implementation of OpenAPI v3 schema
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct JSONSchemaProps {
     #[serde(skip_serializing_if = "skip_empty_string")]
     pub id: Option<String>,
@@ -334,6 +335,7 @@ pub struct JSONSchemaProps {
 /// JSONSchemaPropsOrArray represents a value that can be either a JSONSchemaProps or an array of them
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum JSONSchemaPropsOrArray {
     Schema(JSONSchemaProps),
     Schemas(Vec<JSONSchemaProps>),
@@ -342,6 +344,7 @@ pub enum JSONSchemaPropsOrArray {
 /// JSONSchemaPropsOrBool represents a value that can be either a JSONSchemaProps or a boolean
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum JSONSchemaPropsOrBool {
     Schema(JSONSchemaProps),
     Bool(bool),
@@ -350,6 +353,7 @@ pub enum JSONSchemaPropsOrBool {
 /// JSONSchemaPropsOrStringArray represents a value that can be either a JSONSchemaProps or a string array
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum JSONSchemaPropsOrStringArray {
     Schema(JSONSchemaProps),
     Strings(Vec<String>),
@@ -623,53 +627,3 @@ mod tests {
     }
 }
 
-impl Default for JSONSchemaProps {
-    fn default() -> Self {
-        Self {
-            id: None,
-            schema: None,
-            ref_path: None,
-            description: None,
-            type_: None,
-            format: None,
-            title: None,
-            default: None,
-            maximum: None,
-            minimum: None,
-            exclusive_maximum: None,
-            exclusive_minimum: None,
-            max_length: None,
-            min_length: None,
-            pattern: None,
-            max_items: None,
-            min_items: None,
-            unique_items: None,
-            multiple_of: None,
-            max_properties: None,
-            min_properties: None,
-            required: None,
-            items: None,
-            all_of: None,
-            one_of: None,
-            any_of: None,
-            not: None,
-            properties: None,
-            additional_properties: None,
-            pattern_properties: None,
-            dependencies: None,
-            additional_items: None,
-            definitions: None,
-            enum_: None,
-            example: None,
-            external_docs: None,
-            nullable: None,
-            x_kubernetes_preserve_unknown_fields: None,
-            x_kubernetes_embedded_resource: None,
-            x_kubernetes_int_or_string: None,
-            x_kubernetes_list_map_keys: None,
-            x_kubernetes_list_type: None,
-            x_kubernetes_map_type: None,
-            x_kubernetes_validations: None,
-        }
-    }
-}

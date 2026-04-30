@@ -121,6 +121,7 @@ impl<S: Storage + 'static> HorizontalPodAutoscalerController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Reconciling all HorizontalPodAutoscalers");
 
@@ -478,9 +479,7 @@ impl<S: Storage + 'static> HorizontalPodAutoscalerController<S> {
         let mut updated_hpa = hpa.clone();
 
         // Build metric status (simplified for now)
-        let current_metrics = if let Some(specs) = &hpa.spec.metrics {
-            Some(
-                specs
+        let current_metrics = hpa.spec.metrics.as_ref().map(|specs| specs
                     .iter()
                     .map(|spec| MetricStatus {
                         metric_type: spec.metric_type.clone(),
@@ -497,11 +496,7 @@ impl<S: Storage + 'static> HorizontalPodAutoscalerController<S> {
                         external: None,
                         container_resource: None,
                     })
-                    .collect(),
-            )
-        } else {
-            None
-        };
+                    .collect());
 
         // Build conditions
         let now = Utc::now();

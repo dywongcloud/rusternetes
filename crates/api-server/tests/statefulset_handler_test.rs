@@ -3,7 +3,7 @@
 //! Tests all CRUD operations, edge cases, and error handling for statefulsets
 
 use rusternetes_common::resources::{
-    Container, PersistentVolumeClaim, PersistentVolumeClaimSpec, PodSpec, PodTemplateSpec,
+    Container, PodSpec, PodTemplateSpec,
     StatefulSet, StatefulSetSpec, StatefulSetStatus,
 };
 use rusternetes_common::types::{LabelSelector, ObjectMeta, TypeMeta};
@@ -432,7 +432,7 @@ async fn test_statefulset_min_ready_seconds() {
 
     let key = build_key("statefulsets", Some("default"), "test-min-ready");
 
-    let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
+    let _created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -446,7 +446,7 @@ async fn test_statefulset_revision_history_limit() {
 
     let key = build_key("statefulsets", Some("default"), "test-revision");
 
-    let created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
+    let _created: StatefulSet = storage.create(&key, &statefulset).await.unwrap();
 
     // Clean up
     storage.delete(&key).await.unwrap();

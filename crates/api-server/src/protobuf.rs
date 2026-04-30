@@ -60,6 +60,12 @@ pub struct ProtoRegistry {
     schemas: HashMap<String, MessageSchema>,
 }
 
+impl Default for ProtoRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProtoRegistry {
     /// Build the registry with all known K8s proto schemas.
     /// Field numbers are from the generated.proto files in k8s.io/api.

@@ -93,7 +93,7 @@ where
         let has_finalizers = metadata
             .finalizers
             .as_ref()
-            .map_or(false, |f| !f.is_empty());
+            .is_some_and(|f| !f.is_empty());
 
         if has_finalizers {
             debug!(
@@ -141,7 +141,7 @@ where
     }
 
     // Check if the resource has finalizers (including any we just added)
-    let has_finalizers = meta.finalizers.as_ref().map_or(false, |f| !f.is_empty());
+    let has_finalizers = meta.finalizers.as_ref().is_some_and(|f| !f.is_empty());
 
     if !has_finalizers {
         // No finalizers - delete immediately
@@ -800,8 +800,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            deleted, false,
+        assert!(
+            !deleted,
             "Resource without finalizers should be deleted immediately"
         );
 
@@ -821,8 +821,8 @@ mod tests {
         let marked = handle_delete_with_finalizers(&storage, key, &pod)
             .await
             .unwrap();
-        assert_eq!(
-            marked, true,
+        assert!(
+            marked,
             "Resource with finalizers should be marked for deletion"
         );
 
@@ -841,8 +841,8 @@ mod tests {
         let marked_again = handle_delete_with_finalizers(&storage, key, &updated_pod)
             .await
             .unwrap();
-        assert_eq!(
-            marked_again, true,
+        assert!(
+            marked_again,
             "Resource should still be marked for deletion"
         );
 
@@ -861,7 +861,7 @@ mod tests {
         let marked = handle_delete_with_finalizers(&storage, key, &pod)
             .await
             .unwrap();
-        assert_eq!(marked, true);
+        assert!(marked);
 
         // Simulate controller removing finalizer
         let mut updated_pod: Pod = storage.get(key).await.unwrap();
@@ -871,8 +871,8 @@ mod tests {
         let deleted = handle_delete_with_finalizers(&storage, key, &updated_pod)
             .await
             .unwrap();
-        assert_eq!(
-            deleted, false,
+        assert!(
+            !deleted,
             "Resource without finalizers should be deleted"
         );
 

@@ -126,6 +126,7 @@ impl<S: Storage + 'static> NamespaceController<S> {
     }
 
     /// Main reconciliation loop - processes all namespaces
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting namespace reconciliation");
 
@@ -537,7 +538,7 @@ impl<S: Storage + 'static> NamespaceController<S> {
                     .metadata
                     .finalizers
                     .as_ref()
-                    .map_or(true, |f| f.is_empty());
+                    .is_none_or(|f| f.is_empty());
 
                 if no_finalizers {
                     // Delete the namespace from storage
@@ -788,6 +789,7 @@ impl<S: Storage + 'static> NamespaceController<S> {
     }
 
     /// Remove finalizers from a namespace
+    #[allow(dead_code)]
     async fn remove_namespace_finalizers(&self, name: &str) -> Result<()> {
         let key = build_key("namespaces", None, name);
 
@@ -807,13 +809,12 @@ impl<S: Storage + 'static> NamespaceController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::types::{ObjectMeta, TypeMeta};
     use rusternetes_storage::memory::MemoryStorage;
 
     #[test]
     fn test_namespace_resource_types() {
         // Ensure we have the major resource types covered
-        let resource_types = vec!["pods", "services", "configmaps", "secrets", "deployments"];
+        let resource_types = ["pods", "services", "configmaps", "secrets", "deployments"];
         assert!(resource_types.contains(&"pods"));
         assert!(resource_types.contains(&"services"));
     }

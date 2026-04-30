@@ -208,6 +208,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
         debug!("Reconciling all deployments");
 
@@ -1540,7 +1541,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
             None => true,
         };
 
-        let revision_changed = max_revision.map_or(false, |rev| {
+        let revision_changed = max_revision.is_some_and(|rev| {
             let current = deployment
                 .metadata
                 .annotations
@@ -2159,8 +2160,6 @@ mod tests {
     /// its revision should be the max revision from those ReplicaSets.
     #[tokio::test]
     async fn test_deployment_revision_from_existing_replicasets() {
-        use rusternetes_common::resources::PodTemplateSpec;
-        use rusternetes_common::types::LabelSelector;
         use rusternetes_storage::MemoryStorage;
         use std::collections::HashMap;
         use std::sync::Arc;
@@ -2231,8 +2230,8 @@ mod tests {
         storage.create(&deploy_key, &deployment).await.unwrap();
 
         // Reconcile
-        let mut d: Deployment = storage.get(&deploy_key).await.unwrap();
-        controller.reconcile_deployment(&mut d).await.unwrap();
+        let d: Deployment = storage.get(&deploy_key).await.unwrap();
+        controller.reconcile_deployment(&d).await.unwrap();
 
         // The deployment's revision should be based on the pre-existing ReplicaSet (5),
         // NOT hardcoded to "1"

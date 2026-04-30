@@ -126,6 +126,7 @@ impl<S: Storage + 'static> CertificateSigningRequestController<S> {
     }
 
     /// Main reconciliation loop - processes all CSR resources
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting CertificateSigningRequest reconciliation");
 
@@ -217,14 +218,13 @@ impl<S: Storage + 'static> CertificateSigningRequestController<S> {
         }
 
         // Auto-approve kubelet serving certificates
-        if csr.spec.signer_name == "kubernetes.io/kubelet-serving" {
-            if csr.spec.usages.contains(&KeyUsage::ServerAuth)
+        if csr.spec.signer_name == "kubernetes.io/kubelet-serving"
+            && csr.spec.usages.contains(&KeyUsage::ServerAuth)
                 && csr.spec.usages.contains(&KeyUsage::DigitalSignature)
                 && csr.spec.usages.contains(&KeyUsage::KeyEncipherment)
             {
                 return Ok(true);
             }
-        }
 
         Ok(false)
     }
@@ -412,7 +412,7 @@ mod tests {
         let controller = CertificateSigningRequestController::new(storage);
 
         // Create a CSR for testing (using rcgen for test data generation)
-        let mut params =
+        let params =
             rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
         let key_pair = rcgen::KeyPair::generate().unwrap();
         // Generate CSR, not a certificate
@@ -463,7 +463,7 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let mut params =
+        let params =
             rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
         let key_pair = rcgen::KeyPair::generate().unwrap();
         let csr_der = params.serialize_request(&key_pair).unwrap();
@@ -494,7 +494,7 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let mut params =
+        let params =
             rcgen::CertificateParams::new(vec!["test.example.com".to_string()]).unwrap();
         let key_pair = rcgen::KeyPair::generate().unwrap();
         let csr_der = params.serialize_request(&key_pair).unwrap();
@@ -541,7 +541,7 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let mut params =
+        let params =
             rcgen::CertificateParams::new(vec!["system:node:test".to_string()]).unwrap();
         let key_pair = rcgen::KeyPair::generate().unwrap();
         let csr_der = params.serialize_request(&key_pair).unwrap();
@@ -578,7 +578,7 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let controller = CertificateSigningRequestController::new(storage);
 
-        let mut params =
+        let params =
             rcgen::CertificateParams::new(vec!["node1.example.com".to_string()]).unwrap();
         let key_pair = rcgen::KeyPair::generate().unwrap();
         let csr_der = params.serialize_request(&key_pair).unwrap();

@@ -553,7 +553,7 @@ mod garbage_collector_integration {
                 .metadata
                 .owner_references
                 .as_ref()
-                .map_or(false, |refs| !refs.is_empty());
+                .is_some_and(|refs| !refs.is_empty());
             assert!(
                 !has_owner_ref,
                 "Child {} should have ownerReferences removed after orphan propagation, but still has {:?}",

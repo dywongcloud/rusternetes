@@ -576,6 +576,7 @@ pub struct OIDCTokenValidator {
     client_id: String,
     jwks: std::sync::RwLock<Option<JsonWebKeySet>>,
     http_client: reqwest::Client,
+    #[allow(dead_code)]
     ca_cert: Option<String>,
 }
 
@@ -761,6 +762,7 @@ impl OIDCTokenValidator {
 pub struct WebhookTokenAuthenticator {
     webhook_url: String,
     http_client: reqwest::Client,
+    #[allow(dead_code)]
     ca_cert: Option<String>,
 }
 
@@ -1046,7 +1048,7 @@ mod tests {
         // Expiry should be ~600 seconds from now
         let exp_diff = validated.exp - validated.iat;
         assert!(
-            exp_diff >= 590 && exp_diff <= 610,
+            (590..=610).contains(&exp_diff),
             "Expected ~600s expiry, got {}s",
             exp_diff
         );

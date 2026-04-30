@@ -235,6 +235,7 @@ impl<S: Storage + 'static> ServiceAccountController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting service account reconciliation");
 

@@ -318,6 +318,7 @@ pub async fn delete_ns(
 
 /// Cascade delete all resources in a namespace
 /// This ensures proper cleanup when a namespace is deleted
+#[allow(dead_code)]
 async fn cascade_delete_namespace_resources(
     storage: &rusternetes_storage::StorageBackend,
     namespace: &str,
@@ -435,8 +436,8 @@ pub async fn list(
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
-            label_selector: params.get("labelSelector").map(|s| s.clone()),
-            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")

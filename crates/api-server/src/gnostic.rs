@@ -4,7 +4,7 @@
 //! K8s client-go's OpenAPISchema() expects this format.
 //! K8s ref: vendor/k8s.io/kube-openapi/pkg/handler/handler.go — ToProtoBinary()
 
-#[allow(clippy::all, non_camel_case_types)]
+#[allow(clippy::all, non_camel_case_types, dead_code, unused_imports)]
 pub mod openapi_v2 {
     include!(concat!(env!("OUT_DIR"), "/openapi.v2.rs"));
 }

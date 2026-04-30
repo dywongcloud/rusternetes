@@ -23,6 +23,7 @@ use tracing::{debug, error, info, warn};
 
 /// Admission webhook client for calling external webhooks
 pub struct AdmissionWebhookClient {
+    #[allow(dead_code)]
     http_client: reqwest::Client,
 }
 
@@ -38,6 +39,7 @@ impl AdmissionWebhookClient {
     }
 
     /// Call a validating webhook
+    #[allow(dead_code)]
     pub async fn call_validating_webhook(
         &self,
         webhook: &ValidatingWebhook,
@@ -83,6 +85,7 @@ impl AdmissionWebhookClient {
     }
 
     /// Call a mutating webhook
+    #[allow(dead_code)]
     pub async fn call_mutating_webhook(
         &self,
         webhook: &MutatingWebhook,
@@ -128,6 +131,7 @@ impl AdmissionWebhookClient {
     }
 
     /// Internal method to call a webhook
+    #[allow(dead_code)]
     async fn call_webhook(
         &self,
         url: &str,
@@ -475,6 +479,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
     /// K8s calls all matching validating webhooks in parallel (goroutines) and
     /// collects errors. This matches that architecture using tokio::spawn.
     /// See: staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/validating/dispatcher.go
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_validating_webhooks(
         &self,
         operation: &Operation,
@@ -863,6 +868,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
     }
 
     /// Run mutating webhooks for an admission request
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_mutating_webhooks(
         &self,
         operation: &Operation,
@@ -1427,6 +1433,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
     /// If provided, it is used for more accurate resource rule matching.
     /// `namespace` is the namespace of the object (for namespaced resources).
     /// `old_object` is the previous version (for UPDATE operations).
+    #[allow(dead_code)]
     pub async fn run_validating_admission_policies(
         &self,
         operation: &Operation,
@@ -1512,19 +1519,19 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                         let resources = rule.get("resources").and_then(|r| r.as_array());
                         let ops = rule.get("operations").and_then(|o| o.as_array());
 
-                        let group_match = api_groups.map_or(true, |groups| {
+                        let group_match = api_groups.is_none_or(|groups| {
                             groups.iter().any(|g| {
                                 let gs = g.as_str().unwrap_or("");
                                 gs == "*" || gs == gvk.group
                             })
                         });
-                        let resource_match = resources.map_or(true, |res| {
+                        let resource_match = resources.is_none_or(|res| {
                             res.iter().any(|r| {
                                 let rs = r.as_str().unwrap_or("");
                                 rs == "*" || rs == derived_resource
                             })
                         });
-                        let op_match = ops.map_or(true, |operations| {
+                        let op_match = ops.is_none_or(|operations| {
                             operations.iter().any(|o| {
                                 let os = o.as_str().unwrap_or("");
                                 os == "*" || os == op_str
@@ -1760,7 +1767,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
                                         .get("validationActions")
                                         .and_then(|a| a.as_array())
                                 });
-                            let has_deny = actions.map_or(true, |acts| {
+                            let has_deny = actions.is_none_or(|acts| {
                                 acts.iter().any(|a| a.as_str() == Some("Deny"))
                             });
                             if has_deny {
@@ -1813,6 +1820,7 @@ impl<S: Storage> AdmissionWebhookManager<S> {
     }
 
     /// Evaluate matchConditions for a policy. Returns true if all conditions pass (or none exist).
+    #[allow(clippy::too_many_arguments)]
     fn evaluate_match_conditions(
         &self,
         policy: &Value,

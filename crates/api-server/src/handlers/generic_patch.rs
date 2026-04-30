@@ -41,6 +41,7 @@ use tracing::info;
 ///
 /// # Returns
 /// Updated resource after applying patch
+#[allow(clippy::too_many_arguments)]
 pub async fn patch_namespaced_resource<T>(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,
@@ -293,7 +294,7 @@ where
         }
 
         // Validating webhooks
-        match state
+        if let admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &admission::Operation::Update,
@@ -305,15 +306,11 @@ where
                 Some(current_json),
                 &user_info,
             )
-            .await?
-        {
-            admission::AdmissionResponse::Deny(reason) => {
-                return Err(rusternetes_common::Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 
@@ -365,6 +362,7 @@ where
 ///
 /// # Returns
 /// Updated resource after applying patch
+#[allow(clippy::too_many_arguments)]
 pub async fn patch_cluster_resource<T>(
     State(state): State<Arc<ApiServerState>>,
     Extension(auth_ctx): Extension<AuthContext>,

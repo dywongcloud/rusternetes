@@ -127,6 +127,7 @@ impl<S: Storage + 'static> DynamicProvisionerController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         // Get all PVCs
         let pvcs: Vec<PersistentVolumeClaim> = self
@@ -265,7 +266,7 @@ impl<S: Storage + 'static> DynamicProvisionerController<S> {
         };
 
         let message = if snapshot_source_path.is_some() {
-            Some(format!("Dynamically provisioned from snapshot"))
+            Some("Dynamically provisioned from snapshot".to_string())
         } else {
             Some("Dynamically provisioned".to_string())
         };

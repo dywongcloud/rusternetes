@@ -37,6 +37,12 @@ pub struct IptablesManager {
     recent_available: bool,
 }
 
+impl Default for IptablesManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IptablesManager {
     pub fn new() -> Self {
         let iptables_cmd = detect_iptables_cmd().to_string();
@@ -525,7 +531,7 @@ impl IptablesManager {
                 "ACCEPT",
             ])
             .output()
-            .and_then(|o| {
+            .inspect(|o| {
                 if !o.status.success() {
                     let _ = Command::new(&self.iptables_cmd)
                         .args([
@@ -546,7 +552,6 @@ impl IptablesManager {
                         ])
                         .output();
                 }
-                Ok(o)
             });
 
         // Accept all forwarded traffic on the Docker bridge — our services use
@@ -566,7 +571,7 @@ impl IptablesManager {
                 "ACCEPT",
             ])
             .output()
-            .and_then(|o| {
+            .inspect(|o| {
                 if !o.status.success() {
                     let _ = Command::new(&self.iptables_cmd)
                         .args([
@@ -583,7 +588,6 @@ impl IptablesManager {
                         ])
                         .output();
                 }
-                Ok(o)
             });
 
         // Also ensure the OUTPUT chain in the filter table accepts service traffic.
@@ -795,10 +799,10 @@ impl IptablesManager {
     /// Session affinity implementation:
     /// - When `recent_available` is true, uses xt_recent module to track client IPs.
     ///   Each endpoint gets a per-endpoint chain (KUBE-SEP-*) with two separate rules:
-    ///   1. `recent --set` to mark the source IP (always matches, does NOT terminate)
-    ///   2. `DNAT` to redirect traffic (terminates)
-    ///   The main chain has recent-check rules first (sticky routing), then
-    ///   probability-based fallback rules for new connections.
+    ///     1. `recent --set` to mark the source IP (always matches, does NOT terminate)
+    ///     2. `DNAT` to redirect traffic (terminates)
+    ///        The main chain has recent-check rules first (sticky routing), then
+    ///        probability-based fallback rules for new connections.
     /// - When `recent_available` is false, falls back to direct DNAT rules without
     ///   session affinity (service is still reachable, just not sticky).
     ///
@@ -1281,6 +1285,7 @@ impl IptablesManager {
     /// Returns the rules as a string ready for `iptables-restore --noflush`.
     /// K8s builds all rules in memory then applies atomically.
     /// See: pkg/proxy/iptables/proxier.go:1495
+    #[allow(clippy::type_complexity)]
     pub async fn build_nat_rules(
         &self,
         services: &[rusternetes_common::resources::Service],
@@ -1667,7 +1672,7 @@ impl Drop for IptablesManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_probability_calculation_uniform() {

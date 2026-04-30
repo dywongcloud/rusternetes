@@ -127,6 +127,7 @@ impl<S: Storage + 'static> NetworkPolicyController<S> {
     }
 
     /// Main reconciliation loop - processes all NetworkPolicies
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting NetworkPolicy reconciliation");
 
@@ -302,7 +303,7 @@ impl<S: Storage + 'static> NetworkPolicyController<S> {
 
         // Validate end_port if specified
         if let Some(end_port) = port.end_port {
-            if end_port < 1 || end_port > 65535 {
+            if !(1..=65535).contains(&end_port) {
                 return Err(anyhow::anyhow!(
                     "Invalid endPort {} in rule {} port {}, must be 1-65535",
                     end_port,
@@ -457,6 +458,7 @@ mod tests {
     use rusternetes_common::types::{
         LabelSelector, LabelSelectorRequirement, ObjectMeta, TypeMeta,
     };
+    use rusternetes_storage::memory::MemoryStorage;
 
     #[tokio::test]
     async fn test_validate_policy_valid() {

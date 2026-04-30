@@ -238,7 +238,6 @@ pub async fn port_forward_stream(
 
         // Clone URL for this connection
         let ws_url = url.clone();
-        let remote_port = remote_port;
 
         // Spawn handler for this connection
         tokio::spawn(async move {

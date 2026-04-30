@@ -415,6 +415,34 @@ async fn rollout_resume(
     Ok(())
 }
 
+fn get_resource_api_path(
+    resource_type: &str,
+    namespace: &str,
+    name: &str,
+) -> Result<(String, String)> {
+    match resource_type {
+        "deployment" | "deployments" | "deploy" => Ok((
+            format!(
+                "/apis/apps/v1/namespaces/{}/deployments/{}",
+                namespace, name
+            ),
+            "apps/v1".to_string(),
+        )),
+        "statefulset" | "statefulsets" | "sts" => Ok((
+            format!(
+                "/apis/apps/v1/namespaces/{}/statefulsets/{}",
+                namespace, name
+            ),
+            "apps/v1".to_string(),
+        )),
+        "daemonset" | "daemonsets" | "ds" => Ok((
+            format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name),
+            "apps/v1".to_string(),
+        )),
+        _ => anyhow::bail!("Unsupported resource type for rollout: {}", resource_type),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,33 +649,5 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("only supported for deployments"));
-    }
-}
-
-fn get_resource_api_path(
-    resource_type: &str,
-    namespace: &str,
-    name: &str,
-) -> Result<(String, String)> {
-    match resource_type {
-        "deployment" | "deployments" | "deploy" => Ok((
-            format!(
-                "/apis/apps/v1/namespaces/{}/deployments/{}",
-                namespace, name
-            ),
-            "apps/v1".to_string(),
-        )),
-        "statefulset" | "statefulsets" | "sts" => Ok((
-            format!(
-                "/apis/apps/v1/namespaces/{}/statefulsets/{}",
-                namespace, name
-            ),
-            "apps/v1".to_string(),
-        )),
-        "daemonset" | "daemonsets" | "ds" => Ok((
-            format!("/apis/apps/v1/namespaces/{}/daemonsets/{}", namespace, name),
-            "apps/v1".to_string(),
-        )),
-        _ => anyhow::bail!("Unsupported resource type for rollout: {}", resource_type),
     }
 }

@@ -2,7 +2,6 @@
 //!
 //! Tests all CRUD operations, admission control, finalizers, pagination, filtering, and error cases
 
-use axum::http::StatusCode;
 use rusternetes_common::resources::{Container, Pod, PodSpec};
 use rusternetes_common::types::{ObjectMeta, TypeMeta};
 use rusternetes_storage::{build_key, build_prefix, memory::MemoryStorage, Storage};
@@ -116,7 +115,7 @@ async fn test_pod_create_and_get() {
     let retrieved: Pod = storage.get(&key).await.unwrap();
     assert_eq!(retrieved.metadata.name, "test-pod-create");
     assert_eq!(retrieved.metadata.namespace.as_ref().unwrap(), "default");
-    assert!(retrieved.metadata.uid.len() > 0);
+    assert!(!retrieved.metadata.uid.is_empty());
 
     // Clean up
     storage.delete(&key).await.unwrap();
@@ -194,7 +193,7 @@ async fn test_pod_delete_with_finalizers() {
     .await
     .unwrap();
 
-    assert_eq!(marked, true, "Pod should be marked for deletion");
+    assert!(marked, "Pod should be marked for deletion");
 
     // Verify pod still exists with deletionTimestamp
     let updated: Pod = storage.get(&key).await.unwrap();
@@ -349,7 +348,7 @@ async fn test_pod_list_with_label_selector() {
     rusternetes_api_server::handlers::filtering::apply_label_selector(&mut pods, &params).unwrap();
 
     // Should find at least our pod with app=nginx label
-    assert!(pods.len() >= 1, "Should find at least 1 pod with app=nginx");
+    assert!(!pods.is_empty(), "Should find at least 1 pod with app=nginx");
     assert!(
         pods.iter().any(|p| p.metadata.name == "pod-label-1"),
         "Should find pod-label-1"

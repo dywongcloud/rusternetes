@@ -93,6 +93,12 @@ struct WorkQueueInner {
 /// to coalesce self-triggered events (status write -> watch -> re-enqueue).
 const MIN_REPROCESS_INTERVAL: Duration = Duration::from_millis(200);
 
+impl Default for WorkQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorkQueue {
     /// Create a new work queue with default rate limiting.
     pub fn new() -> Self {
@@ -291,6 +297,11 @@ impl WorkQueue {
     pub async fn len(&self) -> usize {
         let inner = self.inner.lock().await;
         inner.queue.len()
+    }
+
+    /// Returns true if the queue is empty.
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
     }
 }
 

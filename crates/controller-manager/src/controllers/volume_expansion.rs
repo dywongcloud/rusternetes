@@ -123,6 +123,7 @@ impl<S: Storage + 'static> VolumeExpansionController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         // Get all PVCs
         let pvcs: Vec<PersistentVolumeClaim> = self
@@ -256,7 +257,7 @@ impl<S: Storage + 'static> VolumeExpansionController<S> {
             updated_pvc
                 .status
                 .clone()
-                .unwrap_or_else(|| PersistentVolumeClaimStatus {
+                .unwrap_or(PersistentVolumeClaimStatus {
                     phase: PersistentVolumeClaimPhase::Bound,
                     access_modes: None,
                     capacity: None,

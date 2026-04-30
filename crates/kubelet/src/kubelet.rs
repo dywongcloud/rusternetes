@@ -29,6 +29,8 @@ use tracing::{debug, error, info, warn};
 /// The kubelet retries in SyncPod state. Only deletion and eviction trigger it.
 /// K8s ref: pkg/kubelet/pod_workers.go:110-117, 260
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 pub enum PodWorkerState {
     /// Pod is expected to be started and running. Failures are retried.
     SyncPod,
@@ -65,6 +67,7 @@ pub struct Kubelet {
 // All fields are Send+Sync: Arc<StorageBackend>, Arc<ContainerRuntime>, Mutex<EvictionManager>
 
 impl Kubelet {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         node_name: String,
         storage: Arc<StorageBackend>,
@@ -507,7 +510,7 @@ impl Kubelet {
 
         // Ensure capacity, allocatable, and nodeInfo are always set
         if let Some(ref mut status) = node.status {
-            if status.capacity.as_ref().map_or(true, |c| c.is_empty()) {
+            if status.capacity.as_ref().is_none_or(|c| c.is_empty()) {
                 status.capacity = Some(HashMap::from([
                     ("cpu".to_string(), "4".to_string()),
                     ("memory".to_string(), "8Gi".to_string()),
@@ -515,7 +518,7 @@ impl Kubelet {
                     ("ephemeral-storage".to_string(), "100Gi".to_string()),
                 ]));
             }
-            if status.allocatable.as_ref().map_or(true, |a| a.is_empty()) {
+            if status.allocatable.as_ref().is_none_or(|a| a.is_empty()) {
                 status.allocatable = Some(HashMap::from([
                     ("cpu".to_string(), "4".to_string()),
                     ("memory".to_string(), "8Gi".to_string()),
@@ -527,7 +530,7 @@ impl Kubelet {
             if status
                 .node_info
                 .as_ref()
-                .map_or(true, |ni| ni.machine_id.is_empty())
+                .is_none_or(|ni| ni.machine_id.is_empty())
             {
                 status.node_info = Some(rusternetes_common::resources::NodeSystemInfo {
                     machine_id: format!("rusternetes-{}", self.node_name),
@@ -624,12 +627,12 @@ impl Kubelet {
                         }
                         let tolerations = pod.spec.as_ref().and_then(|s| s.tolerations.as_ref());
                         for taint in &no_execute_taints {
-                            let tolerated = tolerations.map_or(false, |tols| {
+                            let tolerated = tolerations.is_some_and(|tols| {
                                 tols.iter().any(|t| {
                                     let key_match =
-                                        t.key.as_deref().map_or(true, |k| k == taint.key);
+                                        t.key.as_deref().is_none_or(|k| k == taint.key);
                                     let effect_match =
-                                        t.effect.as_deref().map_or(true, |e| e == taint.effect);
+                                        t.effect.as_deref().is_none_or(|e| e == taint.effect);
                                     let op = t.operator.as_deref().unwrap_or("Equal");
                                     let value_match = op == "Exists" || t.value == taint.value;
                                     key_match && effect_match && value_match
@@ -1589,7 +1592,7 @@ impl Kubelet {
                     .status
                     .as_ref()
                     .and_then(|s| s.reason.as_deref())
-                    .map_or(false, |r| {
+                    .is_some_and(|r| {
                         r == "CreateContainerError"
                             || r == "CreateContainerConfigError"
                             || r == "ErrImagePull"
@@ -1601,7 +1604,7 @@ impl Kubelet {
                         .spec
                         .as_ref()
                         .and_then(|s| s.init_containers.as_ref())
-                        .map_or(false, |ic| {
+                        .is_some_and(|ic| {
                             ic.iter()
                                 .any(|c| c.restart_policy.as_deref() != Some("Always"))
                         });
@@ -2102,7 +2105,7 @@ impl Kubelet {
                 // Check if any container is in CreateContainerError or CreateContainerConfigError
                 let has_create_error = pod.status.as_ref()
                     .and_then(|s| s.container_statuses.as_ref())
-                    .map_or(false, |statuses| {
+                    .is_some_and(|statuses| {
                         statuses.iter().any(|cs| {
                             matches!(&cs.state, Some(ContainerState::Waiting { reason: Some(r), .. }) if r == "CreateContainerError" || r == "CreateContainerConfigError")
                         })
@@ -2265,7 +2268,7 @@ impl Kubelet {
                                         if millicores > 0 {
                                             // K8s formula: shares = max(2, (millicores * 1024) / 1000)
                                             cpu_shares =
-                                                Some(((millicores as i64 * 1024) / 1000).max(2));
+                                                Some(((millicores * 1024) / 1000).max(2));
                                             needs_update = true;
                                         }
                                     }
@@ -2276,14 +2279,14 @@ impl Kubelet {
                                         let millicores = crate::runtime::parse_cpu_quantity(cpu);
                                         if millicores > 0 {
                                             let period = 100000i64; // 100ms
-                                            let quota = (millicores as i64 * period) / 1000;
+                                            let quota = (millicores * period) / 1000;
                                             cpu_period = Some(period);
                                             cpu_quota = Some(quota);
                                             needs_update = true;
                                             // Also set shares from limits if no requests
                                             if cpu_shares.is_none() {
                                                 cpu_shares = Some(
-                                                    ((millicores as i64 * 1024) / 1000).max(2),
+                                                    ((millicores * 1024) / 1000).max(2),
                                                 );
                                             }
                                         }
@@ -2523,11 +2526,9 @@ impl Kubelet {
                                             cs.restart_count = prev + 1;
                                             cs.last_state = cs.state.take();
                                             cs.state = Some(ContainerState::Waiting {
-                                                reason: Some(if cs.restart_count >= 5 {
-                                                    "CrashLoopBackOff".to_string()
-                                                } else {
-                                                    "CrashLoopBackOff".to_string()
-                                                }),
+                                                reason: Some(
+                                                    "CrashLoopBackOff".to_string(),
+                                                ),
                                                 message: Some(
                                                     "Back-off restarting failed container"
                                                         .to_string(),
@@ -3614,8 +3615,8 @@ impl Kubelet {
             let limits = resources.limits.as_ref();
             let requests = resources.requests.as_ref();
 
-            let has_any = limits.map_or(false, |l| !l.is_empty())
-                || requests.map_or(false, |r| !r.is_empty());
+            let has_any = limits.is_some_and(|l| !l.is_empty())
+                || requests.is_some_and(|r| !r.is_empty());
 
             if has_any {
                 none_have_any = false;
@@ -3973,7 +3974,7 @@ mod tests {
             && status
                 .container_statuses
                 .as_ref()
-                .map_or(true, |v| v.is_empty());
+                .is_none_or(|v| v.is_empty());
         assert!(
             is_bug_state,
             "This is the state that triggers premature result submission"

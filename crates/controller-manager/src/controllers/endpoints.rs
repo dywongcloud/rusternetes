@@ -195,6 +195,7 @@ impl<S: Storage + 'static> EndpointsController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting endpoints reconciliation");
 
@@ -578,7 +579,7 @@ impl<S: Storage + 'static> EndpointsController<S> {
         pod.spec.as_ref()?.containers.iter().find_map(|c| {
             c.ports.as_ref()?.iter().find_map(|p| {
                 if p.name.as_deref() == Some(port_name) {
-                    Some(p.container_port as u16)
+                    Some(p.container_port)
                 } else {
                     None
                 }
@@ -588,7 +589,7 @@ impl<S: Storage + 'static> EndpointsController<S> {
 
     /// Check if a pod is ready by examining its conditions
     fn is_pod_ready(&self, pod: &Pod) -> bool {
-        if let Some(ref conditions) = pod.status.as_ref().and_then(|s| s.conditions.as_ref()) {
+        if let Some(conditions) = pod.status.as_ref().and_then(|s| s.conditions.as_ref()) {
             conditions
                 .iter()
                 .any(|c| c.condition_type == "Ready" && c.status == "True")
@@ -1032,7 +1033,7 @@ mod tests {
         controller.reconcile_all().await.unwrap();
         let ep_key = "/registry/endpoints/default/test-svc";
         let ep1: Endpoints = storage.get(ep_key).await.unwrap();
-        let rv1 = ep1.metadata.resource_version.clone();
+        let _rv1 = ep1.metadata.resource_version.clone();
         assert!(ep1.subsets.is_empty());
 
         // Now add a matching pod with an IP and Running phase

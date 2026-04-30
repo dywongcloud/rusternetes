@@ -55,8 +55,7 @@ pub async fn create(
     // Initialize status with hard limits and zero usage
     if quota.status.is_none() {
         let used = quota.spec.hard.as_ref().map(|hard| {
-            hard.iter()
-                .map(|(k, _)| (k.clone(), "0".to_string()))
+            hard.keys().map(|k| (k.clone(), "0".to_string()))
                 .collect()
         });
         quota.status = Some(ResourceQuotaStatus {

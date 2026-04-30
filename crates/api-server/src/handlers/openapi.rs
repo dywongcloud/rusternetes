@@ -14,6 +14,7 @@ use rusternetes_storage::Storage;
 use std::sync::Arc;
 
 /// Encode a u64 as a protobuf varint
+#[allow(dead_code)]
 fn encode_varint(buf: &mut Vec<u8>, mut value: u64) {
     loop {
         let byte = (value & 0x7f) as u8;
@@ -185,7 +186,7 @@ pub async fn get_openapi_spec_path(
                 let group_parts: Vec<&str> = group.rsplitn(10, '.').collect();
                 let def_key = format!(
                     "{}.{}.{}",
-                    group_parts.iter().copied().collect::<Vec<_>>().join("."),
+                    group_parts.to_vec().join("."),
                     ver,
                     kind
                 );
@@ -349,6 +350,7 @@ fn parse_gv_path(path: &str) -> (String, String) {
 ///   - field 2 (raw, bytes): the raw data (JSON spec) -- tag 0x12
 ///   - field 3 (contentEncoding, string): empty, omitted
 ///   - field 4 (contentType, string): "application/json" -- tag 0x22
+#[allow(dead_code)]
 fn wrap_in_k8s_protobuf(_content_type: &str, data: &[u8]) -> Vec<u8> {
     let content_type_bytes = b"application/json";
     let mut msg = Vec::with_capacity(data.len() + 30);
@@ -426,7 +428,7 @@ pub async fn get_swagger_spec(
                 let group_parts: Vec<&str> = group.rsplitn(10, '.').collect();
                 let def_key = format!(
                     "{}.{}.{}",
-                    group_parts.iter().copied().collect::<Vec<_>>().join("."),
+                    group_parts.to_vec().join("."),
                     ver,
                     kind
                 );
@@ -729,13 +731,10 @@ fn strip_false_extensions(value: &mut serde_json::Value) {
             "maxProperties", "minProperties",
         ];
         for key in &zero_int_fields {
-            match obj.get(*key) {
-                Some(serde_json::Value::Number(n)) => {
-                    if n.as_f64() == Some(0.0) || n.as_i64() == Some(0) {
-                        obj.remove(*key);
-                    }
+            if let Some(serde_json::Value::Number(n)) = obj.get(*key) {
+                if n.as_f64() == Some(0.0) || n.as_i64() == Some(0) {
+                    obj.remove(*key);
                 }
-                _ => {}
             }
         }
 

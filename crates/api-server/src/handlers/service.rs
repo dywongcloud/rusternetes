@@ -83,8 +83,8 @@ pub async fn create(
 
     // Default internalTrafficPolicy to "Cluster" for ClusterIP/NodePort/LoadBalancer
     // K8s ref: pkg/apis/core/v1/defaults.go:141-146
-    if service.spec.internal_traffic_policy.is_none() {
-        if matches!(
+    if service.spec.internal_traffic_policy.is_none()
+        && matches!(
             service.spec.service_type,
             Some(ServiceType::ClusterIP)
                 | Some(ServiceType::NodePort)
@@ -93,7 +93,6 @@ pub async fn create(
             service.spec.internal_traffic_policy =
                 Some(rusternetes_common::resources::ServiceInternalTrafficPolicy::Cluster);
         }
-    }
 
     // Default ip_families and ip_family_policy for non-ExternalName services
     if !matches!(service.spec.service_type, Some(ServiceType::ExternalName)) {
@@ -395,7 +394,7 @@ pub async fn update(
             .spec
             .cluster_ip
             .as_ref()
-            .map_or(true, |ip| ip.is_empty());
+            .is_none_or(|ip| ip.is_empty());
         if needs_ip {
             if let Some(ip) = state.ip_allocator.allocate() {
                 service.spec.cluster_ip = Some(ip.clone());
@@ -679,7 +678,7 @@ pub async fn patch(
             .spec
             .cluster_ip
             .as_ref()
-            .map_or(true, |ip| ip.is_empty());
+            .is_none_or(|ip| ip.is_empty());
         if needs_ip {
             if let Some(ip) = state.ip_allocator.allocate() {
                 service.spec.cluster_ip = Some(ip.clone());

@@ -61,7 +61,7 @@ pub async fn create(
         kind: "ConfigMap".to_string(),
     };
     let cm_value = serde_json::to_value(&configmap).ok();
-    if let Err(e) = state
+    state
         .webhook_manager
         .run_validating_admission_policies_ext(
             &Operation::Create,
@@ -71,10 +71,7 @@ pub async fn create(
             Some("configmaps"),
             Some(&namespace),
         )
-        .await
-    {
-        return Err(e);
-    }
+        .await?;
 
     // Run admission webhooks (mutating + validating)
     {
@@ -119,7 +116,7 @@ pub async fn create(
             }
         }
         // Run validating webhooks
-        match state
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &rusternetes_common::admission::Operation::Create,
@@ -131,15 +128,11 @@ pub async fn create(
                 None,
                 &user_info,
             )
-            .await?
-        {
-            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
-                return Err(rusternetes_common::Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 
@@ -221,7 +214,7 @@ pub async fn update(
         kind: "ConfigMap".to_string(),
     };
     let cm_value = serde_json::to_value(&configmap).ok();
-    if let Err(e) = state
+    state
         .webhook_manager
         .run_validating_admission_policies_ext(
             &Operation::Update,
@@ -231,10 +224,7 @@ pub async fn update(
             Some("configmaps"),
             Some(&namespace),
         )
-        .await
-    {
-        return Err(e);
-    }
+        .await?;
 
     // Run admission webhooks (mutating + validating) for UPDATE
     {
@@ -278,7 +268,7 @@ pub async fn update(
             }
         }
         // Run validating webhooks
-        match state
+        if let rusternetes_common::admission::AdmissionResponse::Deny(reason) = state
             .webhook_manager
             .run_validating_webhooks(
                 &rusternetes_common::admission::Operation::Update,
@@ -290,15 +280,11 @@ pub async fn update(
                 None,
                 &user_info,
             )
-            .await?
-        {
-            rusternetes_common::admission::AdmissionResponse::Deny(reason) => {
-                return Err(rusternetes_common::Error::Forbidden(format!(
-                    "admission webhook denied the request: {}",
-                    reason
-                )));
-            }
-            _ => {}
+            .await? {
+            return Err(rusternetes_common::Error::Forbidden(format!(
+                "admission webhook denied the request: {}",
+                reason
+            )));
         }
     }
 
@@ -423,8 +409,8 @@ pub async fn list(
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
-            label_selector: params.get("labelSelector").map(|s| s.clone()),
-            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")
@@ -487,8 +473,8 @@ pub async fn list_all_configmaps(
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
-            label_selector: params.get("labelSelector").map(|s| s.clone()),
-            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")

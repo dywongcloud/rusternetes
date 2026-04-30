@@ -412,6 +412,7 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting endpointslice reconciliation");
 
@@ -907,6 +908,7 @@ impl<S: Storage + 'static> EndpointSliceController<S> {
     }
 
     /// Clean up orphaned EndpointSlices
+    #[allow(dead_code)]
     pub async fn cleanup_orphans(&self) -> Result<()> {
         // Handled in reconcile_all
         Ok(())

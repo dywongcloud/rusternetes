@@ -194,6 +194,7 @@ impl<S: Storage + 'static> ServiceController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting service reconciliation");
 
@@ -380,6 +381,7 @@ impl<S: Storage + 'static> ServiceController<S> {
     }
 
     /// Handle service deletion - release allocated resources
+    #[allow(dead_code)]
     pub async fn handle_service_deletion(&self, namespace: &str, service_name: &str) -> Result<()> {
         info!(
             "Handling deletion of service {}/{}",
@@ -441,7 +443,7 @@ impl<S: Storage + 'static> ServiceController<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::resources::{ServicePort, ServiceSpec};
+    use rusternetes_common::resources::{IntOrString, ServicePort, ServiceSpec};
     use rusternetes_common::types::ObjectMeta;
 
     #[tokio::test]
@@ -470,11 +472,11 @@ mod tests {
 
         // Allocate first NodePort
         let port1 = controller.allocate_node_port().await.unwrap();
-        assert!(port1 >= NODE_PORT_MIN && port1 <= NODE_PORT_MAX);
+        assert!((NODE_PORT_MIN..=NODE_PORT_MAX).contains(&port1));
 
         // Allocate second NodePort
         let port2 = controller.allocate_node_port().await.unwrap();
-        assert!(port2 >= NODE_PORT_MIN && port2 <= NODE_PORT_MAX);
+        assert!((NODE_PORT_MIN..=NODE_PORT_MAX).contains(&port2));
 
         // Ports should be different
         assert_ne!(port1, port2);

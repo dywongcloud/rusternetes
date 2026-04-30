@@ -141,7 +141,7 @@ fn resolve_path(value: &serde_json::Value, path: &str) -> Result<String> {
             }
         } else {
             // Field access
-            let (key, rest) = match remaining.find(|c| c == '.' || c == '[') {
+            let (key, rest) = match remaining.find(['.', '[']) {
                 Some(i) => {
                     let (k, r) = remaining.split_at(i);
                     (k, r.trim_start_matches('.'))
@@ -217,7 +217,7 @@ fn resolve_sort_key(value: &serde_json::Value, sort_expr: &str) -> String {
 }
 
 /// Sort a vector of serializable items by a JSONPath expression
-fn sort_by_jsonpath<T: Serialize>(items: &mut Vec<T>, sort_expr: &str) {
+fn sort_by_jsonpath<T: Serialize>(items: &mut [T], sort_expr: &str) {
     items.sort_by(|a, b| {
         let va = serde_json::to_value(a).unwrap_or(serde_json::Value::Null);
         let vb = serde_json::to_value(b).unwrap_or(serde_json::Value::Null);
@@ -309,6 +309,7 @@ async fn watch_resources(client: &ApiClient, api_path: &str, query: &str) -> Res
 }
 
 /// Enhanced execute with all new parameters
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_enhanced(
     client: &ApiClient,
     resource_type: &str,
@@ -421,6 +422,7 @@ mod urlencoding {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_with_query(
     client: &ApiClient,
     resource_type: &str,
@@ -468,8 +470,8 @@ pub async fn execute_with_query(
                 format!(
                     "/api/v1/namespaces/{}/pods{}",
                     ns,
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -483,8 +485,8 @@ pub async fn execute_with_query(
                 format!(
                     "/api/v1/namespaces/{}/services{}",
                     ns,
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -498,8 +500,8 @@ pub async fn execute_with_query(
                 format!(
                     "/apis/apps/v1/namespaces/{}/deployments{}",
                     ns,
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -513,8 +515,8 @@ pub async fn execute_with_query(
                 format!(
                     "/apis/batch/v1/namespaces/{}/jobs{}",
                     ns,
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -528,8 +530,8 @@ pub async fn execute_with_query(
                 format!(
                     "/apis/batch/v1/namespaces/{}/cronjobs{}",
                     ns,
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -542,8 +544,8 @@ pub async fn execute_with_query(
             get_resources!(
                 format!(
                     "/api/v1/nodes{}",
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -556,8 +558,8 @@ pub async fn execute_with_query(
             get_resources!(
                 format!(
                     "/api/v1/namespaces{}",
-                    if name.is_some() {
-                        format!("/{}", name.unwrap())
+                    if let Some(n) = name {
+                        format!("/{}", n)
                     } else {
                         String::new()
                     }
@@ -1251,8 +1253,8 @@ fn print_pods(pods: &[Pod], no_headers: bool, show_labels: bool) {
     if !no_headers {
         if show_labels {
             println!(
-                "{:<30} {:<15} {:<15} {}",
-                "NAME", "STATUS", "NODE", "LABELS"
+                "{:<30} {:<15} {:<15} LABELS",
+                "NAME", "STATUS", "NODE"
             );
         } else {
             println!("{:<30} {:<15} {:<15}", "NAME", "STATUS", "NODE");
@@ -1288,8 +1290,8 @@ fn print_services(services: &[Service], no_headers: bool, show_labels: bool) {
     if !no_headers {
         if show_labels {
             println!(
-                "{:<30} {:<20} {:<10} {}",
-                "NAME", "CLUSTER-IP", "PORTS", "LABELS"
+                "{:<30} {:<20} {:<10} LABELS",
+                "NAME", "CLUSTER-IP", "PORTS"
             );
         } else {
             println!("{:<30} {:<20} {:<10}", "NAME", "CLUSTER-IP", "PORTS");
@@ -1298,9 +1300,7 @@ fn print_services(services: &[Service], no_headers: bool, show_labels: bool) {
     for service in services {
         let cluster_ip = service
             .spec
-            .cluster_ip
-            .as_ref()
-            .map(|ip| ip.as_str())
+            .cluster_ip.as_deref()
             .unwrap_or("<none>");
         let ports = service
             .spec
@@ -1347,8 +1347,8 @@ fn print_deployments(deployments: &[Deployment], no_headers: bool, show_labels: 
     if !no_headers {
         if show_labels {
             println!(
-                "{:<30} {:<15} {:<15} {:<15} {:<10} {}",
-                "NAME", "READY", "UP-TO-DATE", "AVAILABLE", "AGE", "LABELS"
+                "{:<30} {:<15} {:<15} {:<15} {:<10} LABELS",
+                "NAME", "READY", "UP-TO-DATE", "AVAILABLE", "AGE"
             );
         } else {
             println!(
@@ -1405,7 +1405,7 @@ fn print_deployments(deployments: &[Deployment], no_headers: bool, show_labels: 
 fn print_nodes(nodes: &[Node], no_headers: bool, show_labels: bool) {
     if !no_headers {
         if show_labels {
-            println!("{:<30} {:<15} {}", "NAME", "STATUS", "LABELS");
+            println!("{:<30} {:<15} LABELS", "NAME", "STATUS");
         } else {
             println!("{:<30} {:<15}", "NAME", "STATUS");
         }
@@ -1434,7 +1434,7 @@ fn print_nodes(nodes: &[Node], no_headers: bool, show_labels: bool) {
 fn print_namespaces(namespaces: &[Namespace], no_headers: bool, show_labels: bool) {
     if !no_headers {
         if show_labels {
-            println!("{:<30} {:<15} {}", "NAME", "STATUS", "LABELS");
+            println!("{:<30} {:<15} LABELS", "NAME", "STATUS");
         } else {
             println!("{:<30} {:<15}", "NAME", "STATUS");
         }
@@ -1763,9 +1763,6 @@ mod tests {
     #[test]
     fn test_no_headers_suppresses_header() {
         // Verify print_pods with no_headers=true doesn't print header
-        // We capture stdout to verify
-        use std::io::Write;
-
         // Just verify the function signature accepts no_headers=true
         // (actual stdout capture would need more infrastructure)
         let pods: Vec<Pod> = vec![];

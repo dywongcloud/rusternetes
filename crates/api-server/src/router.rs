@@ -176,9 +176,7 @@ async fn custom_resource_fallback(
                     return Ok(Response::builder()
                         .status(StatusCode::SERVICE_UNAVAILABLE)
                         .header("Content-Type", "application/json")
-                        .body(Body::from(format!(
-                            "{{\"kind\":\"Status\",\"apiVersion\":\"v1\",\"status\":\"Failure\",\"message\":\"service unavailable\",\"reason\":\"ServiceUnavailable\",\"code\":503}}"
-                        )))
+                        .body(Body::from("{\"kind\":\"Status\",\"apiVersion\":\"v1\",\"status\":\"Failure\",\"message\":\"service unavailable\",\"reason\":\"ServiceUnavailable\",\"code\":503}".to_string()))
                         .unwrap());
                 }
             }
@@ -277,7 +275,7 @@ async fn custom_resource_fallback(
             }
             resources.push(res);
             // Add status and scale subresources if defined
-            if let Some(ref ver) = crd.spec.versions.iter().find(|v| v.name == version_name) {
+            if let Some(ver) = crd.spec.versions.iter().find(|v| v.name == version_name) {
                 if let Some(ref sub) = ver.subresources {
                     if sub.status.is_some() {
                         resources.push(serde_json::json!({
@@ -459,7 +457,7 @@ async fn custom_resource_fallback(
                         auth_ctx.clone(),
                         ns.to_string(),
                         &resource_type,
-                        &group,
+                        group,
                         watch_params,
                     )
                     .await
@@ -477,7 +475,7 @@ async fn custom_resource_fallback(
                         state.clone(),
                         auth_ctx.clone(),
                         &resource_type,
-                        &group,
+                        group,
                         watch_params,
                     )
                     .await

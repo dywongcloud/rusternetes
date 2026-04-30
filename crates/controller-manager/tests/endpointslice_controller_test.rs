@@ -564,10 +564,8 @@ async fn test_endpointslice_empty_endpoints() {
         "EndpointSlice should have no endpoints"
     );
     // When there are no addresses, ports may also be empty depending on implementation
-    assert!(
-        slice.ports.len() >= 0,
-        "EndpointSlice ports can be empty or populated"
-    );
+    // (slice.ports can be any length, just verify it's accessible)
+    let _ = slice.ports.len();
 }
 
 #[tokio::test]

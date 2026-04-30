@@ -281,16 +281,13 @@ pub struct EventSource {
 
 /// EventType is the type of an event
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum EventType {
+    #[default]
     Normal,
     Warning,
 }
 
-impl Default for EventType {
-    fn default() -> Self {
-        EventType::Normal
-    }
-}
 
 /// EventSeries contains information on series of events
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

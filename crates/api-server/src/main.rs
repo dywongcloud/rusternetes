@@ -3,6 +3,7 @@ mod admission_webhook;
 mod bootstrap;
 mod conversion;
 mod dynamic_routes;
+#[allow(dead_code)]
 mod flow_control;
 mod gnostic;
 mod handlers;
@@ -12,11 +13,15 @@ mod openapi;
 mod patch;
 mod prometheus_client;
 pub mod protobuf;
+#[allow(dead_code)]
 mod response;
 mod router;
+#[allow(dead_code)]
 mod spdy;
+#[allow(dead_code)]
 mod spdy_handlers;
 mod state;
+#[allow(dead_code)]
 mod streaming;
 mod watch_cache;
 
@@ -33,7 +38,6 @@ use state::ApiServerState;
 use std::sync::Arc;
 use tracing::debug;
 use tracing::{info, warn, Level};
-use tracing_subscriber;
 
 #[derive(Parser, Debug)]
 #[command(name = "rusternetes-api-server")]
@@ -191,7 +195,7 @@ async fn main() -> Result<()> {
     let api_port = args
         .bind_address
         .split(':')
-        .last()
+        .next_back()
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(6443);
 

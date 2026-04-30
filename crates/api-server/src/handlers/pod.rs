@@ -130,7 +130,7 @@ pub async fn create(
         for container in &mut spec.containers {
             if let Some(ref limits) = container.resources.as_ref().and_then(|r| r.limits.clone()) {
                 if !limits.is_empty() {
-                    let resources = container.resources.get_or_insert_with(|| {
+                    let resources = container.resources.get_or_insert({
                         rusternetes_common::types::ResourceRequirements {
                             limits: None,
                             requests: None,
@@ -480,7 +480,7 @@ pub async fn create(
 
     // Run ValidatingAdmissionPolicy checks
     let pod_value_for_vap = serde_json::to_value(&pod).ok();
-    if let Err(e) = state
+    state
         .webhook_manager
         .run_validating_admission_policies_ext(
             &Operation::Create,
@@ -490,10 +490,7 @@ pub async fn create(
             Some("pods"),
             Some(&namespace),
         )
-        .await
-    {
-        return Err(e);
-    }
+        .await?;
 
     pod.metadata.ensure_uid();
     pod.metadata.ensure_creation_timestamp();
@@ -535,11 +532,11 @@ pub async fn create(
                     let has_limits = res
                         .limits
                         .as_ref()
-                        .map_or(false, |l| l.contains_key("cpu") && l.contains_key("memory"));
+                        .is_some_and(|l| l.contains_key("cpu") && l.contains_key("memory"));
                     let has_requests = res
                         .requests
                         .as_ref()
-                        .map_or(false, |r| r.contains_key("cpu") && r.contains_key("memory"));
+                        .is_some_and(|r| r.contains_key("cpu") && r.contains_key("memory"));
                     if has_limits || has_requests {
                         any_resources = true;
                     }
@@ -923,8 +920,8 @@ pub async fn list(
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
-            label_selector: params.get("labelSelector").map(|s| s.clone()),
-            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")
@@ -1040,8 +1037,8 @@ pub async fn list_all_pods(
             timeout_seconds: params
                 .get("timeoutSeconds")
                 .and_then(|v| v.parse::<u64>().ok()),
-            label_selector: params.get("labelSelector").map(|s| s.clone()),
-            field_selector: params.get("fieldSelector").map(|s| s.clone()),
+            label_selector: params.get("labelSelector").cloned(),
+            field_selector: params.get("fieldSelector").cloned(),
             watch: Some(true),
             allow_watch_bookmarks: params
                 .get("allowWatchBookmarks")
@@ -1482,7 +1479,6 @@ fn detect_container_resource_change(old_pod: &Pod, new_pod: &Pod) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusternetes_common::types::{ObjectMeta, ResourceRequirements, TypeMeta};
     use std::collections::HashMap;
 
     fn make_container_with_resources(

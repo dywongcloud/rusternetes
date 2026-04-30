@@ -125,6 +125,7 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> rusternetes_common::Result<()> {
         debug!("Reconciling all replicationcontrollers");
 
@@ -154,7 +155,7 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
                 .metadata
                 .finalizers
                 .as_ref()
-                .map_or(false, |f| f.contains(&"orphan".to_string()));
+                .is_some_and(|f| f.contains(&"orphan".to_string()));
             if has_orphan_finalizer {
                 info!(
                     "RC {}/{} being deleted with orphan policy, removing ownerRefs from pods",
@@ -172,7 +173,7 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
                         .metadata
                         .owner_references
                         .as_ref()
-                        .map_or(false, |refs| refs.iter().any(|r| r.uid == rc.metadata.uid));
+                        .is_some_and(|refs| refs.iter().any(|r| r.uid == rc.metadata.uid));
                     if owned {
                         let mut updated_pod = pod.clone();
                         updated_pod.metadata.owner_references =
@@ -208,7 +209,7 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
                     .metadata
                     .finalizers
                     .as_ref()
-                    .map_or(true, |f| f.is_empty())
+                    .is_none_or(|f| f.is_empty())
                 {
                     let _ = self.storage.delete(&rc_key).await;
                 } else {
@@ -405,6 +406,7 @@ impl<S: Storage + 'static> ReplicationControllerController<S> {
         mut all_pods: Vec<Pod>,
         namespace: &str,
     ) -> rusternetes_common::Result<Vec<Pod>> {
+        #[allow(clippy::needless_range_loop)]
         for i in 0..all_pods.len() {
             let pod = &all_pods[i];
 

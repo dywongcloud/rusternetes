@@ -47,6 +47,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
     }
 
     /// Create a new garbage collector with custom settings
+    #[allow(dead_code)]
     pub fn with_config(
         storage: Arc<S>,
         scan_interval_secs: u64,
@@ -301,13 +302,13 @@ impl<S: Storage + 'static> GarbageCollector<S> {
                     // Map: owner UID -> list of dependent UIDs
                     owner_map
                         .entry(owner_ref.uid.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(resource_uid.clone());
 
                     // Map: dependent UID -> list of owner UIDs
                     dependent_map
                         .entry(resource_uid.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(owner_ref.uid.clone());
                 }
             }
@@ -562,7 +563,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         let dependents: Vec<_> = all_resources
             .iter()
             .filter(|r| {
-                r.metadata.owner_references.as_ref().map_or(false, |refs| {
+                r.metadata.owner_references.as_ref().is_some_and(|refs| {
                     refs.iter().any(|oref| oref.uid == *resource_uid)
                 })
             })
@@ -655,7 +656,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
         let dependents: Vec<_> = all_resources
             .iter()
             .filter(|r| {
-                r.metadata.owner_references.as_ref().map_or(false, |refs| {
+                r.metadata.owner_references.as_ref().is_some_and(|refs| {
                     refs.iter().any(|oref| oref.uid == *resource_uid)
                 })
             })
@@ -723,6 +724,7 @@ impl<S: Storage + 'static> GarbageCollector<S> {
     }
 
     /// Cascade delete all resources in a namespace
+    #[allow(dead_code)]
     async fn cascade_delete_namespace(
         &self,
         namespace: &ResourceInfo,
@@ -984,6 +986,53 @@ impl Default for DeleteOptions {
     }
 }
 
+/// Map K8s Kind names to their plural storage resource names.
+/// K8s uses discovery API for this; we use a static mapping.
+fn kind_to_plural(kind: &str) -> &str {
+    match kind {
+        "Pod" => "pods",
+        "Service" => "services",
+        "Endpoints" => "endpoints",
+        "EndpointSlice" => "endpointslices",
+        "Namespace" => "namespaces",
+        "Node" => "nodes",
+        "ConfigMap" => "configmaps",
+        "Secret" => "secrets",
+        "ServiceAccount" => "serviceaccounts",
+        "Deployment" => "deployments",
+        "ReplicaSet" => "replicasets",
+        "StatefulSet" => "statefulsets",
+        "DaemonSet" => "daemonsets",
+        "ReplicationController" => "replicationcontrollers",
+        "Job" => "jobs",
+        "CronJob" => "cronjobs",
+        "Ingress" => "ingresses",
+        "NetworkPolicy" => "networkpolicies",
+        "PersistentVolumeClaim" => "persistentvolumeclaims",
+        "PersistentVolume" => "persistentvolumes",
+        "StorageClass" => "storageclasses",
+        "ClusterRole" => "clusterroles",
+        "ClusterRoleBinding" => "clusterrolebindings",
+        "Role" => "roles",
+        "RoleBinding" => "rolebindings",
+        "CustomResourceDefinition" => "customresourcedefinitions",
+        "ControllerRevision" => "controllerrevisions",
+        "HorizontalPodAutoscaler" => "horizontalpodautoscalers",
+        "PodDisruptionBudget" => "poddisruptionbudgets",
+        "ResourceQuota" => "resourcequotas",
+        "LimitRange" => "limitranges",
+        _ => {
+            // Fallback: lowercase + "s" (works for many K8s kinds)
+            // This is imperfect but better than failing
+            tracing::warn!("GC: unknown kind '{}', using lowercase+s fallback", kind);
+            // Return a static str — caller should handle the fallback case
+            // We can't return a dynamically constructed string as &str,
+            // so return an empty string to signal "unknown"
+            ""
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1044,52 +1093,5 @@ mod tests {
         // Test remove_finalizer
         metadata.remove_finalizer("my-finalizer");
         assert!(!metadata.has_finalizers());
-    }
-}
-
-/// Map K8s Kind names to their plural storage resource names.
-/// K8s uses discovery API for this; we use a static mapping.
-fn kind_to_plural(kind: &str) -> &str {
-    match kind {
-        "Pod" => "pods",
-        "Service" => "services",
-        "Endpoints" => "endpoints",
-        "EndpointSlice" => "endpointslices",
-        "Namespace" => "namespaces",
-        "Node" => "nodes",
-        "ConfigMap" => "configmaps",
-        "Secret" => "secrets",
-        "ServiceAccount" => "serviceaccounts",
-        "Deployment" => "deployments",
-        "ReplicaSet" => "replicasets",
-        "StatefulSet" => "statefulsets",
-        "DaemonSet" => "daemonsets",
-        "ReplicationController" => "replicationcontrollers",
-        "Job" => "jobs",
-        "CronJob" => "cronjobs",
-        "Ingress" => "ingresses",
-        "NetworkPolicy" => "networkpolicies",
-        "PersistentVolumeClaim" => "persistentvolumeclaims",
-        "PersistentVolume" => "persistentvolumes",
-        "StorageClass" => "storageclasses",
-        "ClusterRole" => "clusterroles",
-        "ClusterRoleBinding" => "clusterrolebindings",
-        "Role" => "roles",
-        "RoleBinding" => "rolebindings",
-        "CustomResourceDefinition" => "customresourcedefinitions",
-        "ControllerRevision" => "controllerrevisions",
-        "HorizontalPodAutoscaler" => "horizontalpodautoscalers",
-        "PodDisruptionBudget" => "poddisruptionbudgets",
-        "ResourceQuota" => "resourcequotas",
-        "LimitRange" => "limitranges",
-        _ => {
-            // Fallback: lowercase + "s" (works for many K8s kinds)
-            // This is imperfect but better than failing
-            tracing::warn!("GC: unknown kind '{}', using lowercase+s fallback", kind);
-            // Return a static str — caller should handle the fallback case
-            // We can't return a dynamically constructed string as &str,
-            // so return an empty string to signal "unknown"
-            ""
-        }
     }
 }

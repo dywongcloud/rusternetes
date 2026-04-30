@@ -248,7 +248,7 @@ impl<S: Storage + 'static> EventsController<S> {
                 }
                 Some(Phase::Failed) => {
                     // Pods that failed may have started containers — emit Started
-                    if status.container_statuses.as_ref().map_or(false, |cs| {
+                    if status.container_statuses.as_ref().is_some_and(|cs| {
                         cs.iter().any(|c| {
                             matches!(
                                 c.state,
@@ -353,7 +353,7 @@ impl<S: Storage + 'static> EventsController<S> {
         for event in all_events {
             // Use last_timestamp, falling back to creation_timestamp
             let event_time = event.last_timestamp.or(event.metadata.creation_timestamp);
-            if event_time.map_or(false, |t| t < one_hour_ago) {
+            if event_time.is_some_and(|t| t < one_hour_ago) {
                 let namespace = event.metadata.namespace.as_deref().unwrap_or("default");
                 let name = &event.metadata.name;
                 let key = format!("/registry/events/{}/{}", namespace, name);

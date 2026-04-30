@@ -1,5 +1,7 @@
+#[allow(dead_code)]
 mod cni;
 mod config;
+#[allow(dead_code)]
 mod eviction;
 mod kubelet;
 mod runtime;

@@ -156,6 +156,7 @@ impl KubeletConfiguration {
     }
 
     /// Save configuration to a YAML file
+    #[allow(dead_code)]
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let contents = serde_yaml::to_string(self).context("Failed to serialize configuration")?;
 
@@ -233,6 +234,7 @@ fn first_ip_from_cidr(cidr: &str) -> Result<String> {
 impl RuntimeConfig {
     /// Build RuntimeConfig from multiple sources with proper precedence:
     /// CLI flags > Config file > Environment variables > Defaults
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         cli_root_dir: Option<String>,
         cli_volume_dir: Option<String>,

@@ -14,6 +14,7 @@ where
 /// ObjectMeta is metadata that all persisted resources must have
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct ObjectMeta {
     /// Name must be unique within a namespace
     #[serde(default, deserialize_with = "deserialize_null_string")]
@@ -77,26 +78,6 @@ fn generate_uid() -> String {
     String::new()
 }
 
-impl Default for ObjectMeta {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            generate_name: None,
-            namespace: None,
-            uid: String::new(),
-            generation: None,
-            resource_version: None,
-            managed_fields: None,
-            creation_timestamp: None,
-            deletion_timestamp: None,
-            deletion_grace_period_seconds: None,
-            labels: None,
-            annotations: None,
-            finalizers: None,
-            owner_references: None,
-        }
-    }
-}
 
 impl ObjectMeta {
     pub fn new(name: impl Into<String>) -> Self {
@@ -197,7 +178,7 @@ impl ObjectMeta {
 
     /// Check if the object has any finalizers
     pub fn has_finalizers(&self) -> bool {
-        self.finalizers.as_ref().map_or(false, |f| !f.is_empty())
+        self.finalizers.as_ref().is_some_and(|f| !f.is_empty())
     }
 }
 

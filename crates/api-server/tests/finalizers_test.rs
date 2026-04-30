@@ -3,7 +3,7 @@
 use chrono::Utc;
 use rusternetes_api_server::handlers::finalizers::{handle_delete_with_finalizers, HasMetadata};
 use rusternetes_common::resources::{Pod, PodSpec};
-use rusternetes_common::types::{ObjectMeta, TypeMeta};
+
 use rusternetes_storage::{memory::MemoryStorage, Storage};
 use std::sync::Arc;
 
@@ -71,8 +71,8 @@ async fn test_delete_resource_with_empty_finalizers_list() {
         .await
         .unwrap();
 
-    assert_eq!(
-        deleted, false,
+    assert!(
+        !deleted,
         "Resource with empty finalizers should be deleted immediately"
     );
 
@@ -104,7 +104,7 @@ async fn test_delete_resource_with_multiple_finalizers() {
         .await
         .unwrap();
 
-    assert_eq!(marked, true, "Resource should be marked for deletion");
+    assert!(marked, "Resource should be marked for deletion");
 
     // Verify it still exists with deletionTimestamp
     let updated_pod: Pod = storage.get(key).await.unwrap();
@@ -135,7 +135,7 @@ async fn test_delete_already_marked_logs_correctly() {
         .await
         .unwrap();
 
-    assert_eq!(marked, true, "Already marked resource should return true");
+    assert!(marked, "Already marked resource should return true");
 
     // Verify deletion timestamp didn't change
     let updated_pod: Pod = storage.get(key).await.unwrap();
@@ -169,7 +169,7 @@ async fn test_delete_finalizer_workflow_complete() {
     let marked = handle_delete_with_finalizers(&storage, key, &pod)
         .await
         .unwrap();
-    assert_eq!(marked, true);
+    assert!(marked);
 
     // Step 3: Controller A removes its finalizer
     let mut updated_pod: Pod = storage.get(key).await.unwrap();
@@ -180,7 +180,7 @@ async fn test_delete_finalizer_workflow_complete() {
     let marked = handle_delete_with_finalizers(&storage, key, &updated_pod)
         .await
         .unwrap();
-    assert_eq!(marked, true);
+    assert!(marked);
 
     // Step 5: Controller B removes its finalizer
     let mut updated_pod: Pod = storage.get(key).await.unwrap();
@@ -191,7 +191,7 @@ async fn test_delete_finalizer_workflow_complete() {
     let deleted = handle_delete_with_finalizers(&storage, key, &updated_pod)
         .await
         .unwrap();
-    assert_eq!(deleted, false, "Resource should be deleted");
+    assert!(!deleted, "Resource should be deleted");
 
     // Verify it's gone
     let result = storage.get::<Pod>(key).await;
@@ -262,8 +262,8 @@ async fn test_delete_with_finalizer_race_condition() {
     assert!(result2.is_ok());
 
     // Both should return marked=true
-    assert_eq!(result1.unwrap(), true);
-    assert_eq!(result2.unwrap(), true);
+    assert!(result1.unwrap());
+    assert!(result2.unwrap());
 
     // Resource should still exist
     let final_pod: Pod = storage.get(key).await.unwrap();
@@ -290,7 +290,7 @@ async fn test_delete_without_finalizers_multiple_times() {
     let deleted = handle_delete_with_finalizers(&storage, key, &pod)
         .await
         .unwrap();
-    assert_eq!(deleted, false);
+    assert!(!deleted);
 
     // Resource should be gone
     let result = storage.get::<Pod>(key).await;

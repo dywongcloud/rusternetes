@@ -148,6 +148,7 @@ pub enum StorageConfig {
 ///
 /// This allows all components to remain generic over `S: Storage` while the
 /// concrete backend is chosen once at startup via `StorageConfig`.
+#[allow(clippy::large_enum_variant)]
 pub enum StorageBackend {
     Etcd(etcd::EtcdStorage),
     #[cfg(feature = "sqlite")]

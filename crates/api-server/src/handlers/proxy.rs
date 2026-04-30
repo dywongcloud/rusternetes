@@ -307,7 +307,7 @@ pub async fn proxy_service(
                     } else {
                         ports.first()
                     } {
-                        resolved_port = ep_port.port as u16;
+                        resolved_port = ep_port.port;
                     }
                 }
 

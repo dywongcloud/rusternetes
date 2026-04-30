@@ -181,6 +181,7 @@ impl<S: Storage + 'static> StatefulSetController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         let statefulsets: Vec<StatefulSet> = self.storage.list("/registry/statefulsets/").await?;
 
@@ -1785,7 +1786,7 @@ mod tests {
             controller.reconcile(&mut ss).await.unwrap();
             // Make the newly created pod Ready so the next one can be created
             let pod_key = format!("/registry/pods/default/ss-block-{}", round);
-            if let Ok(mut pod) = storage.get::<Pod>(&pod_key).await {
+            if storage.get::<Pod>(&pod_key).await.is_ok() {
                 make_pod_ready(&storage, ns, &format!("ss-block-{}", round)).await;
             }
         }
@@ -1839,7 +1840,7 @@ mod tests {
             let pod: Pod = storage
                 .get(&pod_key)
                 .await
-                .expect(&format!("Pod ss-block-{} should still exist", i));
+                .unwrap_or_else(|_| panic!("Pod ss-block-{} should still exist", i));
             assert!(
                 pod.metadata.deletion_timestamp.is_none(),
                 "Pod ss-block-{} should NOT have deletionTimestamp — scale-down should be blocked when pods are unhealthy",

@@ -39,7 +39,7 @@ fn create_test_statefulset(name: &str, namespace: &str, replicas: i32) -> Statef
             },
             template: PodTemplateSpec {
                 metadata: Some({
-                    let mut meta = ObjectMeta::new(&format!("{}-pod", name));
+                    let mut meta = ObjectMeta::new(format!("{}-pod", name));
                     meta.labels = Some(labels);
                     meta
                 }),

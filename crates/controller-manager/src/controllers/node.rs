@@ -127,6 +127,7 @@ impl<S: Storage + 'static> NodeController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Starting node reconciliation");
 
@@ -190,12 +191,11 @@ impl<S: Storage + 'static> NodeController<S> {
         }
 
         // Evict pods from nodes that have been NotReady for too long
-        if !is_ready {
-            if self.should_evict_pods(node) {
+        if !is_ready
+            && self.should_evict_pods(node) {
                 info!("Evicting pods from NotReady node {}", node_name);
                 self.evict_pods_from_node(node_name).await?;
             }
-        }
 
         Ok(())
     }
@@ -422,7 +422,7 @@ impl<S: Storage + 'static> NodeController<S> {
             time_added: None,
         };
 
-        let spec = updated_node.spec.get_or_insert_with(|| rusternetes_common::resources::NodeSpec {
+        let spec = updated_node.spec.get_or_insert(rusternetes_common::resources::NodeSpec {
             pod_cidr: None,
             pod_cidrs: None,
             provider_id: None,
@@ -513,6 +513,7 @@ impl<S: Storage + 'static> NodeController<S> {
     }
 
     /// Mark a pod as failed due to node failure
+    #[allow(dead_code)]
     async fn mark_pod_failed(&self, namespace: &str, pod_name: &str, reason: &str) -> Result<()> {
         let pod_key = build_key("pods", Some(namespace), pod_name);
 

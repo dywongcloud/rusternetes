@@ -29,6 +29,7 @@ fn get_kubelet_url(pod: &Pod) -> String {
 }
 
 /// Handle SPDY exec connection by proxying to the kubelet
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_spdy_exec(
     spdy: SpdyConnection,
     pod: Pod,

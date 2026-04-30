@@ -80,7 +80,7 @@ fn create_pod_with_sidecar(
     for i in 0..app_count {
         containers.push(Container {
             name: format!("app-{}", i),
-            image: format!("nginx:latest"),
+            image: "nginx:latest".to_string(),
             image_pull_policy: Some("IfNotPresent".to_string()),
             command: None,
             args: None,
@@ -329,16 +329,16 @@ fn test_multiple_sidecars_with_init_containers() {
     assert_eq!(init_containers.len(), 5);
 
     // First 2 are regular init containers
-    for i in 0..2 {
-        assert_eq!(init_containers[i].name, format!("init-{}", i));
-        assert_eq!(init_containers[i].restart_policy, None);
+    for (i, container) in init_containers.iter().enumerate().take(2) {
+        assert_eq!(container.name, format!("init-{}", i));
+        assert_eq!(container.restart_policy, None);
     }
 
     // Next 3 are sidecars
-    for i in 0..3 {
-        assert_eq!(init_containers[i + 2].name, format!("sidecar-{}", i));
+    for (i, container) in init_containers.iter().skip(2).enumerate().take(3) {
+        assert_eq!(container.name, format!("sidecar-{}", i));
         assert_eq!(
-            init_containers[i + 2].restart_policy,
+            container.restart_policy,
             Some("Always".to_string())
         );
     }
@@ -398,10 +398,10 @@ fn test_only_sidecars_no_regular_init() {
     // Should have only sidecars
     assert_eq!(init_containers.len(), 2);
 
-    for i in 0..2 {
-        assert_eq!(init_containers[i].name, format!("sidecar-{}", i));
+    for (i, container) in init_containers.iter().enumerate().take(2) {
+        assert_eq!(container.name, format!("sidecar-{}", i));
         assert_eq!(
-            init_containers[i].restart_policy,
+            container.restart_policy,
             Some("Always".to_string())
         );
     }

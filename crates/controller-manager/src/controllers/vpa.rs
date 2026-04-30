@@ -19,6 +19,7 @@ use tracing::{debug, error, info, warn};
 pub struct VerticalPodAutoscalerController<S: Storage> {
     storage: Arc<S>,
     /// Historical resource usage data: pod_key -> container_name -> usage samples
+    #[allow(clippy::type_complexity)]
     usage_history: Arc<tokio::sync::RwLock<HashMap<String, HashMap<String, Vec<ResourceUsage>>>>>,
     /// How many samples to keep for recommendations
     history_size: usize,
@@ -28,6 +29,7 @@ pub struct VerticalPodAutoscalerController<S: Storage> {
 struct ResourceUsage {
     cpu_millicores: i64,
     memory_bytes: i64,
+    #[allow(dead_code)]
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
@@ -140,6 +142,7 @@ impl<S: Storage + 'static> VerticalPodAutoscalerController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         debug!("Reconciling all VPAs");
 

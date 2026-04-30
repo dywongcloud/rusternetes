@@ -127,6 +127,7 @@ impl<S: Storage + 'static> VolumeSnapshotController<S> {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn reconcile_all(&self) -> Result<()> {
         // Get all VolumeSnapshots
         let snapshots: Vec<VolumeSnapshot> =

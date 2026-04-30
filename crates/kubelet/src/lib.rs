@@ -1,5 +1,7 @@
+#[allow(dead_code)]
 pub mod cni;
 pub mod config;
+#[allow(dead_code)]
 pub mod eviction;
 pub mod kubelet;
 pub mod runtime;
