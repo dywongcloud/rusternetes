@@ -6,6 +6,12 @@
 
 This isn't a wrapper around the Go codebase or a partial mock. Every component — API server, scheduler, controller manager, kubelet, kube-proxy — is written from scratch in Rust, implementing the actual Kubernetes API surface, wire format, and behavioral semantics.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dywongcloud/rusternetes/refs/heads/main/logo.png" alt="Rūsternetes Logo" width="200"/>
+</p>
+
+---
+
 ## Web Console
 
 Rūsternetes includes a built-in web console with real-time cluster topology visualization, live metrics, pod log streaming, and full resource management. It deploys automatically — embedded in the API server, no separate installation.
