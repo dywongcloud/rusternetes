@@ -1,4 +1,4 @@
-# <img src="https://raw.githubusercontent.com/dywongcloud/rusternetes/refs/heads/main/logo.png" alt="Rūsternetes Logo" width="36" style="vertical-align: middle; margin-right: 8px;" /> Rūsternetes
+# <img src="https://raw.githubusercontent.com/dywongcloud/rusternetes/refs/heads/main/logo.png" alt="Rūsternetes Logo" width="100" style="vertical-align: middle; margin-right: 8px;" /> Rūsternetes
 
 **A ground-up reimplementation of Kubernetes in Rust.**
 
