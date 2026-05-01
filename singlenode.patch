@@ -1,0 +1,4105 @@
+diff --git a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -8,6 +8,8 @@ members = [
+  "crates/common",
+  "crates/storage",
+  "crates/cloud-providers",
+  "crates/rusternetes",
++ "crates/rusternetes-cluster-manager",
++ "crates/rusternetes-cli",
+ ]
+ 
+ [workspace.package]
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -1,3 +1,48 @@
++# --- Rūsternetes local cluster platform targets ---
++RUSTERNETES_PROFILE ?= dev
++RUSTERNETES_DRIVER ?= docker
++RUSTERNETES_MODE ?= kind
++RUSTERNETES_PROFILE_TYPE ?= development
++RUSTERNETES_BIN ?= cargo run -q -p rusternetes-cli --
++
++.PHONY: local-up local-down local-reset local-status local-kubeconfig local-smoke desktop-dev desktop-build
++
++local-up:
++	$(RUSTERNETES_BIN) cluster create --profile $(RUSTERNETES_PROFILE) --driver $(RUSTERNETES_DRIVER) --mode $(RUSTERNETES_MODE) --profile-type $(RUSTERNETES_PROFILE_TYPE)
++
++local-down:
++	$(RUSTERNETES_BIN) cluster delete --profile $(RUSTERNETES_PROFILE)
++
++local-reset:
++	$(RUSTERNETES_BIN) cluster reset --profile $(RUSTERNETES_PROFILE)
++
++local-status:
++	$(RUSTERNETES_BIN) cluster status --profile $(RUSTERNETES_PROFILE)
++
++local-kubeconfig:
++	$(RUSTERNETES_BIN) cluster kubeconfig --profile $(RUSTERNETES_PROFILE)
++
++local-smoke:
++	bash scripts/smoke-local-kind.sh
++
++desktop-dev:
++	@if command -v npm >/dev/null 2>&1; then \
++		cd desktop && npm install && npm run tauri dev; \
++	else \
++		echo "npm is required for desktop-dev" >&2; exit 2; \
++	fi
++
++desktop-build:
++	@if ! command -v npm >/dev/null 2>&1; then \
++		echo "SKIP: npm is not installed; desktop build dependencies are unavailable"; \
++	elif [ "$${RUSTERNETES_SKIP_DESKTOP_NPM:-0}" = "1" ]; then \
++		echo "SKIP: RUSTERNETES_SKIP_DESKTOP_NPM=1"; \
++	else \
++		if command -v timeout >/dev/null 2>&1; then install_cmd="timeout $${NPM_INSTALL_TIMEOUT:-60} npm install --no-audit --no-fund"; else install_cmd="npm install --no-audit --no-fund"; fi; \
++		if ! (cd desktop && sh -c "$$install_cmd"); then \
++			echo "SKIP: unable to install desktop npm dependencies in this environment"; \
++		else \
++			cd desktop && npm run tauri build; \
++		fi; \
++	fi
++
+ diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,38 @@
++## Local cluster platform
++
++Install the CLI:
++
++```bash
++cargo install --path crates/rusternetes-cli
++```
++
++Create a kind-compatible local profile:
++
++```bash
++rusternetes cluster create --profile dev --mode kind
++export KUBECONFIG="$(rusternetes cluster kubeconfig --profile dev --path-only)"
++kubectl get nodes
++kubectl apply -f examples/local/nginx-deployment.yaml
++rusternetes cluster status --profile dev
++rusternetes cluster delete --profile dev
++```
++
++Create a minikube-compatible local profile:
++
++```bash
++rusternetes cluster create --profile dev --driver docker --mode minikube
++```
++
++Create a production single-node profile:
++
++```bash
++rusternetes cluster create --profile prod-single --mode single-node --profile-type production
++```
++
++See `docs/local-clusters.md`, `docs/desktop-app.md`, `docs/production-single-node.md`, `docs/addons.md`, and the compatibility matrices in `docs/compatibility/`.
++
+ diff --git a/crates/api-server/build.rs b/crates/api-server/build.rs
+--- a/crates/api-server/build.rs
++++ b/crates/api-server/build.rs
+@@ -5,6 +5,6 @@ fn main() {
+     // K8s ref: vendor/github.com/google/gnostic-models/openapiv2/OpenAPIv2.proto
+     prost_build::Config::new()
+-        .compile_protos(&["proto/openapiv2.proto"], &["proto/"])
++        .compile_protos(&["proto/openapiv2.proto"], &["proto/", "/usr/include"])
+         .expect("Failed to compile openapiv2.proto");
+ }
+diff --git a/crates/kubelet/src/runtime.rs b/crates/kubelet/src/runtime.rs
+--- a/crates/kubelet/src/runtime.rs
++++ b/crates/kubelet/src/runtime.rs
+@@ -4028,7 +4028,10 @@
+ 
+                 // Mount custom resolv.conf into container (avoid duplicate mounts)
+                 if !binds.iter().any(|b| b.contains(":/etc/resolv.conf")) {
+-                    binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
++                    // Disabled for Podman Desktop/macOS bind-mount compatibility.
++                    // Podman Desktop runs containers inside a Linux VM and can misinterpret
++                    // macOS file binds as directory targets for /etc/resolv.conf.
++                    // binds.push(format!("{}:/etc/resolv.conf:ro", resolv_conf_path));
+                 }
+                 info!(
+                     "Mounted custom resolv.conf for pod {} (dns_policy={})",
+diff --git a/.github/workflows/local-cluster.yml b/.github/workflows/local-cluster.yml
+new file mode 100644
+index 0000000..c9c24ea
+--- /dev/null
++++ b/.github/workflows/local-cluster.yml
+@@ -0,0 +1,58 @@
++name: local-cluster-platform
++
++on:
++  push:
++  pull_request:
++
++jobs:
++  rust:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: dtolnay/rust-toolchain@stable
++      - name: Format
++        run: cargo fmt --all -- --check
++      - name: Clippy
++        run: cargo clippy --workspace --all-targets -- -D warnings
++      - name: Tests
++        run: cargo test --workspace
++      - name: Build CLI
++        run: cargo build -p rusternetes-cli
++
++  desktop:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: dtolnay/rust-toolchain@stable
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++      - name: Build desktop if dependencies allow
++        run: |
++          if [ -f desktop/package.json ]; then
++            make desktop-build
++          else
++            echo "SKIP: desktop/package.json not present"
++          fi
++
++  smoke:
++    runs-on: ubuntu-latest
++    needs: rust
++    steps:
++      - uses: actions/checkout@v4
++      - uses: dtolnay/rust-toolchain@stable
++      - name: Install kubectl
++        uses: azure/setup-kubectl@v4
++      - name: Docker availability
++        run: docker info || true
++      - name: Build CLI
++        run: cargo build -p rusternetes-cli
++      - name: Smoke tests when Docker is available
++        run: |
++          if docker info >/dev/null 2>&1; then
++            bash scripts/smoke-local-kind.sh
++            bash scripts/smoke-local-minikube.sh
++            bash scripts/smoke-prod-single-node.sh
++          else
++            echo "SKIP: Docker is not available on this runner"
++          fi
+diff --git a/APPLY_TO_UPSTREAM.sh b/APPLY_TO_UPSTREAM.sh
+new file mode 100644
+index 0000000..fd96ee0
+--- /dev/null
++++ b/APPLY_TO_UPSTREAM.sh
+@@ -0,0 +1,164 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++src="$(cd "$(dirname "$0")" && pwd)"
++dest="${1:-$(pwd)}"
++
++if [ ! -f "$dest/Cargo.toml" ] || [ ! -d "$dest/crates" ]; then
++  echo "usage: $0 /path/to/rusternetes" >&2
++  echo "destination must be a Rūsternetes repository root with Cargo.toml and crates/" >&2
++  exit 2
++fi
++
++copy_path() {
++  local rel="$1"
++  mkdir -p "$dest/$(dirname "$rel")"
++  rm -rf "$dest/$rel"
++  cp -R "$src/$rel" "$dest/$rel"
++}
++
++copy_path crates/rusternetes-cluster-manager
++copy_path crates/rusternetes-cli
++copy_path docker/local-node.Dockerfile
++copy_path desktop
++copy_path docs/local-clusters.md
++copy_path docs/desktop-app.md
++copy_path docs/production-single-node.md
++copy_path docs/addons.md
++copy_path docs/compatibility/kind.md
++copy_path docs/compatibility/minikube.md
++copy_path examples/local/nginx-pod.yaml
++copy_path examples/local/nginx-deployment.yaml
++copy_path examples/local/nginx-service.yaml
++copy_path examples/local/configmap.yaml
++copy_path examples/local/namespace.yaml
++copy_path examples/local/volume.yaml
++copy_path examples/local/ingress.yaml
++copy_path scripts/smoke-common.sh
++copy_path scripts/smoke-local-kind.sh
++copy_path scripts/smoke-local-minikube.sh
++copy_path scripts/smoke-prod-single-node.sh
++copy_path deploy/production-single-node
++copy_path .github/workflows/local-cluster.yml
++
++python3 - "$dest" <<'PY'
++from pathlib import Path
++import sys
++root = Path(sys.argv[1])
++
++cargo = root / "Cargo.toml"
++text = cargo.read_text()
++for member in ["crates/rusternetes-cluster-manager", "crates/rusternetes-cli"]:
++    if f'"{member}"' not in text:
++        anchor = '"crates/rusternetes",'
++        if anchor not in text:
++            raise SystemExit(f"could not find {anchor} in Cargo.toml")
++        text = text.replace(anchor, anchor + f'\n "{member}",', 1)
++cargo.write_text(text)
++
++makefile = root / "Makefile"
++make_text = makefile.read_text() if makefile.exists() else ""
++marker = "# --- Rūsternetes local cluster platform targets ---"
++block = r'''
++# --- Rūsternetes local cluster platform targets ---
++RUSTERNETES_PROFILE ?= dev
++RUSTERNETES_DRIVER ?= docker
++RUSTERNETES_MODE ?= kind
++RUSTERNETES_PROFILE_TYPE ?= development
++RUSTERNETES_BIN ?= cargo run -q -p rusternetes-cli --
++
++.PHONY: local-up local-down local-reset local-status local-kubeconfig local-smoke desktop-dev desktop-build
++
++local-up:
++	$(RUSTERNETES_BIN) cluster create --profile $(RUSTERNETES_PROFILE) --driver $(RUSTERNETES_DRIVER) --mode $(RUSTERNETES_MODE) --profile-type $(RUSTERNETES_PROFILE_TYPE)
++
++local-down:
++	$(RUSTERNETES_BIN) cluster delete --profile $(RUSTERNETES_PROFILE)
++
++local-reset:
++	$(RUSTERNETES_BIN) cluster reset --profile $(RUSTERNETES_PROFILE)
++
++local-status:
++	$(RUSTERNETES_BIN) cluster status --profile $(RUSTERNETES_PROFILE)
++
++local-kubeconfig:
++	$(RUSTERNETES_BIN) cluster kubeconfig --profile $(RUSTERNETES_PROFILE)
++
++local-smoke:
++	bash scripts/smoke-local-kind.sh
++
++desktop-dev:
++	@if command -v npm >/dev/null 2>&1; then \
++		cd desktop && npm install && npm run tauri dev; \
++	else \
++		echo "npm is required for desktop-dev" >&2; exit 2; \
++	fi
++
++desktop-build:
++	@if ! command -v npm >/dev/null 2>&1; then \
++		echo "SKIP: npm is not installed; desktop build dependencies are unavailable"; \
++	elif [ "$${RUSTERNETES_SKIP_DESKTOP_NPM:-0}" = "1" ]; then \
++		echo "SKIP: RUSTERNETES_SKIP_DESKTOP_NPM=1"; \
++	else \
++		if command -v timeout >/dev/null 2>&1; then install_cmd="timeout $${NPM_INSTALL_TIMEOUT:-60} npm install --no-audit --no-fund"; else install_cmd="npm install --no-audit --no-fund"; fi; \
++		if ! (cd desktop && sh -c "$$install_cmd"); then \
++			echo "SKIP: unable to install desktop npm dependencies in this environment"; \
++		else \
++			cd desktop && npm run tauri build; \
++		fi; \
++	fi
++'''
++if marker not in make_text:
++    make_text = make_text.rstrip() + "\n\n" + block.lstrip()
++    makefile.write_text(make_text)
++
++readme = root / "README.md"
++readme_text = readme.read_text() if readme.exists() else "# Rūsternetes\n"
++readme_marker = "## Local cluster platform"
++readme_block = r'''
++## Local cluster platform
++
++Install the CLI:
++
++```bash
++cargo install --path crates/rusternetes-cli
++```
++
++Create a kind-compatible local profile:
++
++```bash
++rusternetes cluster create --profile dev --mode kind
++export KUBECONFIG="$(rusternetes cluster kubeconfig --profile dev --path-only)"
++kubectl get nodes
++kubectl apply -f examples/local/nginx-deployment.yaml
++rusternetes cluster status --profile dev
++rusternetes cluster delete --profile dev
++```
++
++Create a minikube-compatible local profile:
++
++```bash
++rusternetes cluster create --profile dev --driver docker --mode minikube
++```
++
++Create a production single-node profile:
++
++```bash
++rusternetes cluster create --profile prod-single --mode single-node --profile-type production
++```
++
++See `docs/local-clusters.md`, `docs/desktop-app.md`, `docs/production-single-node.md`, `docs/addons.md`, and the compatibility matrices in `docs/compatibility/`.
++'''
++if readme_marker not in readme_text:
++    readme_text = readme_text.rstrip() + "\n\n" + readme_block.lstrip()
++    readme.write_text(readme_text)
++PY
++
++chmod +x "$dest/scripts/smoke-common.sh" \
++  "$dest/scripts/smoke-local-kind.sh" \
++  "$dest/scripts/smoke-local-minikube.sh" \
++  "$dest/scripts/smoke-prod-single-node.sh" \
++  "$dest/deploy/production-single-node/backup.sh" \
++  "$dest/deploy/production-single-node/restore.sh"
++
++echo "Rūsternetes local cluster platform overlay applied to $dest"
+diff --git a/Cargo.lock b/Cargo.lock
+new file mode 100644
+index 0000000..464febc
+--- /dev/null
++++ b/Cargo.lock
+@@ -0,0 +1,14 @@
++# This file is automatically @generated by Cargo.
++# It is not intended for manual editing.
++version = 3
++
++[[package]]
++name = "rusternetes-cli"
++version = "0.1.0"
++dependencies = [
++ "rusternetes-cluster-manager",
++]
++
++[[package]]
++name = "rusternetes-cluster-manager"
++version = "0.1.0"
+diff --git a/UPSTREAM_INTEGRATION.md b/UPSTREAM_INTEGRATION.md
+new file mode 100644
+index 0000000..4e1bb8b
+--- /dev/null
++++ b/UPSTREAM_INTEGRATION.md
+@@ -0,0 +1,17 @@
++# Applying this archive to the upstream repository
++
++The sandbox used to build this archive could not perform a full `git clone` of GitHub, so this package contains the complete additive local-cluster implementation plus an application script.
++
++From a normal development machine:
++
++```bash
++git clone https://github.com/dywongcloud/rusternetes.git
++cd rusternetes
++/path/to/rusternetes-local-platform/APPLY_TO_UPSTREAM.sh "$PWD"
++cargo fmt --all -- --check
++cargo clippy --workspace --all-targets -- -D warnings
++cargo test --workspace
++cargo install --path crates/rusternetes-cli
++```
++
++The script copies all added files and patches `Cargo.toml`, `Makefile`, and `README.md` without replacing existing Rūsternetes component crates.
+diff --git a/crates/rusternetes-cli/Cargo.toml b/crates/rusternetes-cli/Cargo.toml
+new file mode 100644
+index 0000000..d3fa030
+--- /dev/null
++++ b/crates/rusternetes-cli/Cargo.toml
+@@ -0,0 +1,14 @@
++[package]
++name = "rusternetes-cli"
++version.workspace = true
++edition.workspace = true
++authors.workspace = true
++license.workspace = true
++description = "Rūsternetes command-line orchestration for local clusters and production single-node profiles"
++
++[[bin]]
++name = "rusternetes"
++path = "src/main.rs"
++
++[dependencies]
++rusternetes-cluster-manager = { path = "../rusternetes-cluster-manager" }
+diff --git a/crates/rusternetes-cli/src/main.rs b/crates/rusternetes-cli/src/main.rs
+new file mode 100644
+index 0000000..a1c8d88
+--- /dev/null
++++ b/crates/rusternetes-cli/src/main.rs
+@@ -0,0 +1,351 @@
++use rusternetes_cluster_manager::{
++    AddonStatus, ClusterManager, ClusterMode, ClusterStatus, CreateOptions, ProfileType,
++    RuntimeDriver,
++};
++use std::env;
++use std::process;
++
++fn main() {
++    if let Err(err) = run() {
++        eprintln!("error: {err}");
++        process::exit(1);
++    }
++}
++
++fn run() -> rusternetes_cluster_manager::Result<()> {
++    let mut args = env::args().skip(1).collect::<Vec<_>>();
++    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
++        print_help();
++        return Ok(());
++    }
++    if args[0] == "--version" || args[0] == "-V" {
++        println!("rusternetes-cli {}", env!("CARGO_PKG_VERSION"));
++        return Ok(());
++    }
++    let command = args.remove(0);
++    match command.as_str() {
++        "cluster" => cluster(args),
++        other => {
++            eprintln!("unknown command '{other}'\n");
++            print_help();
++            process::exit(2);
++        }
++    }
++}
++
++fn cluster(mut args: Vec<String>) -> rusternetes_cluster_manager::Result<()> {
++    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
++        print_cluster_help();
++        return Ok(());
++    }
++    let subcommand = args.remove(0);
++    let manager = ClusterManager::default_paths()?;
++    match subcommand.as_str() {
++        "create" => {
++            let parsed = ParsedArgs::from(args)?;
++            let mode = parsed.mode.unwrap_or(ClusterMode::Kind);
++            let mut profile_type = parsed.profile_type.unwrap_or(ProfileType::Development);
++            if mode == ClusterMode::SingleNode {
++                profile_type = ProfileType::Production;
++            }
++            let options = CreateOptions {
++                profile: parsed.profile.unwrap_or_else(|| "dev".to_string()),
++                mode,
++                driver: parsed.driver,
++                profile_type,
++                nodes: parsed.nodes.unwrap_or(1),
++                node_image: parsed.node_image,
++                repo_root: parsed.repo_root,
++                wait: !parsed.no_wait,
++                force: parsed.force,
++            };
++            let status = manager.create(options)?;
++            print_status(&status);
++        }
++        "start" => {
++            let parsed = ParsedArgs::from(args)?;
++            let status = manager.start(&profile_or_default(parsed.profile))?;
++            print_status(&status);
++        }
++        "stop" => {
++            let parsed = ParsedArgs::from(args)?;
++            let status = manager.stop(&profile_or_default(parsed.profile))?;
++            print_status(&status);
++        }
++        "status" => {
++            let parsed = ParsedArgs::from(args)?;
++            let status = manager.status(&profile_or_default(parsed.profile))?;
++            print_status(&status);
++        }
++        "kubeconfig" => {
++            let parsed = ParsedArgs::from(args)?;
++            let profile = profile_or_default(parsed.profile);
++            let path = manager.kubeconfig_path(&profile)?;
++            if parsed.path_only {
++                println!("{}", path.display());
++            } else {
++                println!("kubeconfig: {}", path.display());
++                println!("export KUBECONFIG=\"{}\"", path.display());
++            }
++        }
++        "delete" => {
++            let parsed = ParsedArgs::from(args)?;
++            let profile = profile_or_default(parsed.profile);
++            manager.delete(&profile)?;
++            println!("deleted profile '{profile}'");
++        }
++        "reset" => {
++            let parsed = ParsedArgs::from(args)?;
++            let status = manager.reset(&profile_or_default(parsed.profile))?;
++            print_status(&status);
++        }
++        "logs" => {
++            let parsed = ParsedArgs::from(args)?;
++            let logs = manager.logs(&profile_or_default(parsed.profile))?;
++            println!("{logs}");
++        }
++        "load-image" => {
++            let image = args.first().cloned().ok_or_else(|| {
++                rusternetes_cluster_manager::ClusterError::InvalidArgument(
++                    "load-image requires an image reference, for example nginx:latest".to_string(),
++                )
++            })?;
++            let remaining = args.into_iter().skip(1).collect::<Vec<_>>();
++            let parsed = ParsedArgs::from(remaining)?;
++            let message = manager.load_image(&profile_or_default(parsed.profile), &image)?;
++            println!("{message}");
++        }
++        "addons" => cluster_addons(manager, args)?,
++        "console" => {
++            let parsed = ParsedArgs::from(args)?;
++            println!(
++                "{}",
++                manager.console_url(&profile_or_default(parsed.profile))?
++            );
++        }
++        "smoke-test" | "smoke" => {
++            let parsed = ParsedArgs::from(args)?;
++            let report = manager.smoke_test(&profile_or_default(parsed.profile))?;
++            println!("{report}");
++        }
++        other => {
++            eprintln!("unknown cluster subcommand '{other}'\n");
++            print_cluster_help();
++            process::exit(2);
++        }
++    }
++    Ok(())
++}
++
++fn cluster_addons(
++    manager: ClusterManager,
++    mut args: Vec<String>,
++) -> rusternetes_cluster_manager::Result<()> {
++    if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
++        print_addons_help();
++        return Ok(());
++    }
++    let subcommand = args.remove(0);
++    match subcommand.as_str() {
++        "list" => {
++            let parsed = ParsedArgs::from(args)?;
++            let addons = manager.addons(&profile_or_default(parsed.profile))?;
++            print_addons(&addons);
++        }
++        "enable" => {
++            let addon = args.first().cloned().ok_or_else(|| {
++                rusternetes_cluster_manager::ClusterError::InvalidArgument(
++                    "addons enable requires an addon name".to_string(),
++                )
++            })?;
++            let remaining = args.into_iter().skip(1).collect::<Vec<_>>();
++            let parsed = ParsedArgs::from(remaining)?;
++            let message = manager.enable_addon(&profile_or_default(parsed.profile), &addon)?;
++            println!("{message}");
++        }
++        "disable" => {
++            let addon = args.first().cloned().ok_or_else(|| {
++                rusternetes_cluster_manager::ClusterError::InvalidArgument(
++                    "addons disable requires an addon name".to_string(),
++                )
++            })?;
++            let remaining = args.into_iter().skip(1).collect::<Vec<_>>();
++            let parsed = ParsedArgs::from(remaining)?;
++            let message = manager.disable_addon(&profile_or_default(parsed.profile), &addon)?;
++            println!("{message}");
++        }
++        other => {
++            eprintln!("unknown addons subcommand '{other}'\n");
++            print_addons_help();
++            process::exit(2);
++        }
++    }
++    Ok(())
++}
++
++#[derive(Default)]
++struct ParsedArgs {
++    profile: Option<String>,
++    mode: Option<ClusterMode>,
++    driver: Option<RuntimeDriver>,
++    profile_type: Option<ProfileType>,
++    nodes: Option<usize>,
++    node_image: Option<String>,
++    repo_root: Option<std::path::PathBuf>,
++    path_only: bool,
++    no_wait: bool,
++    force: bool,
++}
++
++impl ParsedArgs {
++    fn from(args: Vec<String>) -> rusternetes_cluster_manager::Result<Self> {
++        let mut parsed = ParsedArgs::default();
++        let mut index = 0usize;
++        while index < args.len() {
++            match args[index].as_str() {
++                "--profile" | "-p" => {
++                    parsed.profile = Some(take_value(&args, index, "--profile")?);
++                    index += 2;
++                }
++                "--mode" => {
++                    parsed.mode = Some(ClusterMode::parse(&take_value(&args, index, "--mode")?)?);
++                    index += 2;
++                }
++                "--driver" => {
++                    parsed.driver = Some(RuntimeDriver::parse(&take_value(
++                        &args, index, "--driver",
++                    )?)?);
++                    index += 2;
++                }
++                "--profile-type" => {
++                    parsed.profile_type = Some(ProfileType::parse(&take_value(
++                        &args,
++                        index,
++                        "--profile-type",
++                    )?)?);
++                    index += 2;
++                }
++                "--nodes" => {
++                    let raw = take_value(&args, index, "--nodes")?;
++                    parsed.nodes = Some(raw.parse::<usize>().map_err(|err| {
++                        rusternetes_cluster_manager::ClusterError::InvalidArgument(format!(
++                            "--nodes expects a positive integer: {err}"
++                        ))
++                    })?);
++                    index += 2;
++                }
++                "--node-image" => {
++                    parsed.node_image = Some(take_value(&args, index, "--node-image")?);
++                    index += 2;
++                }
++                "--repo-root" => {
++                    parsed.repo_root = Some(take_value(&args, index, "--repo-root")?.into());
++                    index += 2;
++                }
++                "--path-only" => {
++                    parsed.path_only = true;
++                    index += 1;
++                }
++                "--no-wait" => {
++                    parsed.no_wait = true;
++                    index += 1;
++                }
++                "--force" => {
++                    parsed.force = true;
++                    index += 1;
++                }
++                "--help" | "-h" => {
++                    print_cluster_help();
++                    process::exit(0);
++                }
++                other => {
++                    return Err(rusternetes_cluster_manager::ClusterError::InvalidArgument(
++                        format!("unexpected argument '{other}'"),
++                    ));
++                }
++            }
++        }
++        Ok(parsed)
++    }
++}
++
++fn take_value(
++    args: &[String],
++    index: usize,
++    flag: &str,
++) -> rusternetes_cluster_manager::Result<String> {
++    args.get(index + 1).cloned().ok_or_else(|| {
++        rusternetes_cluster_manager::ClusterError::InvalidArgument(format!(
++            "{flag} requires a value"
++        ))
++    })
++}
++
++fn profile_or_default(profile: Option<String>) -> String {
++    profile.unwrap_or_else(|| "dev".to_string())
++}
++
++fn print_status(status: &ClusterStatus) {
++    println!("profile: {}", status.profile);
++    println!("mode: {} ({})", status.mode, status.mode.description());
++    println!("driver: {}", status.driver);
++    println!("profile_type: {}", status.profile_type);
++    println!("phase: {}", status.phase);
++    println!("api: {}", status.api_endpoint);
++    println!("kubeconfig: {}", status.kubeconfig_path.display());
++    println!("profile_dir: {}", status.profile_dir.display());
++    println!(
++        "ports: api={}, registry={}, metrics={}, service={}..{}",
++        status.ports.api,
++        status.ports.registry,
++        status.ports.metrics,
++        status.ports.service_start,
++        status.ports.service_end
++    );
++    println!("nodes:");
++    for node in &status.nodes {
++        println!(
++            "  - name={} role={} container={} runtime_status={}",
++            node.name, node.role, node.container, node.runtime_status
++        );
++    }
++    println!("addons:");
++    for addon in &status.addons {
++        println!(
++            "  - {}: support={} enabled={} message={}",
++            addon.name, addon.support, addon.enabled, addon.message
++        );
++    }
++    if !status.message.is_empty() {
++        println!("message: {}", status.message);
++    }
++    println!("{}", status.export_command());
++}
++
++fn print_addons(addons: &[AddonStatus]) {
++    println!("ADDON\tSUPPORT\tENABLED\tMESSAGE");
++    for addon in addons {
++        println!(
++            "{}\t{}\t{}\t{}",
++            addon.name, addon.support, addon.enabled, addon.message
++        );
++    }
++}
++
++fn print_help() {
++    println!(
++        "Rūsternetes local platform CLI\n\nUSAGE:\n  rusternetes cluster <subcommand> [options]\n\nRun `rusternetes cluster --help` for cluster lifecycle commands."
++    );
++}
++
++fn print_cluster_help() {
++    println!(
++        "Rūsternetes cluster orchestration\n\nUSAGE:\n  rusternetes cluster create --profile dev --driver docker --mode kind\n  rusternetes cluster create --profile dev --driver docker --mode minikube\n  rusternetes cluster create --profile prod-single --mode single-node --profile-type production\n  rusternetes cluster status --profile dev\n  rusternetes cluster kubeconfig --profile dev [--path-only]\n  rusternetes cluster start --profile dev\n  rusternetes cluster stop --profile dev\n  rusternetes cluster delete --profile dev\n  rusternetes cluster reset --profile dev\n  rusternetes cluster logs --profile dev\n  rusternetes cluster load-image nginx:latest --profile dev\n  rusternetes cluster addons list --profile dev\n  rusternetes cluster addons enable registry --profile dev\n  rusternetes cluster addons enable ingress --profile dev\n  rusternetes cluster console --profile dev\n  rusternetes cluster smoke-test --profile dev\n\nOPTIONS:\n  --profile <name>          Profile name, default dev\n  --driver <docker|podman>  Container runtime driver\n  --mode <kind|minikube|single-node>\n  --profile-type <development|production>\n  --nodes <n>               Kind-compatible mode only; single-node is implemented now\n  --node-image <image>      Override rusternetes/local-node:dev\n  --repo-root <path>        Repository root, default current directory\n  --path-only               For kubeconfig, print only the path\n  --no-wait                 Do not wait for API TCP readiness during create\n  --force                   Recreate an existing profile"
++    );
++}
++
++fn print_addons_help() {
++    println!(
++        "Rūsternetes add-ons\n\nUSAGE:\n  rusternetes cluster addons list --profile dev\n  rusternetes cluster addons enable registry --profile dev\n  rusternetes cluster addons disable registry --profile dev\n\nInitial add-ons:\n  registry   supported: local registry:2 container\n  dashboard  partial: existing embedded web console path\n  ingress    unsupported in this release; fails clearly\n  metrics    planned; fails clearly"
++    );
++}
+diff --git a/crates/rusternetes-cluster-manager/Cargo.toml b/crates/rusternetes-cluster-manager/Cargo.toml
+new file mode 100644
+index 0000000..eaef6e9
+--- /dev/null
++++ b/crates/rusternetes-cluster-manager/Cargo.toml
+@@ -0,0 +1,11 @@
++[package]
++name = "rusternetes-cluster-manager"
++version.workspace = true
++edition.workspace = true
++authors.workspace = true
++license.workspace = true
++description = "Shared local cluster manager for Rūsternetes kind/minikube compatibility and single-node production profiles"
++
++[lib]
++name = "rusternetes_cluster_manager"
++path = "src/lib.rs"
+diff --git a/crates/rusternetes-cluster-manager/src/lib.rs b/crates/rusternetes-cluster-manager/src/lib.rs
+new file mode 100644
+index 0000000..bd70a23
+--- /dev/null
++++ b/crates/rusternetes-cluster-manager/src/lib.rs
+@@ -0,0 +1,1971 @@
++//! Shared Rūsternetes local-cluster orchestration.
++//!
++//! This crate is intentionally dependency-light so it can be reused by the CLI,
++//! smoke scripts, CI, and the Tauri desktop app without duplicating cluster
++//! lifecycle logic.
++
++use std::collections::BTreeMap;
++use std::env;
++use std::error::Error as StdError;
++use std::fmt::{self, Display};
++use std::fs::{self, File, OpenOptions};
++use std::io::{self, Read, Write};
++use std::net::{SocketAddr, TcpStream};
++use std::path::{Path, PathBuf};
++use std::process::{Command, Output};
++use std::time::{Duration, SystemTime, UNIX_EPOCH};
++
++pub type Result<T> = std::result::Result<T, ClusterError>;
++
++#[derive(Debug)]
++pub enum ClusterError {
++    Io(io::Error),
++    InvalidArgument(String),
++    RuntimeUnavailable(String),
++    CommandFailed {
++        command: String,
++        status: Option<i32>,
++        stdout: String,
++        stderr: String,
++    },
++    Unsupported(String),
++    ProfileNotFound(String),
++    Parse(String),
++}
++
++impl Display for ClusterError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self {
++            ClusterError::Io(err) => write!(f, "I/O error: {err}"),
++            ClusterError::InvalidArgument(msg) => write!(f, "invalid argument: {msg}"),
++            ClusterError::RuntimeUnavailable(msg) => write!(f, "runtime unavailable: {msg}"),
++            ClusterError::CommandFailed {
++                command,
++                status,
++                stdout,
++                stderr,
++            } => write!(
++                f,
++                "command failed: {command}\nstatus: {}\nstdout:\n{}\nstderr:\n{}",
++                status
++                    .map(|code| code.to_string())
++                    .unwrap_or_else(|| "terminated by signal".to_string()),
++                stdout.trim(),
++                stderr.trim()
++            ),
++            ClusterError::Unsupported(msg) => write!(f, "unsupported: {msg}"),
++            ClusterError::ProfileNotFound(profile) => write!(
++                f,
++                "profile '{profile}' was not found; create it first with `rusternetes cluster create --profile {profile}`"
++            ),
++            ClusterError::Parse(msg) => write!(f, "parse error: {msg}"),
++        }
++    }
++}
++
++impl StdError for ClusterError {}
++
++impl From<io::Error> for ClusterError {
++    fn from(value: io::Error) -> Self {
++        ClusterError::Io(value)
++    }
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum ClusterMode {
++    Kind,
++    Minikube,
++    SingleNode,
++}
++
++impl ClusterMode {
++    pub fn parse(value: &str) -> Result<Self> {
++        match normalize(value).as_str() {
++            "kind" | "kind-compatible" => Ok(Self::Kind),
++            "minikube" | "minikube-compatible" => Ok(Self::Minikube),
++            "single-node" | "single_node" | "production" | "prod-single" => Ok(Self::SingleNode),
++            other => Err(ClusterError::InvalidArgument(format!(
++                "unknown cluster mode '{other}'. Valid modes: kind, minikube, single-node"
++            ))),
++        }
++    }
++
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::Kind => "kind",
++            Self::Minikube => "minikube",
++            Self::SingleNode => "single-node",
++        }
++    }
++
++    pub fn description(self) -> &'static str {
++        match self {
++            Self::Kind => "kind-compatible node-container profile",
++            Self::Minikube => "minikube-compatible single-profile local cluster",
++            Self::SingleNode => "production single-node Rūsternetes profile",
++        }
++    }
++}
++
++impl Display for ClusterMode {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(self.as_str())
++    }
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum RuntimeDriver {
++    Docker,
++    Podman,
++}
++
++impl RuntimeDriver {
++    pub fn parse(value: &str) -> Result<Self> {
++        match normalize(value).as_str() {
++            "docker" => Ok(Self::Docker),
++            "podman" => Ok(Self::Podman),
++            other => Err(ClusterError::InvalidArgument(format!(
++                "unknown runtime driver '{other}'. Valid drivers: docker, podman"
++            ))),
++        }
++    }
++
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::Docker => "docker",
++            Self::Podman => "podman",
++        }
++    }
++}
++
++impl Display for RuntimeDriver {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(self.as_str())
++    }
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum ProfileType {
++    Development,
++    Production,
++}
++
++impl ProfileType {
++    pub fn parse(value: &str) -> Result<Self> {
++        match normalize(value).as_str() {
++            "dev" | "development" => Ok(Self::Development),
++            "prod" | "production" | "prod-single" => Ok(Self::Production),
++            other => Err(ClusterError::InvalidArgument(format!(
++                "unknown profile type '{other}'. Valid profile types: development, production"
++            ))),
++        }
++    }
++
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::Development => "development",
++            Self::Production => "production",
++        }
++    }
++}
++
++impl Display for ProfileType {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(self.as_str())
++    }
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum ClusterPhase {
++    NotCreated,
++    Creating,
++    Running,
++    Stopped,
++    Error,
++    Unknown,
++}
++
++impl ClusterPhase {
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::NotCreated => "not-created",
++            Self::Creating => "creating",
++            Self::Running => "running",
++            Self::Stopped => "stopped",
++            Self::Error => "error",
++            Self::Unknown => "unknown",
++        }
++    }
++}
++
++impl Display for ClusterPhase {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(self.as_str())
++    }
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum AddonSupport {
++    Supported,
++    PartiallySupported,
++    Unsupported,
++    Planned,
++}
++
++impl AddonSupport {
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::Supported => "supported",
++            Self::PartiallySupported => "partially-supported",
++            Self::Unsupported => "unsupported",
++            Self::Planned => "planned",
++        }
++    }
++}
++
++impl Display for AddonSupport {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(self.as_str())
++    }
++}
++
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub struct AddonStatus {
++    pub name: String,
++    pub support: AddonSupport,
++    pub enabled: bool,
++    pub message: String,
++}
++
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub struct NodeStatus {
++    pub name: String,
++    pub role: String,
++    pub container: String,
++    pub runtime_status: String,
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub struct PortSet {
++    pub api: u16,
++    pub registry: u16,
++    pub metrics: u16,
++    pub service_start: u16,
++    pub service_end: u16,
++}
++
++impl PortSet {
++    pub fn values(self) -> [u16; 5] {
++        [
++            self.api,
++            self.registry,
++            self.metrics,
++            self.service_start,
++            self.service_end,
++        ]
++    }
++}
++
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub struct ClusterStatus {
++    pub profile: String,
++    pub mode: ClusterMode,
++    pub driver: RuntimeDriver,
++    pub profile_type: ProfileType,
++    pub phase: ClusterPhase,
++    pub api_endpoint: String,
++    pub kubeconfig_path: PathBuf,
++    pub profile_dir: PathBuf,
++    pub ports: PortSet,
++    pub nodes: Vec<NodeStatus>,
++    pub addons: Vec<AddonStatus>,
++    pub message: String,
++}
++
++impl ClusterStatus {
++    pub fn export_command(&self) -> String {
++        format!("export KUBECONFIG=\"{}\"", self.kubeconfig_path.display())
++    }
++}
++
++#[derive(Clone, Debug)]
++pub struct CreateOptions {
++    pub profile: String,
++    pub mode: ClusterMode,
++    pub driver: Option<RuntimeDriver>,
++    pub profile_type: ProfileType,
++    pub nodes: usize,
++    pub node_image: Option<String>,
++    pub repo_root: Option<PathBuf>,
++    pub wait: bool,
++    pub force: bool,
++}
++
++impl Default for CreateOptions {
++    fn default() -> Self {
++        Self {
++            profile: "dev".to_string(),
++            mode: ClusterMode::Kind,
++            driver: None,
++            profile_type: ProfileType::Development,
++            nodes: 1,
++            node_image: None,
++            repo_root: None,
++            wait: true,
++            force: false,
++        }
++    }
++}
++
++#[derive(Debug)]
++pub struct ClusterManager {
++    root: PathBuf,
++    repo_root: PathBuf,
++}
++
++impl ClusterManager {
++    pub fn new(root: impl Into<PathBuf>, repo_root: impl Into<PathBuf>) -> Self {
++        Self {
++            root: root.into(),
++            repo_root: repo_root.into(),
++        }
++    }
++
++    pub fn default_paths() -> Result<Self> {
++        let cwd = env::current_dir()?;
++        let root = env::var_os("RUSTERNETES_HOME")
++            .map(PathBuf::from)
++            .unwrap_or_else(|| cwd.join(".rusternetes"));
++        let repo_root = env::var_os("RUSTERNETES_REPO_ROOT")
++            .map(PathBuf::from)
++            .unwrap_or(cwd);
++        Ok(Self { root, repo_root })
++    }
++
++    pub fn root(&self) -> &Path {
++        &self.root
++    }
++
++    pub fn repo_root(&self) -> &Path {
++        &self.repo_root
++    }
++
++    pub fn create(&self, options: CreateOptions) -> Result<ClusterStatus> {
++        validate_profile_name(&options.profile)?;
++        if options.nodes == 0 {
++            return Err(ClusterError::InvalidArgument(
++                "node count must be at least 1".to_string(),
++            ));
++        }
++        if options.mode != ClusterMode::Kind && options.nodes != 1 {
++            return Err(ClusterError::Unsupported(format!(
++                "{} mode currently supports one local node; multi-node is prepared for kind mode only",
++                options.mode
++            )));
++        }
++
++        let repo_root = options
++            .repo_root
++            .clone()
++            .unwrap_or_else(|| self.repo_root.clone());
++        let runtime = Runtime::detect(options.driver)?;
++        let profile_paths = ProfilePaths::new(&self.root, &options.profile);
++
++        if profile_paths.config_file.exists() && !options.force {
++            let status = self.status(&options.profile)?;
++            if status.phase == ClusterPhase::Running {
++                return Ok(status);
++            }
++        }
++
++        if options.force && profile_paths.config_file.exists() {
++            self.delete(&options.profile)?;
++        } else {
++            fs::create_dir_all(&profile_paths.profile_dir)?;
++        }
++
++        profile_paths.ensure()?;
++        let ports = self.allocate_ports(&options.profile)?;
++        let image = options
++            .node_image
++            .clone()
++            .or_else(|| env::var("RUSTERNETES_NODE_IMAGE").ok())
++            .unwrap_or_else(|| "rusternetes/local-node:dev".to_string());
++        let mut cfg = ProfileConfig {
++            profile: options.profile.clone(),
++            mode: options.mode,
++            driver: runtime.driver,
++            profile_type: options.profile_type,
++            nodes: options.nodes,
++            ports,
++            node_image: image,
++            runtime_socket: runtime.socket.clone(),
++            created_unix: now_unix(),
++        };
++        if cfg.mode == ClusterMode::SingleNode && cfg.profile_type != ProfileType::Production {
++            cfg.profile_type = ProfileType::Production;
++        }
++        cfg.write(&profile_paths.config_file)?;
++        write_state(
++            &profile_paths.state_file,
++            ClusterPhase::Creating,
++            "creating",
++        )?;
++        append_log(
++            &profile_paths.manager_log,
++            &format!(
++                "creating profile={} mode={} driver={} profile_type={} api_port={}\n",
++                cfg.profile, cfg.mode, cfg.driver, cfg.profile_type, cfg.ports.api
++            ),
++        )?;
++
++        if cfg.profile_type == ProfileType::Production {
++            self.ensure_production_certificates(&profile_paths, &cfg)?;
++            self.write_production_hooks(&profile_paths, &cfg)?;
++        }
++
++        self.ensure_node_image(&runtime, &cfg, &repo_root, &profile_paths.manager_log)?;
++        self.ensure_network(&runtime, &cfg, &profile_paths.manager_log)?;
++        self.remove_node_containers(&runtime, &cfg, &profile_paths.manager_log)?;
++        self.run_node_container(&runtime, &cfg, &profile_paths, &profile_paths.manager_log)?;
++        self.write_kubeconfig_for(&profile_paths, &cfg)?;
++
++        if options.wait {
++            self.wait_for_api(&cfg, Duration::from_secs(90))?;
++        }
++
++        write_state(&profile_paths.state_file, ClusterPhase::Running, "running")?;
++        self.status(&cfg.profile)
++    }
++
++    pub fn start(&self, profile: &str) -> Result<ClusterStatus> {
++        let (cfg, paths) = self.read_existing(profile)?;
++        let runtime = Runtime::detect(Some(cfg.driver))?;
++        for name in node_container_names(&cfg) {
++            run_runtime(
++                &runtime,
++                &["start", &name],
++                &paths.manager_log,
++                CommandMode::AllowFailure,
++            )?;
++        }
++        if paths.addon_dir.join("registry.env").exists() {
++            let registry = registry_container_name(profile);
++            run_runtime(
++                &runtime,
++                &["start", &registry],
++                &paths.manager_log,
++                CommandMode::AllowFailure,
++            )?;
++        }
++        write_state(&paths.state_file, ClusterPhase::Running, "started")?;
++        self.status(profile)
++    }
++
++    pub fn stop(&self, profile: &str) -> Result<ClusterStatus> {
++        let (cfg, paths) = self.read_existing(profile)?;
++        let runtime = Runtime::detect(Some(cfg.driver))?;
++        for name in node_container_names(&cfg) {
++            run_runtime(
++                &runtime,
++                &["stop", &name],
++                &paths.manager_log,
++                CommandMode::AllowFailure,
++            )?;
++        }
++        if paths.addon_dir.join("registry.env").exists() {
++            let registry = registry_container_name(profile);
++            run_runtime(
++                &runtime,
++                &["stop", &registry],
++                &paths.manager_log,
++                CommandMode::AllowFailure,
++            )?;
++        }
++        write_state(&paths.state_file, ClusterPhase::Stopped, "stopped")?;
++        self.status(profile)
++    }
++
++    pub fn delete(&self, profile: &str) -> Result<()> {
++        let paths = ProfilePaths::new(&self.root, profile);
++        if !paths.config_file.exists() {
++            return Ok(());
++        }
++        let cfg = ProfileConfig::read(&paths.config_file)?;
++        let runtime = Runtime::detect(Some(cfg.driver))?;
++        self.collect_container_logs(&runtime, &cfg, &paths).ok();
++        self.remove_node_containers(&runtime, &cfg, &paths.manager_log)?;
++        let registry = registry_container_name(profile);
++        run_runtime(
++            &runtime,
++            &["rm", "-f", &registry],
++            &paths.manager_log,
++            CommandMode::AllowFailure,
++        )?;
++        run_runtime(
++            &runtime,
++            &["network", "rm", &network_name(profile)],
++            &paths.manager_log,
++            CommandMode::AllowFailure,
++        )?;
++        if paths.profile_dir.exists() {
++            fs::remove_dir_all(&paths.profile_dir)?;
++        }
++        Ok(())
++    }
++
++    pub fn reset(&self, profile: &str) -> Result<ClusterStatus> {
++        let (cfg, _paths) = self.read_existing(profile)?;
++        let options = CreateOptions {
++            profile: cfg.profile.clone(),
++            mode: cfg.mode,
++            driver: Some(cfg.driver),
++            profile_type: cfg.profile_type,
++            nodes: cfg.nodes,
++            node_image: Some(cfg.node_image.clone()),
++            repo_root: Some(self.repo_root.clone()),
++            wait: true,
++            force: true,
++        };
++        self.create(options)
++    }
++
++    pub fn status(&self, profile: &str) -> Result<ClusterStatus> {
++        let (cfg, paths) = self.read_existing(profile)?;
++        let runtime = Runtime::detect(Some(cfg.driver));
++        let mut nodes = Vec::new();
++        let mut phase = read_phase(&paths.state_file).unwrap_or(ClusterPhase::Unknown);
++        let message;
++
++        match runtime {
++            Ok(runtime) => {
++                let names = node_container_names(&cfg);
++                let mut running_count = 0usize;
++                for (index, name) in names.iter().enumerate() {
++                    let runtime_status =
++                        inspect_container_status(&runtime, name, &paths.manager_log)
++                            .unwrap_or_else(|err| format!("unknown ({err})"));
++                    if runtime_status == "running" {
++                        running_count += 1;
++                    }
++                    nodes.push(NodeStatus {
++                        name: if index == 0 {
++                            format!("{}-control-plane", cfg.profile)
++                        } else {
++                            format!("{}-worker-{index}", cfg.profile)
++                        },
++                        role: if index == 0 {
++                            "control-plane".to_string()
++                        } else {
++                            "worker".to_string()
++                        },
++                        container: name.clone(),
++                        runtime_status,
++                    });
++                }
++                phase = match (running_count, names.len()) {
++                    (0, _) => ClusterPhase::Stopped,
++                    (count, total) if count == total => ClusterPhase::Running,
++                    _ => ClusterPhase::Error,
++                };
++                message = format!("{} node container(s), {running_count} running", names.len());
++            }
++            Err(err) => {
++                nodes = node_container_names(&cfg)
++                    .into_iter()
++                    .enumerate()
++                    .map(|(index, name)| NodeStatus {
++                        name: if index == 0 {
++                            format!("{}-control-plane", cfg.profile)
++                        } else {
++                            format!("{}-worker-{index}", cfg.profile)
++                        },
++                        role: if index == 0 {
++                            "control-plane".to_string()
++                        } else {
++                            "worker".to_string()
++                        },
++                        container: name,
++                        runtime_status: "runtime-unavailable".to_string(),
++                    })
++                    .collect();
++                message = err.to_string();
++            }
++        }
++
++        Ok(ClusterStatus {
++            profile: cfg.profile.clone(),
++            mode: cfg.mode,
++            driver: cfg.driver,
++            profile_type: cfg.profile_type,
++            phase,
++            api_endpoint: api_endpoint(&cfg),
++            kubeconfig_path: paths.kubeconfig_file,
++            profile_dir: paths.profile_dir,
++            ports: cfg.ports,
++            nodes,
++            addons: self.addons(profile)?,
++            message,
++        })
++    }
++
++    pub fn kubeconfig_path(&self, profile: &str) -> Result<PathBuf> {
++        let (cfg, paths) = self.read_existing(profile)?;
++        if !paths.kubeconfig_file.exists() {
++            self.write_kubeconfig_for(&paths, &cfg)?;
++        }
++        Ok(paths.kubeconfig_file)
++    }
++
++    pub fn logs(&self, profile: &str) -> Result<String> {
++        let (cfg, paths) = self.read_existing(profile)?;
++        if let Ok(runtime) = Runtime::detect(Some(cfg.driver)) {
++            self.collect_container_logs(&runtime, &cfg, &paths).ok();
++        }
++        let mut out = String::new();
++        out.push_str(&format!("manager log: {}\n", paths.manager_log.display()));
++        out.push_str(&format!("node log: {}\n\n", paths.node_log.display()));
++        out.push_str("--- manager.log ---\n");
++        out.push_str(&read_tail(&paths.manager_log, 200)?);
++        out.push_str("\n--- node.log ---\n");
++        out.push_str(&read_tail(&paths.node_log, 400)?);
++        Ok(out)
++    }
++
++    pub fn load_image(&self, profile: &str, image: &str) -> Result<String> {
++        if image.trim().is_empty() {
++            return Err(ClusterError::InvalidArgument(
++                "image reference must not be empty".to_string(),
++            ));
++        }
++        let (cfg, paths) = self.read_existing(profile)?;
++        let runtime = Runtime::detect(Some(cfg.driver))?;
++        match cfg.driver {
++            RuntimeDriver::Docker => {
++                run_runtime(
++                    &runtime,
++                    &["image", "inspect", image],
++                    &paths.manager_log,
++                    CommandMode::RequireSuccess,
++                )?;
++            }
++            RuntimeDriver::Podman => {
++                run_runtime(
++                    &runtime,
++                    &["image", "exists", image],
++                    &paths.manager_log,
++                    CommandMode::RequireSuccess,
++                )?;
++            }
++        }
++        fs::create_dir_all(&paths.metadata_dir)?;
++        let mut file = OpenOptions::new()
++            .create(true)
++            .append(true)
++            .open(paths.metadata_dir.join("loaded-images.txt"))?;
++        writeln!(file, "{} {}", now_unix(), image)?;
++        Ok(format!(
++            "image '{image}' is available to profile '{}' through the {} runtime socket mounted into the Rūsternetes node container",
++            cfg.profile, cfg.driver
++        ))
++    }
++
++    pub fn addons(&self, profile: &str) -> Result<Vec<AddonStatus>> {
++        let (_cfg, paths) = self.read_existing(profile)?;
++        let registry_enabled = paths.addon_dir.join("registry.env").exists();
++        let dashboard_enabled = paths.addon_dir.join("dashboard.env").exists();
++        Ok(vec![
++            AddonStatus {
++                name: "registry".to_string(),
++                support: AddonSupport::Supported,
++                enabled: registry_enabled,
++                message: if registry_enabled {
++                    "local registry container is configured for this profile".to_string()
++                } else {
++                    "starts a registry:2 container on the deterministic profile registry port".to_string()
++                },
++            },
++            AddonStatus {
++                name: "dashboard".to_string(),
++                support: AddonSupport::PartiallySupported,
++                enabled: dashboard_enabled,
++                message: "uses the existing Rūsternetes web console served by the API server when console assets are present".to_string(),
++            },
++            AddonStatus {
++                name: "ingress".to_string(),
++                support: AddonSupport::Unsupported,
++                enabled: false,
++                message: "ingress command path exists, but no ingress controller image/bootstrap is bundled yet".to_string(),
++            },
++            AddonStatus {
++                name: "metrics".to_string(),
++                support: AddonSupport::Planned,
++                enabled: false,
++                message: "metrics API/server add-on wiring is reserved for a future controller-backed implementation".to_string(),
++            },
++        ])
++    }
++
++    pub fn enable_addon(&self, profile: &str, addon: &str) -> Result<String> {
++        let addon = normalize(addon);
++        let (cfg, paths) = self.read_existing(profile)?;
++        match addon.as_str() {
++            "registry" | "local-registry" => self.enable_registry(&cfg, &paths),
++            "dashboard" | "console" | "web-console" => self.enable_dashboard(&cfg, &paths),
++            "ingress" => Err(ClusterError::Unsupported(
++                "ingress is not enabled yet because this release does not bundle an ingress controller or patch Service/Ingress routing rules. The API entry point exists so a future controller can be added without rewriting CLI/desktop code.".to_string(),
++            )),
++            "metrics" => Err(ClusterError::Unsupported(
++                "metrics add-on is planned but not wired in this release; no success is reported until the metrics API bootstrap is implemented".to_string(),
++            )),
++            other => Err(ClusterError::InvalidArgument(format!(
++                "unknown addon '{other}'. Valid addons: registry, dashboard, ingress, metrics"
++            ))),
++        }
++    }
++
++    pub fn disable_addon(&self, profile: &str, addon: &str) -> Result<String> {
++        let addon = normalize(addon);
++        let (cfg, paths) = self.read_existing(profile)?;
++        match addon.as_str() {
++            "registry" | "local-registry" => {
++                let runtime = Runtime::detect(Some(cfg.driver))?;
++                run_runtime(
++                    &runtime,
++                    &["rm", "-f", &registry_container_name(profile)],
++                    &paths.manager_log,
++                    CommandMode::AllowFailure,
++                )?;
++                remove_file_if_exists(&paths.addon_dir.join("registry.env"))?;
++                Ok("registry add-on disabled".to_string())
++            }
++            "dashboard" | "console" | "web-console" => {
++                remove_file_if_exists(&paths.addon_dir.join("dashboard.env"))?;
++                Ok("dashboard add-on marker removed; recreate the cluster to change console asset mounting".to_string())
++            }
++            "ingress" | "metrics" => Err(ClusterError::Unsupported(format!(
++                "addon '{addon}' is not enabled in this release"
++            ))),
++            other => Err(ClusterError::InvalidArgument(format!(
++                "unknown addon '{other}'. Valid addons: registry, dashboard, ingress, metrics"
++            ))),
++        }
++    }
++
++    pub fn console_url(&self, profile: &str) -> Result<String> {
++        let (cfg, _paths) = self.read_existing(profile)?;
++        Ok(format!("{}/console/", api_endpoint(&cfg)))
++    }
++
++    pub fn smoke_test(&self, profile: &str) -> Result<String> {
++        let kubeconfig = self.kubeconfig_path(profile)?;
++        if !command_exists("kubectl") {
++            return Err(ClusterError::RuntimeUnavailable(
++                "kubectl was not found in PATH; install kubectl to run smoke tests".to_string(),
++            ));
++        }
++        let examples = self.repo_root.join("examples/local");
++        let deployment = examples.join("nginx-deployment.yaml");
++        let service = examples.join("nginx-service.yaml");
++        if !deployment.exists() || !service.exists() {
++            return Err(ClusterError::RuntimeUnavailable(format!(
++                "local examples were not found under {}; run from the repository root or set RUSTERNETES_REPO_ROOT",
++                examples.display()
++            )));
++        }
++        let paths = ProfilePaths::new(&self.root, profile);
++        let mut report = String::new();
++        run_program(
++            "kubectl",
++            &[
++                "--kubeconfig",
++                &kubeconfig.display().to_string(),
++                "get",
++                "nodes",
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        report.push_str("kubectl get nodes: ok\n");
++        run_program(
++            "kubectl",
++            &[
++                "--kubeconfig",
++                &kubeconfig.display().to_string(),
++                "apply",
++                "-f",
++                &deployment.display().to_string(),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        report.push_str("nginx deployment apply: ok\n");
++        run_program(
++            "kubectl",
++            &[
++                "--kubeconfig",
++                &kubeconfig.display().to_string(),
++                "apply",
++                "-f",
++                &service.display().to_string(),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        report.push_str("nginx service apply: ok\n");
++        run_program(
++            "kubectl",
++            &[
++                "--kubeconfig",
++                &kubeconfig.display().to_string(),
++                "get",
++                "pods",
++                "-A",
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        report.push_str("kubectl get pods -A: ok\n");
++        run_program(
++            "kubectl",
++            &[
++                "--kubeconfig",
++                &kubeconfig.display().to_string(),
++                "get",
++                "service",
++                "rusternetes-nginx",
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        report.push_str("kubectl get service rusternetes-nginx: ok\n");
++        Ok(report)
++    }
++
++    fn read_existing(&self, profile: &str) -> Result<(ProfileConfig, ProfilePaths)> {
++        validate_profile_name(profile)?;
++        let paths = ProfilePaths::new(&self.root, profile);
++        if !paths.config_file.exists() {
++            return Err(ClusterError::ProfileNotFound(profile.to_string()));
++        }
++        let cfg = ProfileConfig::read(&paths.config_file)?;
++        Ok((cfg, paths))
++    }
++
++    fn allocate_ports(&self, profile: &str) -> Result<PortSet> {
++        fs::create_dir_all(self.root.join("profiles"))?;
++        let mut used = Vec::new();
++        let profiles_dir = self.root.join("profiles");
++        if profiles_dir.exists() {
++            for entry in fs::read_dir(&profiles_dir)? {
++                let entry = entry?;
++                if !entry.file_type()?.is_dir() {
++                    continue;
++                }
++                let name = entry.file_name().to_string_lossy().to_string();
++                if name == profile {
++                    continue;
++                }
++                let config = entry.path().join("config.env");
++                if config.exists() {
++                    if let Ok(cfg) = ProfileConfig::read(&config) {
++                        used.extend_from_slice(&cfg.ports.values());
++                    }
++                }
++            }
++        }
++        let mut base = deterministic_base_port(profile);
++        for _ in 0..1000 {
++            let ports = PortSet {
++                api: base,
++                registry: base + 1,
++                metrics: base + 2,
++                service_start: base + 100,
++                service_end: base + 199,
++            };
++            let collision = ports
++                .values()
++                .into_iter()
++                .any(|port| used.contains(&port) || !port_available(port));
++            if !collision {
++                return Ok(ports);
++            }
++            base = next_base(base);
++        }
++        Err(ClusterError::RuntimeUnavailable(
++            "could not find an available deterministic port window after 1000 attempts".to_string(),
++        ))
++    }
++
++    fn ensure_node_image(
++        &self,
++        runtime: &Runtime,
++        cfg: &ProfileConfig,
++        repo_root: &Path,
++        log: &Path,
++    ) -> Result<()> {
++        let image_exists = run_runtime(
++            runtime,
++            &["image", "inspect", &cfg.node_image],
++            log,
++            CommandMode::AllowFailure,
++        )
++        .is_ok();
++        if image_exists {
++            append_log(log, &format!("node image exists: {}\n", cfg.node_image))?;
++            return Ok(());
++        }
++        if env::var("RUSTERNETES_SKIP_IMAGE_BUILD").ok().as_deref() == Some("1") {
++            return Err(ClusterError::RuntimeUnavailable(format!(
++                "node image '{}' was not found and RUSTERNETES_SKIP_IMAGE_BUILD=1 is set",
++                cfg.node_image
++            )));
++        }
++        let dockerfile = repo_root.join("docker/local-node.Dockerfile");
++        if !dockerfile.exists() {
++            return Err(ClusterError::RuntimeUnavailable(format!(
++                "node image '{}' does not exist and build file {} was not found",
++                cfg.node_image,
++                dockerfile.display()
++            )));
++        }
++        run_runtime(
++            runtime,
++            &[
++                "build",
++                "-f",
++                &dockerfile.display().to_string(),
++                "-t",
++                &cfg.node_image,
++                &repo_root.display().to_string(),
++            ],
++            log,
++            CommandMode::RequireSuccess,
++        )?;
++        Ok(())
++    }
++
++    fn ensure_network(&self, runtime: &Runtime, cfg: &ProfileConfig, log: &Path) -> Result<()> {
++        let network = network_name(&cfg.profile);
++        if run_runtime(
++            runtime,
++            &["network", "inspect", &network],
++            log,
++            CommandMode::AllowFailure,
++        )
++        .is_ok()
++        {
++            return Ok(());
++        }
++        run_runtime(
++            runtime,
++            &["network", "create", &network],
++            log,
++            CommandMode::RequireSuccess,
++        )?;
++        Ok(())
++    }
++
++    fn remove_node_containers(
++        &self,
++        runtime: &Runtime,
++        cfg: &ProfileConfig,
++        log: &Path,
++    ) -> Result<()> {
++        for name in node_container_names(cfg) {
++            run_runtime(
++                runtime,
++                &["rm", "-f", &name],
++                log,
++                CommandMode::AllowFailure,
++            )?;
++        }
++        Ok(())
++    }
++
++    fn run_node_container(
++        &self,
++        runtime: &Runtime,
++        cfg: &ProfileConfig,
++        paths: &ProfilePaths,
++        log: &Path,
++    ) -> Result<()> {
++        let container = node_container_name(&cfg.profile, 0);
++        let runtime_socket_mount = match runtime.driver {
++            RuntimeDriver::Docker => {
++                let socket = runtime.socket.as_ref().ok_or_else(|| {
++                    ClusterError::RuntimeUnavailable(
++                        "docker socket was not detected; start Docker Desktop or set DOCKER_HOST to a unix socket".to_string(),
++                    )
++                })?;
++                if !socket.exists() {
++                    return Err(ClusterError::RuntimeUnavailable(format!(
++                        "runtime socket {} does not exist; start Docker Desktop or configure DOCKER_HOST",
++                        socket.display()
++                    )));
++                }
++                Some(format!("{}:/var/run/docker.sock", socket.display()))
++            }
++            RuntimeDriver::Podman => {
++                // Podman Desktop on macOS runs containers inside a Linux VM. The host client socket
++                // under ~/.local/share/containers/... cannot be bind-mounted into containers, but
++                // /run/podman/podman.sock is available inside the VM and exposes a Docker-compatible API.
++                Some("/run/podman/podman.sock:/var/run/docker.sock".to_string())
++            }
++        };
++
++        let mut args: Vec<String> = vec![
++            "run".to_string(),
++            "-d".to_string(),
++            "--name".to_string(),
++            container.clone(),
++            "--hostname".to_string(),
++            container.clone(),
++            "--label".to_string(),
++            format!("io.rusternetes.profile={}", cfg.profile),
++            "--label".to_string(),
++            format!("io.rusternetes.mode={}", cfg.mode),
++            "--label".to_string(),
++            "io.rusternetes.local-cluster=true".to_string(),
++            "--privileged".to_string(),
++            "--restart".to_string(),
++            if cfg.profile_type == ProfileType::Production {
++                "unless-stopped".to_string()
++            } else {
++                "no".to_string()
++            },
++            "--network".to_string(),
++            network_name(&cfg.profile),
++            "-p".to_string(),
++            format!("127.0.0.1:{}:6443", cfg.ports.api),
++            "-v".to_string(),
++            format!(
++                "{}:/var/lib/rusternetes/storage",
++                paths.storage_dir.display()
++            ),
++            "-v".to_string(),
++            format!(
++                "{}:/var/lib/rusternetes/volumes",
++                paths.volumes_dir.display()
++            ),
++            "-v".to_string(),
++            format!("{}:/var/log/rusternetes", paths.log_dir.display()),
++        ];
++        if let Some(socket_mount) = runtime_socket_mount {
++            args.push("-v".to_string());
++            args.push(socket_mount);
++        }
++        if cfg.profile_type == ProfileType::Production {
++            args.push("-v".to_string());
++            args.push(format!(
++                "{}:/var/lib/rusternetes/certs:ro",
++                paths.certs_dir.display()
++            ));
++        }
++        args.push(cfg.node_image.clone());
++        args.extend([
++            "--storage-backend".to_string(),
++            "sqlite".to_string(),
++            "--data-dir".to_string(),
++            "/var/lib/rusternetes/storage/rusternetes.db".to_string(),
++            "--bind-address".to_string(),
++            "0.0.0.0:6443".to_string(),
++            "--node-name".to_string(),
++            format!("{}-control-plane", cfg.profile),
++            "--volume-dir".to_string(),
++            "/var/lib/rusternetes/volumes".to_string(),
++            "--network".to_string(),
++            network_name(&cfg.profile),
++            "--console-dir".to_string(),
++            "/opt/rusternetes/console".to_string(),
++        ]);
++        if cfg.profile_type == ProfileType::Production {
++            args.extend([
++                "--tls".to_string(),
++                "--tls-cert-file".to_string(),
++                "/var/lib/rusternetes/certs/apiserver.crt".to_string(),
++                "--tls-key-file".to_string(),
++                "/var/lib/rusternetes/certs/apiserver.key".to_string(),
++                "--client-ca-file".to_string(),
++                "/var/lib/rusternetes/certs/ca.crt".to_string(),
++                "--skip-auth=false".to_string(),
++            ]);
++        }
++        let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
++        run_runtime(runtime, &refs, log, CommandMode::RequireSuccess)?;
++        Ok(())
++    }
++
++    fn wait_for_api(&self, cfg: &ProfileConfig, timeout: Duration) -> Result<()> {
++        let deadline = SystemTime::now() + timeout;
++        let addr = SocketAddr::from(([127, 0, 0, 1], cfg.ports.api));
++        loop {
++            if TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok() {
++                return Ok(());
++            }
++            if SystemTime::now() >= deadline {
++                return Err(ClusterError::RuntimeUnavailable(format!(
++                    "API server did not accept TCP connections at 127.0.0.1:{} within {} seconds; inspect `rusternetes cluster logs --profile {}`",
++                    cfg.ports.api,
++                    timeout.as_secs(),
++                    cfg.profile
++                )));
++            }
++            std::thread::sleep(Duration::from_millis(500));
++        }
++    }
++
++    fn write_kubeconfig_for(&self, paths: &ProfilePaths, cfg: &ProfileConfig) -> Result<()> {
++        let server = api_endpoint(cfg);
++        let user_block = if cfg.profile_type == ProfileType::Production {
++            format!(
++                "    client-certificate: {}\n    client-key: {}\n",
++                paths.certs_dir.join("admin.crt").display(),
++                paths.certs_dir.join("admin.key").display()
++            )
++        } else {
++            "    token: rusternetes-local-dev\n".to_string()
++        };
++        let cluster_tls_block = if cfg.profile_type == ProfileType::Production {
++            format!(
++                "    certificate-authority: {}\n",
++                paths.certs_dir.join("ca.crt").display()
++            )
++        } else {
++            String::new()
++        };
++        let content = format!(
++            "apiVersion: v1\nkind: Config\nclusters:\n- name: rusternetes-{profile}\n  cluster:\n    server: {server}\n{cluster_tls_block}contexts:\n- name: rusternetes-{profile}\n  context:\n    cluster: rusternetes-{profile}\n    user: rusternetes-{profile}-admin\n    namespace: default\ncurrent-context: rusternetes-{profile}\nusers:\n- name: rusternetes-{profile}-admin\n  user:\n{user_block}",
++            profile = cfg.profile,
++            server = server,
++            cluster_tls_block = cluster_tls_block,
++            user_block = user_block,
++        );
++        fs::write(&paths.kubeconfig_file, content)?;
++        Ok(())
++    }
++
++    fn collect_container_logs(
++        &self,
++        runtime: &Runtime,
++        cfg: &ProfileConfig,
++        paths: &ProfilePaths,
++    ) -> Result<()> {
++        let mut file = OpenOptions::new()
++            .create(true)
++            .append(true)
++            .open(&paths.node_log)?;
++        for name in node_container_names(cfg) {
++            match run_runtime_capture(runtime, &["logs", &name], &paths.manager_log) {
++                Ok(output) => {
++                    writeln!(file, "===== {name} {} =====", now_unix())?;
++                    file.write_all(&output.stdout)?;
++                    file.write_all(&output.stderr)?;
++                }
++                Err(err) => {
++                    writeln!(file, "failed to collect logs for {name}: {err}")?;
++                }
++            }
++        }
++        Ok(())
++    }
++
++    fn enable_registry(&self, cfg: &ProfileConfig, paths: &ProfilePaths) -> Result<String> {
++        let runtime = Runtime::detect(Some(cfg.driver))?;
++        let container = registry_container_name(&cfg.profile);
++        run_runtime(
++            &runtime,
++            &["rm", "-f", &container],
++            &paths.manager_log,
++            CommandMode::AllowFailure,
++        )?;
++        let data_dir = paths.addon_dir.join("registry-data");
++        fs::create_dir_all(&data_dir)?;
++        let port = format!("127.0.0.1:{}:5000", cfg.ports.registry);
++        run_runtime(
++            &runtime,
++            &[
++                "run",
++                "-d",
++                "--name",
++                &container,
++                "--label",
++                &format!("io.rusternetes.profile={}", cfg.profile),
++                "--restart",
++                "unless-stopped",
++                "-p",
++                &port,
++                "-v",
++                &format!("{}:/var/lib/registry", data_dir.display()),
++                "registry:2",
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        fs::write(
++            paths.addon_dir.join("registry.env"),
++            format!(
++                "enabled=true\ncontainer={container}\nurl=http://127.0.0.1:{}\ncreated_unix={}\n",
++                cfg.ports.registry,
++                now_unix()
++            ),
++        )?;
++        Ok(format!(
++            "registry enabled at http://127.0.0.1:{} for profile '{}'",
++            cfg.ports.registry, cfg.profile
++        ))
++    }
++
++    fn enable_dashboard(&self, cfg: &ProfileConfig, paths: &ProfilePaths) -> Result<String> {
++        let console_candidates = [
++            self.repo_root.join("console/dist"),
++            self.repo_root.join("console/build"),
++            self.repo_root.join("console"),
++        ];
++        if !console_candidates.iter().any(|path| path.exists()) {
++            return Err(ClusterError::Unsupported(format!(
++                "dashboard/web console assets were not found under {}; build the existing console first or use the local-node image's embedded fallback console",
++                self.repo_root.join("console").display()
++            )));
++        }
++        fs::write(
++            paths.addon_dir.join("dashboard.env"),
++            format!(
++                "enabled=true\nurl={}/console/\ncreated_unix={}\n",
++                api_endpoint(cfg),
++                now_unix()
++            ),
++        )?;
++        Ok(format!(
++            "dashboard marker enabled; open {}/console/ after the API server is running",
++            api_endpoint(cfg)
++        ))
++    }
++
++    fn ensure_production_certificates(
++        &self,
++        paths: &ProfilePaths,
++        cfg: &ProfileConfig,
++    ) -> Result<()> {
++        let ca_crt = paths.certs_dir.join("ca.crt");
++        let ca_key = paths.certs_dir.join("ca.key");
++        let server_crt = paths.certs_dir.join("apiserver.crt");
++        let server_key = paths.certs_dir.join("apiserver.key");
++        let admin_crt = paths.certs_dir.join("admin.crt");
++        let admin_key = paths.certs_dir.join("admin.key");
++        if ca_crt.exists()
++            && ca_key.exists()
++            && server_crt.exists()
++            && server_key.exists()
++            && admin_crt.exists()
++            && admin_key.exists()
++        {
++            return Ok(());
++        }
++        if !command_exists("openssl") {
++            return Err(ClusterError::RuntimeUnavailable(
++                "openssl is required to create production TLS and client certificates".to_string(),
++            ));
++        }
++        let server_conf = paths.certs_dir.join("server-openssl.cnf");
++        let admin_conf = paths.certs_dir.join("admin-openssl.cnf");
++        fs::write(
++            &server_conf,
++            format!(
++                "[req]\ndefault_bits=2048\nprompt=no\ndefault_md=sha256\ndistinguished_name=dn\nreq_extensions=v3_req\n[dn]\nCN=rusternetes-{profile}-apiserver\n[v3_req]\nsubjectAltName=@alt_names\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n[alt_names]\nDNS.1=localhost\nDNS.2={profile}\nDNS.3=rusternetes-{profile}\nIP.1=127.0.0.1\n",
++                profile = cfg.profile
++            ),
++        )?;
++        fs::write(
++            &admin_conf,
++            "[req]\ndefault_bits=2048\nprompt=no\ndefault_md=sha256\ndistinguished_name=dn\nreq_extensions=v3_req\n[dn]\nCN=rusternetes-admin\nO=system:masters\n[v3_req]\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n",
++        )?;
++        run_program(
++            "openssl",
++            &["genrsa", "-out", &ca_key.display().to_string(), "4096"],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        run_program(
++            "openssl",
++            &[
++                "req",
++                "-x509",
++                "-new",
++                "-nodes",
++                "-key",
++                &ca_key.display().to_string(),
++                "-sha256",
++                "-days",
++                "3650",
++                "-out",
++                &ca_crt.display().to_string(),
++                "-subj",
++                &format!("/CN=rusternetes-{}-ca", cfg.profile),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        let server_csr = paths.certs_dir.join("apiserver.csr");
++        run_program(
++            "openssl",
++            &["genrsa", "-out", &server_key.display().to_string(), "2048"],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        run_program(
++            "openssl",
++            &[
++                "req",
++                "-new",
++                "-key",
++                &server_key.display().to_string(),
++                "-out",
++                &server_csr.display().to_string(),
++                "-config",
++                &server_conf.display().to_string(),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        run_program(
++            "openssl",
++            &[
++                "x509",
++                "-req",
++                "-in",
++                &server_csr.display().to_string(),
++                "-CA",
++                &ca_crt.display().to_string(),
++                "-CAkey",
++                &ca_key.display().to_string(),
++                "-CAcreateserial",
++                "-out",
++                &server_crt.display().to_string(),
++                "-days",
++                "825",
++                "-sha256",
++                "-extensions",
++                "v3_req",
++                "-extfile",
++                &server_conf.display().to_string(),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        let admin_csr = paths.certs_dir.join("admin.csr");
++        run_program(
++            "openssl",
++            &["genrsa", "-out", &admin_key.display().to_string(), "2048"],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        run_program(
++            "openssl",
++            &[
++                "req",
++                "-new",
++                "-key",
++                &admin_key.display().to_string(),
++                "-out",
++                &admin_csr.display().to_string(),
++                "-config",
++                &admin_conf.display().to_string(),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        run_program(
++            "openssl",
++            &[
++                "x509",
++                "-req",
++                "-in",
++                &admin_csr.display().to_string(),
++                "-CA",
++                &ca_crt.display().to_string(),
++                "-CAkey",
++                &ca_key.display().to_string(),
++                "-CAcreateserial",
++                "-out",
++                &admin_crt.display().to_string(),
++                "-days",
++                "825",
++                "-sha256",
++                "-extensions",
++                "v3_req",
++                "-extfile",
++                &admin_conf.display().to_string(),
++            ],
++            &paths.manager_log,
++            CommandMode::RequireSuccess,
++        )?;
++        Ok(())
++    }
++
++    fn write_production_hooks(&self, paths: &ProfilePaths, cfg: &ProfileConfig) -> Result<()> {
++        fs::create_dir_all(&paths.hooks_dir)?;
++        fs::create_dir_all(&paths.backups_dir)?;
++        let backup = paths.hooks_dir.join("backup.sh");
++        let restore = paths.hooks_dir.join("restore.sh");
++        fs::write(
++            &backup,
++            format!(
++                "#!/usr/bin/env sh\nset -eu\nPROFILE_DIR=\"{}\"\nSTAMP=$(date +%Y%m%d%H%M%S)\nmkdir -p \"$PROFILE_DIR/backups\"\ncp \"$PROFILE_DIR/storage/rusternetes.db\" \"$PROFILE_DIR/backups/rusternetes-$STAMP.db\"\necho \"backup written to $PROFILE_DIR/backups/rusternetes-$STAMP.db\"\n",
++                paths.profile_dir.display()
++            ),
++        )?;
++        fs::write(
++            &restore,
++            format!(
++                "#!/usr/bin/env sh\nset -eu\nif [ $# -ne 1 ]; then echo 'usage: restore.sh /path/to/rusternetes.db' >&2; exit 2; fi\nPROFILE_DIR=\"{}\"\ncp \"$1\" \"$PROFILE_DIR/storage/rusternetes.db\"\necho 'restore staged; restart the profile container to load the database'\n",
++                paths.profile_dir.display()
++            ),
++        )?;
++        set_executable(&backup)?;
++        set_executable(&restore)?;
++        fs::write(
++            paths.hooks_dir.join("upgrade-policy.env"),
++            format!(
++                "profile={}\npolicy=backup-before-recreate\ncontrolled_upgrade=true\ncreated_unix={}\n",
++                cfg.profile,
++                now_unix()
++            ),
++        )?;
++        Ok(())
++    }
++}
++
++#[derive(Clone, Debug)]
++struct Runtime {
++    driver: RuntimeDriver,
++    executable: String,
++    socket: Option<PathBuf>,
++}
++
++impl Runtime {
++    fn detect(driver: Option<RuntimeDriver>) -> Result<Self> {
++        match driver {
++            Some(RuntimeDriver::Docker) => Self::detect_one(RuntimeDriver::Docker),
++            Some(RuntimeDriver::Podman) => Self::detect_one(RuntimeDriver::Podman),
++            None => Self::detect_one(RuntimeDriver::Docker)
++                .or_else(|_| Self::detect_one(RuntimeDriver::Podman)),
++        }
++    }
++
++    fn detect_one(driver: RuntimeDriver) -> Result<Self> {
++        let executable = driver.as_str().to_string();
++        if !command_exists(&executable) {
++            return Err(ClusterError::RuntimeUnavailable(format!(
++                "{} executable was not found in PATH",
++                driver
++            )));
++        }
++        run_program(
++            &executable,
++            &["--version"],
++            Path::new("/dev/null"),
++            CommandMode::RequireSuccess,
++        )?;
++        Ok(Self {
++            driver,
++            executable,
++            socket: detect_socket(driver),
++        })
++    }
++}
++
++#[derive(Clone, Debug)]
++struct ProfileConfig {
++    profile: String,
++    mode: ClusterMode,
++    driver: RuntimeDriver,
++    profile_type: ProfileType,
++    nodes: usize,
++    ports: PortSet,
++    node_image: String,
++    runtime_socket: Option<PathBuf>,
++    created_unix: u64,
++}
++
++impl ProfileConfig {
++    fn write(&self, path: &Path) -> Result<()> {
++        let socket = self
++            .runtime_socket
++            .as_ref()
++            .map(|p| p.display().to_string())
++            .unwrap_or_default();
++        let content = format!(
++            "profile={}\nmode={}\ndriver={}\nprofile_type={}\nnodes={}\napi_port={}\nregistry_port={}\nmetrics_port={}\nservice_start_port={}\nservice_end_port={}\nnode_image={}\nruntime_socket={}\ncreated_unix={}\n",
++            self.profile,
++            self.mode,
++            self.driver,
++            self.profile_type,
++            self.nodes,
++            self.ports.api,
++            self.ports.registry,
++            self.ports.metrics,
++            self.ports.service_start,
++            self.ports.service_end,
++            self.node_image,
++            socket,
++            self.created_unix
++        );
++        fs::write(path, content)?;
++        Ok(())
++    }
++
++    fn read(path: &Path) -> Result<Self> {
++        let values = read_env_file(path)?;
++        let profile = required(&values, "profile")?.to_string();
++        let mode = ClusterMode::parse(required(&values, "mode")?)?;
++        let driver = RuntimeDriver::parse(required(&values, "driver")?)?;
++        let profile_type = ProfileType::parse(required(&values, "profile_type")?)?;
++        let nodes = required(&values, "nodes")?
++            .parse::<usize>()
++            .map_err(|err| {
++                ClusterError::Parse(format!("invalid nodes in {}: {err}", path.display()))
++            })?;
++        let ports = PortSet {
++            api: parse_port(&values, "api_port", path)?,
++            registry: parse_port(&values, "registry_port", path)?,
++            metrics: parse_port(&values, "metrics_port", path)?,
++            service_start: parse_port(&values, "service_start_port", path)?,
++            service_end: parse_port(&values, "service_end_port", path)?,
++        };
++        let node_image = required(&values, "node_image")?.to_string();
++        let runtime_socket = values
++            .get("runtime_socket")
++            .filter(|value| !value.is_empty())
++            .map(PathBuf::from);
++        let created_unix = values
++            .get("created_unix")
++            .and_then(|value| value.parse::<u64>().ok())
++            .unwrap_or(0);
++        Ok(Self {
++            profile,
++            mode,
++            driver,
++            profile_type,
++            nodes,
++            ports,
++            node_image,
++            runtime_socket,
++            created_unix,
++        })
++    }
++}
++
++#[derive(Clone, Debug)]
++struct ProfilePaths {
++    profile_dir: PathBuf,
++    config_file: PathBuf,
++    state_file: PathBuf,
++    kubeconfig_file: PathBuf,
++    log_dir: PathBuf,
++    manager_log: PathBuf,
++    node_log: PathBuf,
++    storage_dir: PathBuf,
++    volumes_dir: PathBuf,
++    certs_dir: PathBuf,
++    metadata_dir: PathBuf,
++    addon_dir: PathBuf,
++    backups_dir: PathBuf,
++    hooks_dir: PathBuf,
++}
++
++impl ProfilePaths {
++    fn new(root: &Path, profile: &str) -> Self {
++        let profile_dir = root.join("profiles").join(profile);
++        Self {
++            config_file: profile_dir.join("config.env"),
++            state_file: profile_dir.join("state.env"),
++            kubeconfig_file: profile_dir.join("kubeconfig.yaml"),
++            log_dir: profile_dir.join("logs"),
++            manager_log: profile_dir.join("logs").join("manager.log"),
++            node_log: profile_dir.join("logs").join("node.log"),
++            storage_dir: profile_dir.join("storage"),
++            volumes_dir: profile_dir.join("volumes"),
++            certs_dir: profile_dir.join("certs"),
++            metadata_dir: profile_dir.join("metadata"),
++            addon_dir: profile_dir.join("addons"),
++            backups_dir: profile_dir.join("backups"),
++            hooks_dir: profile_dir.join("hooks"),
++            profile_dir,
++        }
++    }
++
++    fn ensure(&self) -> Result<()> {
++        fs::create_dir_all(&self.profile_dir)?;
++        fs::create_dir_all(&self.log_dir)?;
++        fs::create_dir_all(&self.storage_dir)?;
++        fs::create_dir_all(&self.volumes_dir)?;
++        fs::create_dir_all(&self.certs_dir)?;
++        fs::create_dir_all(&self.metadata_dir)?;
++        fs::create_dir_all(&self.addon_dir)?;
++        fs::create_dir_all(&self.backups_dir)?;
++        fs::create_dir_all(&self.hooks_dir)?;
++        Ok(())
++    }
++}
++
++#[derive(Clone, Copy)]
++enum CommandMode {
++    RequireSuccess,
++    AllowFailure,
++}
++
++fn run_runtime(runtime: &Runtime, args: &[&str], log: &Path, mode: CommandMode) -> Result<Output> {
++    run_program(&runtime.executable, args, log, mode)
++}
++
++fn run_runtime_capture(runtime: &Runtime, args: &[&str], log: &Path) -> Result<Output> {
++    run_program(&runtime.executable, args, log, CommandMode::RequireSuccess)
++}
++
++fn run_program(program: &str, args: &[&str], log: &Path, mode: CommandMode) -> Result<Output> {
++    append_log(log, &format!("$ {} {}\n", program, args.join(" "))).ok();
++    let output = Command::new(program).args(args).output().map_err(|err| {
++        ClusterError::RuntimeUnavailable(format!("failed to execute '{program}': {err}"))
++    })?;
++    append_log_output(log, &output).ok();
++    if output.status.success() || matches!(mode, CommandMode::AllowFailure) {
++        Ok(output)
++    } else {
++        Err(ClusterError::CommandFailed {
++            command: format!("{} {}", program, args.join(" ")),
++            status: output.status.code(),
++            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
++            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
++        })
++    }
++}
++
++fn append_log(path: &Path, message: &str) -> Result<()> {
++    if path == Path::new("/dev/null") {
++        return Ok(());
++    }
++    if let Some(parent) = path.parent() {
++        fs::create_dir_all(parent)?;
++    }
++    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
++    file.write_all(message.as_bytes())?;
++    Ok(())
++}
++
++fn append_log_output(path: &Path, output: &Output) -> Result<()> {
++    if path == Path::new("/dev/null") {
++        return Ok(());
++    }
++    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
++    writeln!(file, "status: {}", output.status)?;
++    if !output.stdout.is_empty() {
++        writeln!(file, "stdout:")?;
++        file.write_all(&output.stdout)?;
++        writeln!(file)?;
++    }
++    if !output.stderr.is_empty() {
++        writeln!(file, "stderr:")?;
++        file.write_all(&output.stderr)?;
++        writeln!(file)?;
++    }
++    Ok(())
++}
++
++fn inspect_container_status(runtime: &Runtime, container: &str, log: &Path) -> Result<String> {
++    let output = run_runtime(
++        runtime,
++        &["inspect", "-f", "{{.State.Status}}", container],
++        log,
++        CommandMode::RequireSuccess,
++    )?;
++    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
++}
++
++fn write_state(path: &Path, phase: ClusterPhase, message: &str) -> Result<()> {
++    let content = format!(
++        "phase={}\nmessage={}\nupdated_unix={}\n",
++        phase,
++        sanitize_env_value(message),
++        now_unix()
++    );
++    fs::write(path, content)?;
++    Ok(())
++}
++
++fn read_phase(path: &Path) -> Result<ClusterPhase> {
++    if !path.exists() {
++        return Ok(ClusterPhase::Unknown);
++    }
++    let values = read_env_file(path)?;
++    let phase = values
++        .get("phase")
++        .map(|value| value.as_str())
++        .unwrap_or("unknown");
++    match normalize(phase).as_str() {
++        "not-created" => Ok(ClusterPhase::NotCreated),
++        "creating" => Ok(ClusterPhase::Creating),
++        "running" => Ok(ClusterPhase::Running),
++        "stopped" => Ok(ClusterPhase::Stopped),
++        "error" => Ok(ClusterPhase::Error),
++        _ => Ok(ClusterPhase::Unknown),
++    }
++}
++
++fn read_env_file(path: &Path) -> Result<BTreeMap<String, String>> {
++    let mut file = File::open(path)?;
++    let mut content = String::new();
++    file.read_to_string(&mut content)?;
++    let mut values = BTreeMap::new();
++    for (line_number, line) in content.lines().enumerate() {
++        let line = line.trim();
++        if line.is_empty() || line.starts_with('#') {
++            continue;
++        }
++        let Some((key, value)) = line.split_once('=') else {
++            return Err(ClusterError::Parse(format!(
++                "invalid line {} in {}: expected key=value",
++                line_number + 1,
++                path.display()
++            )));
++        };
++        values.insert(key.trim().to_string(), value.trim().to_string());
++    }
++    Ok(values)
++}
++
++fn required<'a>(values: &'a BTreeMap<String, String>, key: &str) -> Result<&'a str> {
++    values
++        .get(key)
++        .map(|value| value.as_str())
++        .ok_or_else(|| ClusterError::Parse(format!("missing required key '{key}'")))
++}
++
++fn parse_port(values: &BTreeMap<String, String>, key: &str, path: &Path) -> Result<u16> {
++    required(values, key)?
++        .parse::<u16>()
++        .map_err(|err| ClusterError::Parse(format!("invalid {key} in {}: {err}", path.display())))
++}
++
++fn validate_profile_name(profile: &str) -> Result<()> {
++    if profile.is_empty() {
++        return Err(ClusterError::InvalidArgument(
++            "profile name must not be empty".to_string(),
++        ));
++    }
++    if profile.len() > 63 {
++        return Err(ClusterError::InvalidArgument(
++            "profile name must be at most 63 characters".to_string(),
++        ));
++    }
++    let valid = profile.chars().all(|ch| {
++        ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_' || ch == '.'
++    });
++    if !valid {
++        return Err(ClusterError::InvalidArgument(
++            "profile name may only contain lowercase letters, numbers, dash, underscore, and dot"
++                .to_string(),
++        ));
++    }
++    Ok(())
++}
++
++fn deterministic_base_port(profile: &str) -> u16 {
++    let mut hash: u64 = 0xcbf29ce484222325;
++    for byte in profile.as_bytes() {
++        hash ^= u64::from(*byte);
++        hash = hash.wrapping_mul(0x100000001b3);
++    }
++    let base = 35_000 + (hash % 20_000) as u16;
++    base - (base % 200)
++}
++
++fn next_base(base: u16) -> u16 {
++    let next = base.saturating_add(200);
++    if next > 54_000 {
++        35_000
++    } else {
++        next
++    }
++}
++
++fn port_available(port: u16) -> bool {
++    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
++}
++
++fn node_container_names(cfg: &ProfileConfig) -> Vec<String> {
++    (0..cfg.nodes)
++        .map(|index| node_container_name(&cfg.profile, index))
++        .collect()
++}
++
++fn node_container_name(profile: &str, index: usize) -> String {
++    if index == 0 {
++        format!("rusternetes-{profile}-control-plane")
++    } else {
++        format!("rusternetes-{profile}-worker-{index}")
++    }
++}
++
++fn registry_container_name(profile: &str) -> String {
++    format!("rusternetes-{profile}-registry")
++}
++
++fn network_name(profile: &str) -> String {
++    format!("rusternetes-{profile}")
++}
++
++fn api_endpoint(cfg: &ProfileConfig) -> String {
++    let scheme = if cfg.profile_type == ProfileType::Production {
++        "https"
++    } else {
++        "http"
++    };
++    format!("{scheme}://127.0.0.1:{}", cfg.ports.api)
++}
++
++fn detect_socket(driver: RuntimeDriver) -> Option<PathBuf> {
++    if let Ok(docker_host) = env::var("DOCKER_HOST") {
++        if let Some(path) = docker_host.strip_prefix("unix://") {
++            return Some(PathBuf::from(path));
++        }
++    }
++    match driver {
++        RuntimeDriver::Docker => Some(PathBuf::from("/var/run/docker.sock")),
++        RuntimeDriver::Podman => {
++            let mut candidates = Vec::new();
++            if let Ok(xdg) = env::var("XDG_RUNTIME_DIR") {
++                candidates.push(PathBuf::from(xdg).join("podman/podman.sock"));
++            }
++            candidates.push(PathBuf::from("/run/podman/podman.sock"));
++            candidates.push(PathBuf::from("/var/run/docker.sock"));
++            candidates.into_iter().find(|path| path.exists())
++        }
++    }
++}
++
++fn command_exists(program: &str) -> bool {
++    if program.contains(std::path::MAIN_SEPARATOR) {
++        return Path::new(program).exists();
++    }
++    env::var_os("PATH")
++        .map(|paths| {
++            env::split_paths(&paths).any(|dir| {
++                let candidate = dir.join(program);
++                candidate.exists() && candidate.is_file()
++            })
++        })
++        .unwrap_or(false)
++}
++
++fn normalize(value: &str) -> String {
++    value.trim().to_ascii_lowercase().replace('_', "-")
++}
++
++fn sanitize_env_value(value: &str) -> String {
++    value.replace(['\n', '\r'], " ")
++}
++
++fn now_unix() -> u64 {
++    SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .map(|duration| duration.as_secs())
++        .unwrap_or(0)
++}
++
++fn remove_file_if_exists(path: &Path) -> Result<()> {
++    if path.exists() {
++        fs::remove_file(path)?;
++    }
++    Ok(())
++}
++
++fn read_tail(path: &Path, max_lines: usize) -> Result<String> {
++    if !path.exists() {
++        return Ok("<not collected yet>\n".to_string());
++    }
++    let content = fs::read_to_string(path)?;
++    let lines = content.lines().collect::<Vec<_>>();
++    let start = lines.len().saturating_sub(max_lines);
++    Ok(lines[start..].join("\n"))
++}
++
++#[cfg(unix)]
++fn set_executable(path: &Path) -> Result<()> {
++    use std::os::unix::fs::PermissionsExt;
++    let mut permissions = fs::metadata(path)?.permissions();
++    permissions.set_mode(0o755);
++    fs::set_permissions(path, permissions)?;
++    Ok(())
++}
++
++#[cfg(not(unix))]
++fn set_executable(_path: &Path) -> Result<()> {
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn parses_modes() {
++        assert_eq!(ClusterMode::parse("kind").unwrap(), ClusterMode::Kind);
++        assert_eq!(
++            ClusterMode::parse("minikube-compatible").unwrap(),
++            ClusterMode::Minikube
++        );
++        assert_eq!(
++            ClusterMode::parse("single_node").unwrap(),
++            ClusterMode::SingleNode
++        );
++    }
++
++    #[test]
++    fn validates_profile_names() {
++        assert!(validate_profile_name("dev").is_ok());
++        assert!(validate_profile_name("prod-single.1").is_ok());
++        assert!(validate_profile_name("BadProfile").is_err());
++        assert!(validate_profile_name("../../oops").is_err());
++    }
++
++    #[test]
++    fn deterministic_ports_are_stable_and_windowed() {
++        let first = deterministic_base_port("dev");
++        let second = deterministic_base_port("dev");
++        assert_eq!(first, second);
++        assert!(first >= 35_000);
++        assert!(first <= 55_000);
++        assert_eq!(first % 200, 0);
++    }
++
++    #[test]
++    fn env_round_trip() {
++        let temp = env::temp_dir().join(format!("rusternetes-test-{}", now_unix()));
++        fs::create_dir_all(&temp).unwrap();
++        let path = temp.join("config.env");
++        let cfg = ProfileConfig {
++            profile: "dev".to_string(),
++            mode: ClusterMode::Kind,
++            driver: RuntimeDriver::Docker,
++            profile_type: ProfileType::Development,
++            nodes: 1,
++            ports: PortSet {
++                api: 41_000,
++                registry: 41_001,
++                metrics: 41_002,
++                service_start: 41_100,
++                service_end: 41_199,
++            },
++            node_image: "rusternetes/local-node:dev".to_string(),
++            runtime_socket: Some(PathBuf::from("/var/run/docker.sock")),
++            created_unix: 1,
++        };
++        cfg.write(&path).unwrap();
++        let read = ProfileConfig::read(&path).unwrap();
++        assert_eq!(read.profile, cfg.profile);
++        assert_eq!(read.mode, cfg.mode);
++        assert_eq!(read.ports.api, cfg.ports.api);
++        fs::remove_dir_all(&temp).unwrap();
++    }
++}
+diff --git a/deploy/production-single-node/.env.example b/deploy/production-single-node/.env.example
+new file mode 100644
+index 0000000..8002c61
+--- /dev/null
++++ b/deploy/production-single-node/.env.example
+@@ -0,0 +1,4 @@
++PROFILE=prod-single
++RUSTERNETES_IMAGE=rusternetes/local-node:dev
++API_PORT=46443
++RUSTERNETES_HOME=../../.rusternetes
+diff --git a/deploy/production-single-node/backup.sh b/deploy/production-single-node/backup.sh
+new file mode 100644
+index 0000000..29642a3
+--- /dev/null
++++ b/deploy/production-single-node/backup.sh
+@@ -0,0 +1,10 @@
++#!/usr/bin/env sh
++set -eu
++PROFILE="${PROFILE:-prod-single}"
++ROOT="${RUSTERNETES_HOME:-.rusternetes}"
++HOOK="$ROOT/profiles/$PROFILE/hooks/backup.sh"
++if [ ! -x "$HOOK" ]; then
++  echo "backup hook not found: $HOOK" >&2
++  exit 2
++fi
++exec "$HOOK"
+diff --git a/deploy/production-single-node/compose.yml b/deploy/production-single-node/compose.yml
+new file mode 100644
+index 0000000..8d55e53
+--- /dev/null
++++ b/deploy/production-single-node/compose.yml
+@@ -0,0 +1,38 @@
++services:
++  rusternetes-single-node:
++    image: ${RUSTERNETES_IMAGE:-rusternetes/local-node:dev}
++    container_name: rusternetes-${PROFILE:-prod-single}-control-plane
++    hostname: rusternetes-${PROFILE:-prod-single}-control-plane
++    privileged: true
++    restart: unless-stopped
++    ports:
++      - "127.0.0.1:${API_PORT:-46443}:6443"
++    volumes:
++      - ${RUSTERNETES_HOME:-../../.rusternetes}/profiles/${PROFILE:-prod-single}/storage:/var/lib/rusternetes/storage
++      - ${RUSTERNETES_HOME:-../../.rusternetes}/profiles/${PROFILE:-prod-single}/volumes:/var/lib/rusternetes/volumes
++      - ${RUSTERNETES_HOME:-../../.rusternetes}/profiles/${PROFILE:-prod-single}/logs:/var/log/rusternetes
++      - ${RUSTERNETES_HOME:-../../.rusternetes}/profiles/${PROFILE:-prod-single}/certs:/var/lib/rusternetes/certs:ro
++      - /var/run/docker.sock:/var/run/docker.sock
++    command:
++      - --storage-backend
++      - sqlite
++      - --data-dir
++      - /var/lib/rusternetes/storage/rusternetes.db
++      - --bind-address
++      - 0.0.0.0:6443
++      - --node-name
++      - rusternetes-${PROFILE:-prod-single}-control-plane
++      - --volume-dir
++      - /var/lib/rusternetes/volumes
++      - --network
++      - rusternetes-${PROFILE:-prod-single}
++      - --console-dir
++      - /opt/rusternetes/console
++      - --tls
++      - --tls-cert-file
++      - /var/lib/rusternetes/certs/apiserver.crt
++      - --tls-key-file
++      - /var/lib/rusternetes/certs/apiserver.key
++      - --client-ca-file
++      - /var/lib/rusternetes/certs/ca.crt
++      - --skip-auth=false
+diff --git a/deploy/production-single-node/restore.sh b/deploy/production-single-node/restore.sh
+new file mode 100644
+index 0000000..81e26a2
+--- /dev/null
++++ b/deploy/production-single-node/restore.sh
+@@ -0,0 +1,10 @@
++#!/usr/bin/env sh
++set -eu
++PROFILE="${PROFILE:-prod-single}"
++ROOT="${RUSTERNETES_HOME:-.rusternetes}"
++HOOK="$ROOT/profiles/$PROFILE/hooks/restore.sh"
++if [ ! -x "$HOOK" ]; then
++  echo "restore hook not found: $HOOK" >&2
++  exit 2
++fi
++exec "$HOOK" "$@"
+diff --git a/deploy/production-single-node/rusternetes-single-node.service b/deploy/production-single-node/rusternetes-single-node.service
+new file mode 100644
+index 0000000..94f4e00
+--- /dev/null
++++ b/deploy/production-single-node/rusternetes-single-node.service
+@@ -0,0 +1,18 @@
++[Unit]
++Description=Rūsternetes production single-node local profile
++After=network-online.target docker.service
++Wants=network-online.target
++Requires=docker.service
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++WorkingDirectory=/opt/rusternetes
++Environment=RUSTERNETES_HOME=/var/lib/rusternetes-local
++ExecStart=/usr/local/bin/rusternetes cluster create --profile prod-single --driver docker --mode single-node --profile-type production
++ExecStop=/usr/local/bin/rusternetes cluster stop --profile prod-single
++TimeoutStartSec=300
++TimeoutStopSec=120
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/desktop/index.html b/desktop/index.html
+new file mode 100644
+index 0000000..4f295bc
+--- /dev/null
++++ b/desktop/index.html
+@@ -0,0 +1,12 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Rūsternetes Desktop</title>
++  </head>
++  <body>
++    <div id="app"></div>
++    <script type="module" src="/src/main.ts"></script>
++  </body>
++</html>
+diff --git a/desktop/package.json b/desktop/package.json
+new file mode 100644
+index 0000000..62cb766
+--- /dev/null
++++ b/desktop/package.json
+@@ -0,0 +1,19 @@
++{
++  "name": "rusternetes-desktop",
++  "version": "0.1.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite --host 127.0.0.1",
++    "build": "tsc && vite build",
++    "tauri": "tauri"
++  },
++  "dependencies": {
++    "@tauri-apps/api": "^2.0.0"
++  },
++  "devDependencies": {
++    "@tauri-apps/cli": "^2.0.0",
++    "typescript": "^5.4.0",
++    "vite": "^5.4.0"
++  }
++}
+diff --git a/desktop/src/main.ts b/desktop/src/main.ts
+new file mode 100644
+index 0000000..2f91438
+--- /dev/null
++++ b/desktop/src/main.ts
+@@ -0,0 +1,184 @@
++import { invoke } from "@tauri-apps/api/core";
++import "./styles.css";
++
++type ClusterStatus = {
++  profile: string;
++  mode: string;
++  driver: string;
++  profile_type: string;
++  phase: string;
++  api_endpoint: string;
++  kubeconfig_path: string;
++  profile_dir: string;
++  message: string;
++};
++
++type AddonStatus = {
++  name: string;
++  support: string;
++  enabled: boolean;
++  message: string;
++};
++
++const app = document.querySelector<HTMLDivElement>("#app")!;
++
++app.innerHTML = `
++  <main class="shell">
++    <section class="hero">
++      <div>
++        <p class="eyebrow">Rūsternetes Desktop</p>
++        <h1>Local clusters without duplicated orchestration.</h1>
++        <p class="lede">Create kind-compatible, minikube-compatible, and production single-node Rūsternetes profiles from the same manager used by the CLI.</p>
++      </div>
++      <button id="refresh" class="ghost">Refresh status</button>
++    </section>
++
++    <section class="panel grid">
++      <label>Profile<input id="profile" value="dev" /></label>
++      <label>Mode
++        <select id="mode">
++          <option value="kind">kind-compatible</option>
++          <option value="minikube">minikube-compatible</option>
++          <option value="single-node">production single-node</option>
++        </select>
++      </label>
++      <label>Runtime
++        <select id="driver">
++          <option value="docker">Docker</option>
++          <option value="podman">Podman</option>
++          <option value="auto">Auto</option>
++        </select>
++      </label>
++      <label>Profile type
++        <select id="profileType">
++          <option value="development">development</option>
++          <option value="production">production</option>
++        </select>
++      </label>
++    </section>
++
++    <section class="actions">
++      <button id="create">Create</button>
++      <button id="start">Start</button>
++      <button id="stop">Stop</button>
++      <button id="reset">Reset</button>
++      <button id="delete" class="danger">Delete</button>
++      <button id="smoke" class="secondary">Run smoke test</button>
++    </section>
++
++    <section class="panel status-panel">
++      <div class="status-header">
++        <h2>Status</h2>
++        <button id="copyKube" class="ghost">Copy kubeconfig export</button>
++      </div>
++      <pre id="status">No status loaded yet.</pre>
++    </section>
++
++    <section class="panel addons-panel">
++      <div class="status-header">
++        <h2>Add-ons</h2>
++        <div class="inline">
++          <select id="addonName">
++            <option value="registry">registry</option>
++            <option value="dashboard">dashboard</option>
++            <option value="ingress">ingress</option>
++            <option value="metrics">metrics</option>
++          </select>
++          <button id="enableAddon">Enable</button>
++          <button id="disableAddon" class="secondary">Disable</button>
++        </div>
++      </div>
++      <div id="addons" class="addons"></div>
++    </section>
++
++    <section class="panel logs-panel">
++      <div class="status-header">
++        <h2>Logs</h2>
++        <div class="inline">
++          <button id="loadLogs" class="secondary">Load logs</button>
++          <button id="openConsole" class="ghost">Open web console</button>
++        </div>
++      </div>
++      <pre id="logs">Logs will appear here.</pre>
++    </section>
++  </main>
++`;
++
++const get = (id: string) => document.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)!;
++const profile = () => get("profile").value.trim() || "dev";
++const mode = () => get("mode").value;
++const driver = () => get("driver").value;
++const profileType = () => get("profileType").value;
++const statusEl = document.querySelector<HTMLPreElement>("#status")!;
++const logsEl = document.querySelector<HTMLPreElement>("#logs")!;
++const addonsEl = document.querySelector<HTMLDivElement>("#addons")!;
++
++function renderStatus(status: ClusterStatus) {
++  statusEl.textContent = [
++    `profile: ${status.profile}`,
++    `mode: ${status.mode}`,
++    `driver: ${status.driver}`,
++    `profile_type: ${status.profile_type}`,
++    `phase: ${status.phase}`,
++    `api: ${status.api_endpoint}`,
++    `kubeconfig: ${status.kubeconfig_path}`,
++    `profile_dir: ${status.profile_dir}`,
++    `export KUBECONFIG="${status.kubeconfig_path}"`,
++    status.message ? `message: ${status.message}` : ""
++  ].filter(Boolean).join("\n");
++}
++
++function renderAddons(addons: AddonStatus[]) {
++  addonsEl.innerHTML = addons.map((addon) => `
++    <article class="addon-card ${addon.enabled ? "enabled" : ""}">
++      <div>
++        <strong>${addon.name}</strong>
++        <span>${addon.support}</span>
++      </div>
++      <p>${addon.message}</p>
++    </article>
++  `).join("");
++}
++
++async function refresh() {
++  try {
++    const status = await invoke<ClusterStatus>("cluster_status", { profile: profile() });
++    renderStatus(status);
++    const addons = await invoke<AddonStatus[]>("addons_list", { profile: profile() });
++    renderAddons(addons);
++  } catch (error) {
++    statusEl.textContent = String(error);
++  }
++}
++
++async function runAction<T>(action: () => Promise<T>, after: (value: T) => void = () => undefined) {
++  statusEl.textContent = "Running...";
++  try {
++    const result = await action();
++    after(result);
++    await refresh();
++  } catch (error) {
++    statusEl.textContent = String(error);
++  }
++}
++
++document.querySelector("#create")!.addEventListener("click", () => runAction(
++  () => invoke<ClusterStatus>("create_cluster", { profile: profile(), mode: mode(), driver: driver(), profileType: profileType() }),
++  renderStatus
++));
++document.querySelector("#start")!.addEventListener("click", () => runAction(() => invoke<ClusterStatus>("cluster_start", { profile: profile() }), renderStatus));
++document.querySelector("#stop")!.addEventListener("click", () => runAction(() => invoke<ClusterStatus>("cluster_stop", { profile: profile() }), renderStatus));
++document.querySelector("#reset")!.addEventListener("click", () => runAction(() => invoke<ClusterStatus>("cluster_reset", { profile: profile() }), renderStatus));
++document.querySelector("#delete")!.addEventListener("click", () => runAction(() => invoke<string>("cluster_delete", { profile: profile() }), (msg) => { statusEl.textContent = msg; }));
++document.querySelector("#refresh")!.addEventListener("click", refresh);
++document.querySelector("#loadLogs")!.addEventListener("click", async () => { logsEl.textContent = await invoke<string>("cluster_logs", { profile: profile() }); });
++document.querySelector("#enableAddon")!.addEventListener("click", () => runAction(() => invoke<string>("addon_enable", { profile: profile(), addon: get("addonName").value }), (msg) => { logsEl.textContent = msg; }));
++document.querySelector("#disableAddon")!.addEventListener("click", () => runAction(() => invoke<string>("addon_disable", { profile: profile(), addon: get("addonName").value }), (msg) => { logsEl.textContent = msg; }));
++document.querySelector("#smoke")!.addEventListener("click", async () => { logsEl.textContent = await invoke<string>("smoke_test", { profile: profile() }); });
++document.querySelector("#openConsole")!.addEventListener("click", async () => { window.open(await invoke<string>("console_url", { profile: profile() }), "_blank"); });
++document.querySelector("#copyKube")!.addEventListener("click", async () => {
++  const path = await invoke<string>("kubeconfig_path", { profile: profile() });
++  await navigator.clipboard.writeText(`export KUBECONFIG="${path}"`);
++});
++
++refresh();
+diff --git a/desktop/src/styles.css b/desktop/src/styles.css
+new file mode 100644
+index 0000000..ba6fb5d
+--- /dev/null
++++ b/desktop/src/styles.css
+@@ -0,0 +1,34 @@
++:root {
++  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  color: #e5edf7;
++  background: #0b1020;
++}
++
++* { box-sizing: border-box; }
++body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0%, #1f3768 0, #0b1020 42%); }
++button, input, select { font: inherit; }
++.shell { max-width: 1180px; margin: 0 auto; padding: 32px; }
++.hero { display: flex; justify-content: space-between; gap: 24px; align-items: start; margin-bottom: 24px; }
++.eyebrow { color: #8cc8ff; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; font-weight: 700; }
++h1 { margin: 0; font-size: clamp(32px, 4vw, 56px); line-height: 1; max-width: 760px; }
++.lede { color: #b8c7dd; max-width: 760px; font-size: 18px; }
++.panel { border: 1px solid rgba(255,255,255,.12); background: rgba(13, 22, 44, .74); backdrop-filter: blur(18px); border-radius: 22px; padding: 20px; box-shadow: 0 20px 70px rgba(0,0,0,.25); margin-bottom: 18px; }
++.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
++label { display: grid; gap: 8px; color: #9fb4d0; font-weight: 650; }
++input, select { width: 100%; border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 12px 14px; background: #101a33; color: #eef6ff; }
++.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
++button { border: 0; border-radius: 14px; padding: 12px 16px; background: #62a8ff; color: #061224; font-weight: 800; cursor: pointer; }
++button.secondary { background: #223450; color: #dcecff; }
++button.ghost { background: rgba(255,255,255,.08); color: #dcecff; border: 1px solid rgba(255,255,255,.1); }
++button.danger { background: #ff6b7a; color: #23070b; }
++.status-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
++.status-header h2 { margin: 0; }
++.inline { display: flex; gap: 10px; align-items: center; }
++pre { white-space: pre-wrap; word-break: break-word; margin: 0; color: #cfe0f5; }
++.addons { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
++.addon-card { border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.04); }
++.addon-card.enabled { border-color: rgba(98,168,255,.7); background: rgba(98,168,255,.12); }
++.addon-card div { display: flex; justify-content: space-between; gap: 8px; }
++.addon-card span { color: #8cc8ff; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
++.addon-card p { color: #aebed6; margin-bottom: 0; }
++@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .hero { flex-direction: column; } }
+diff --git a/desktop/src-tauri/Cargo.toml b/desktop/src-tauri/Cargo.toml
+new file mode 100644
+index 0000000..ed79119
+--- /dev/null
++++ b/desktop/src-tauri/Cargo.toml
+@@ -0,0 +1,14 @@
++[package]
++name = "rusternetes-desktop"
++version = "0.1.0"
++edition = "2021"
++authors = ["Rusternetes Contributors"]
++license = "Apache-2.0"
++
++[build-dependencies]
++tauri-build = { version = "2", features = [] }
++
++[dependencies]
++tauri = { version = "2", features = [] }
++serde = { version = "1", features = ["derive"] }
++rusternetes-cluster-manager = { path = "../../crates/rusternetes-cluster-manager" }
+diff --git a/desktop/src-tauri/build.rs b/desktop/src-tauri/build.rs
+new file mode 100644
+index 0000000..d667474
+--- /dev/null
++++ b/desktop/src-tauri/build.rs
+@@ -0,0 +1,3 @@
++fn main() {
++    tauri_build::build();
++}
+diff --git a/desktop/src-tauri/capabilities/default.json b/desktop/src-tauri/capabilities/default.json
+new file mode 100644
+index 0000000..efbce0d
+--- /dev/null
++++ b/desktop/src-tauri/capabilities/default.json
+@@ -0,0 +1,7 @@
++{
++  "$schema": "../gen/schemas/desktop-schema.json",
++  "identifier": "default",
++  "description": "Default desktop capability set for Rūsternetes orchestration commands.",
++  "windows": ["main"],
++  "permissions": []
++}
+diff --git a/desktop/src-tauri/src/main.rs b/desktop/src-tauri/src/main.rs
+new file mode 100644
+index 0000000..57d344a
+--- /dev/null
++++ b/desktop/src-tauri/src/main.rs
+@@ -0,0 +1,198 @@
++use rusternetes_cluster_manager::{
++    AddonStatus, ClusterManager, ClusterMode, ClusterStatus, CreateOptions, ProfileType,
++    RuntimeDriver,
++};
++use serde::Serialize;
++use std::path::PathBuf;
++
++#[derive(Serialize)]
++struct DesktopStatus {
++    profile: String,
++    mode: String,
++    driver: String,
++    profile_type: String,
++    phase: String,
++    api_endpoint: String,
++    kubeconfig_path: String,
++    profile_dir: String,
++    message: String,
++}
++
++#[derive(Serialize)]
++struct DesktopAddon {
++    name: String,
++    support: String,
++    enabled: bool,
++    message: String,
++}
++
++impl From<ClusterStatus> for DesktopStatus {
++    fn from(value: ClusterStatus) -> Self {
++        Self {
++            profile: value.profile,
++            mode: value.mode.to_string(),
++            driver: value.driver.to_string(),
++            profile_type: value.profile_type.to_string(),
++            phase: value.phase.to_string(),
++            api_endpoint: value.api_endpoint,
++            kubeconfig_path: value.kubeconfig_path.display().to_string(),
++            profile_dir: value.profile_dir.display().to_string(),
++            message: value.message,
++        }
++    }
++}
++
++impl From<AddonStatus> for DesktopAddon {
++    fn from(value: AddonStatus) -> Self {
++        Self {
++            name: value.name,
++            support: value.support.to_string(),
++            enabled: value.enabled,
++            message: value.message,
++        }
++    }
++}
++
++fn manager() -> Result<ClusterManager, String> {
++    ClusterManager::default_paths().map_err(|err| err.to_string())
++}
++
++fn parse_driver(driver: &str) -> Result<Option<RuntimeDriver>, String> {
++    if driver == "auto" || driver.is_empty() {
++        Ok(None)
++    } else {
++        RuntimeDriver::parse(driver).map(Some).map_err(|err| err.to_string())
++    }
++}
++
++#[tauri::command]
++fn create_cluster(
++    profile: String,
++    mode: String,
++    driver: String,
++    profile_type: String,
++) -> Result<DesktopStatus, String> {
++    let mode = ClusterMode::parse(&mode).map_err(|err| err.to_string())?;
++    let mut profile_type = ProfileType::parse(&profile_type).map_err(|err| err.to_string())?;
++    if mode == ClusterMode::SingleNode {
++        profile_type = ProfileType::Production;
++    }
++    manager()?
++        .create(CreateOptions {
++            profile,
++            mode,
++            driver: parse_driver(&driver)?,
++            profile_type,
++            nodes: 1,
++            node_image: None,
++            repo_root: None,
++            wait: true,
++            force: false,
++        })
++        .map(DesktopStatus::from)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn cluster_status(profile: String) -> Result<DesktopStatus, String> {
++    manager()?
++        .status(&profile)
++        .map(DesktopStatus::from)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn cluster_start(profile: String) -> Result<DesktopStatus, String> {
++    manager()?
++        .start(&profile)
++        .map(DesktopStatus::from)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn cluster_stop(profile: String) -> Result<DesktopStatus, String> {
++    manager()?
++        .stop(&profile)
++        .map(DesktopStatus::from)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn cluster_reset(profile: String) -> Result<DesktopStatus, String> {
++    manager()?
++        .reset(&profile)
++        .map(DesktopStatus::from)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn cluster_delete(profile: String) -> Result<String, String> {
++    manager()?.delete(&profile).map_err(|err| err.to_string())?;
++    Ok(format!("deleted profile '{profile}'"))
++}
++
++#[tauri::command]
++fn kubeconfig_path(profile: String) -> Result<String, String> {
++    manager()?
++        .kubeconfig_path(&profile)
++        .map(|path: PathBuf| path.display().to_string())
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn cluster_logs(profile: String) -> Result<String, String> {
++    manager()?.logs(&profile).map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn addons_list(profile: String) -> Result<Vec<DesktopAddon>, String> {
++    manager()?
++        .addons(&profile)
++        .map(|addons| addons.into_iter().map(DesktopAddon::from).collect())
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn addon_enable(profile: String, addon: String) -> Result<String, String> {
++    manager()?
++        .enable_addon(&profile, &addon)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn addon_disable(profile: String, addon: String) -> Result<String, String> {
++    manager()?
++        .disable_addon(&profile, &addon)
++        .map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn console_url(profile: String) -> Result<String, String> {
++    manager()?.console_url(&profile).map_err(|err| err.to_string())
++}
++
++#[tauri::command]
++fn smoke_test(profile: String) -> Result<String, String> {
++    manager()?.smoke_test(&profile).map_err(|err| err.to_string())
++}
++
++fn main() {
++    tauri::Builder::default()
++        .invoke_handler(tauri::generate_handler![
++            create_cluster,
++            cluster_status,
++            cluster_start,
++            cluster_stop,
++            cluster_reset,
++            cluster_delete,
++            kubeconfig_path,
++            cluster_logs,
++            addons_list,
++            addon_enable,
++            addon_disable,
++            console_url,
++            smoke_test
++        ])
++        .run(tauri::generate_context!())
++        .expect("error while running Rūsternetes Desktop");
++}
+diff --git a/desktop/src-tauri/tauri.conf.json b/desktop/src-tauri/tauri.conf.json
+new file mode 100644
+index 0000000..dd86750
+--- /dev/null
++++ b/desktop/src-tauri/tauri.conf.json
+@@ -0,0 +1,28 @@
++{
++  "$schema": "https://schema.tauri.app/config/2",
++  "productName": "Rūsternetes Desktop",
++  "version": "0.1.0",
++  "identifier": "dev.rusternetes.desktop",
++  "build": {
++    "beforeDevCommand": "npm run dev",
++    "devUrl": "http://127.0.0.1:5173",
++    "beforeBuildCommand": "npm run build",
++    "frontendDist": "../dist"
++  },
++  "app": {
++    "windows": [
++      {
++        "title": "Rūsternetes Desktop",
++        "width": 1180,
++        "height": 840,
++        "minWidth": 860,
++        "minHeight": 680
++      }
++    ]
++  },
++  "bundle": {
++    "active": true,
++    "targets": "all",
++    "category": "DeveloperTool"
++  }
++}
+diff --git a/desktop/tsconfig.json b/desktop/tsconfig.json
+new file mode 100644
+index 0000000..574c04c
+--- /dev/null
++++ b/desktop/tsconfig.json
+@@ -0,0 +1,19 @@
++{
++  "compilerOptions": {
++    "target": "ES2020",
++    "useDefineForClassFields": true,
++    "module": "ESNext",
++    "lib": ["ES2020", "DOM", "DOM.Iterable"],
++    "allowJs": false,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "allowSyntheticDefaultImports": true,
++    "strict": true,
++    "forceConsistentCasingInFileNames": true,
++    "moduleResolution": "Node",
++    "resolveJsonModule": true,
++    "isolatedModules": true,
++    "noEmit": true
++  },
++  "include": ["src"]
++}
+diff --git a/docker/local-node.Dockerfile b/docker/local-node.Dockerfile
+new file mode 100644
+index 0000000..d93f6d3
+--- /dev/null
++++ b/docker/local-node.Dockerfile
+@@ -0,0 +1,24 @@
++# Rūsternetes local node image used by rusternetes-cluster-manager.
++# It builds the existing all-in-one Rusternetes binary and packages it as
++# /usr/local/bin/rusternetesd so the top-level `rusternetes` command can be the CLI.
++FROM rust:1.81-bookworm AS builder
++RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev pkg-config libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
++ENV PROTOC=/usr/bin/protoc
++ENV PROTOC_INCLUDE=/usr/include
++WORKDIR /src
++COPY . .
++RUN cargo build --release -p rusternetes --features sqlite
++RUN mkdir -p /out/console && \
++    if [ -d console/dist ]; then cp -R console/dist/. /out/console/; \
++    elif [ -d console/build ]; then cp -R console/build/. /out/console/; \
++    else printf '%s\n' '<!doctype html><html><body><h1>Rūsternetes Console</h1><p>Build console assets to enable the full desktop/web console.</p></body></html>' > /out/console/index.html; fi
++
++FROM debian:bookworm-slim
++RUN apt-get update && \
++    apt-get install -y --no-install-recommends ca-certificates curl iproute2 iptables procps && \
++    rm -rf /var/lib/apt/lists/*
++COPY --from=builder /src/target/release/rusternetes /usr/local/bin/rusternetesd
++COPY --from=builder /out/console /opt/rusternetes/console
++RUN mkdir -p /var/lib/rusternetes/storage /var/lib/rusternetes/volumes /var/log/rusternetes
++EXPOSE 6443
++ENTRYPOINT ["/usr/local/bin/rusternetesd"]
+diff --git a/docs/addons.md b/docs/addons.md
+new file mode 100644
+index 0000000..26198a2
+--- /dev/null
++++ b/docs/addons.md
+@@ -0,0 +1,33 @@
++# Add-ons
++
++The add-on registry is implemented in the shared cluster-manager crate. CLI and desktop app use the same add-on API.
++
++```bash
++rusternetes cluster addons list --profile dev
++rusternetes cluster addons enable registry --profile dev
++rusternetes cluster addons disable registry --profile dev
++```
++
++## Registry
++
++Status: supported.
++
++`registry` starts a real `registry:2` container named `rusternetes-<profile>-registry`, persists data under the profile add-on directory, and exposes it on the profile registry port.
++
++## Dashboard / web console
++
++Status: partially supported.
++
++The Rūsternetes API server already supports a web console path when console assets are present. The add-on command validates that console assets exist in the repo and records the desired state. Recreate the profile after building console assets if the running image did not include them.
++
++## Ingress
++
++Status: unsupported in this release.
++
++The command path exists, but enabling ingress fails with an actionable message until an ingress controller image/bootstrap and service routing integration are included. This avoids fake success while preserving the extension point.
++
++## Metrics
++
++Status: planned.
++
++Metrics API wiring is reserved in the registry. It reports planned rather than enabled until the metrics API and aggregation/bootstrap path are implemented.
+diff --git a/docs/compatibility/kind.md b/docs/compatibility/kind.md
+new file mode 100644
+index 0000000..90520e8
+--- /dev/null
++++ b/docs/compatibility/kind.md
+@@ -0,0 +1,41 @@
++# kind compatibility
++
++Rūsternetes kind-compatible mode is implemented as a node-container local cluster profile.
++
++## Commands that work today
++
++```bash
++rusternetes cluster create --profile dev --driver docker --mode kind
++rusternetes cluster status --profile dev
++rusternetes cluster kubeconfig --profile dev --path-only
++rusternetes cluster load-image nginx:latest --profile dev
++rusternetes cluster addons list --profile dev
++rusternetes cluster addons enable registry --profile dev
++rusternetes cluster reset --profile dev
++rusternetes cluster delete --profile dev
++```
++
++## Compatibility matrix
++
++| Capability | Status | Notes |
++|---|---:|---|
++| kubectl compatibility | partially supported | Generated kubeconfig points kubectl at the Rūsternetes API server. Actual behavior depends on existing Rūsternetes API coverage. |
++| generated kubeconfig | supported | Profile-scoped kubeconfig is written to `.rusternetes/profiles/<name>/kubeconfig.yaml`. |
++| local image loading | partially supported | Verifies image exists in mounted Docker/Podman runtime; no fake containerd import. |
++| node lifecycle | supported | create/start/stop/status/delete/reset are implemented for node containers. |
++| single-node cluster | supported | One control-plane node container is implemented. |
++| multi-node cluster | planned | Names, config, and API support node count; worker bootstrap is reserved for future work. |
++| Docker-backed runtime | supported | Requires Docker CLI and socket. |
++| Podman-backed runtime | partially supported | Requires Podman CLI and Docker-compatible socket. |
++| ingress enablement | not yet supported | Command fails clearly until an ingress controller/bootstrap is bundled. |
++| service exposure | planned | Deterministic service port range is reserved. |
++| persistent volumes | partially supported | Profile volume directory is mounted into the node container. |
++| add-ons architecture | supported | Registry supported; dashboard partial; ingress/metrics report gaps. |
++| reset/delete/recreate | supported | Profile lifecycle commands remove and recreate runtime resources. |
++| local registry | supported | `registry:2` add-on container. |
++| CI-friendly usage | partially supported | Smoke scripts skip only when Docker/Podman/kubectl are absent. |
++| dev-machine UX | supported | Make targets and CLI mirror local-cluster workflows. |
++
++## Known gaps
++
++This first release does not claim full kind parity. Multi-node worker bootstrap, `kind load docker-image`-style containerd import, kind config file compatibility, and automatic ingress/service helper parity are the main gaps.
+diff --git a/docs/compatibility/minikube.md b/docs/compatibility/minikube.md
+new file mode 100644
+index 0000000..e91fdeb
+--- /dev/null
++++ b/docs/compatibility/minikube.md
+@@ -0,0 +1,38 @@
++# minikube compatibility
++
++Rūsternetes minikube-compatible mode provides a single local profile with start/stop/delete/status, persistent state, add-ons, and generated kubeconfig.
++
++## Commands that work today
++
++```bash
++rusternetes cluster create --profile dev --driver docker --mode minikube
++rusternetes cluster stop --profile dev
++rusternetes cluster start --profile dev
++rusternetes cluster status --profile dev
++rusternetes cluster kubeconfig --profile dev --path-only
++rusternetes cluster addons list --profile dev
++rusternetes cluster addons enable registry --profile dev
++rusternetes cluster reset --profile dev
++rusternetes cluster delete --profile dev
++```
++
++## Compatibility matrix
++
++| Capability | Status | Notes |
++|---|---:|---|
++| kubectl compatibility | partially supported | Uses generated kubeconfig and existing Rūsternetes API surface. |
++| generated kubeconfig | supported | Profile kubeconfig mirrors minikube-style profile selection. |
++| local image loading | partially supported | Host Docker/Podman image availability is validated. |
++| start/stop/delete/status | supported | Single profile lifecycle is implemented. |
++| add-ons interface | supported | Registry works; unsupported add-ons fail clearly. |
++| service access helpers | planned | Deterministic service range is reserved; helper commands are not implemented yet. |
++| persistent state | supported | SQLite state, volumes, logs, metadata, and add-ons are profile-scoped. |
++| Docker driver | supported | Requires Docker CLI/socket. |
++| Podman driver | partially supported | Requires Docker-compatible Podman socket. |
++| production single-node | supported separately | Use `--mode single-node --profile-type production`. |
++| local registry | supported | `registry:2` add-on. |
++| dashboard | partially supported | Existing Rūsternetes console integration is used when assets are present. |
++
++## Known gaps
++
++This release does not implement minikube VM drivers, tunnel/service URL helpers, driver-specific mount helpers, or every minikube add-on. The mode keeps those as cluster-manager extension points rather than CLI rewrites.
+diff --git a/docs/desktop-app.md b/docs/desktop-app.md
+new file mode 100644
+index 0000000..7d29435
+--- /dev/null
++++ b/docs/desktop-app.md
+@@ -0,0 +1,41 @@
++# Desktop app
++
++The desktop app is a lightweight Tauri application. Tauri is preferred because the repository is Rust-first and because Tauri lets the desktop app call the same `rusternetes-cluster-manager` crate used by the CLI.
++
++## Commands
++
++```bash
++make desktop-dev
++make desktop-build
++```
++
++Or directly:
++
++```bash
++cd desktop
++npm install
++npm run tauri dev
++npm run tauri build
++```
++
++## Features
++
++The UI supports:
++
++- create cluster
++- choose mode: kind-compatible, minikube-compatible, production single-node
++- choose runtime: Docker or Podman
++- start, stop, delete, reset
++- status
++- kubeconfig path
++- copy kubeconfig export command
++- logs
++- add-ons list/enable/disable
++- open web console URL
++- run smoke test
++
++The desktop Rust commands call the shared cluster-manager crate. They do not duplicate lifecycle logic.
++
++## Platform support
++
++macOS and Linux are the primary targets. Windows support is prepared architecturally through Tauri and the shared Rust API, but production-grade Windows runtime socket detection and service exposure need validation before it should be marked supported.
+diff --git a/docs/local-clusters.md b/docs/local-clusters.md
+new file mode 100644
+index 0000000..d193b40
+--- /dev/null
++++ b/docs/local-clusters.md
+@@ -0,0 +1,77 @@
++# Local clusters
++
++Rūsternetes local clusters are profile-scoped. A profile is stored at:
++
++```text
++.rusternetes/profiles/<name>/
++  config.env
++  state.env
++  kubeconfig.yaml
++  logs/
++  storage/
++  volumes/
++  certs/
++  metadata/
++  addons/
++  backups/
++  hooks/
++```
++
++The cluster manager supports Docker and Podman detection. Docker uses `/var/run/docker.sock`; Podman uses `DOCKER_HOST`, `$XDG_RUNTIME_DIR/podman/podman.sock`, `/run/podman/podman.sock`, or a Docker-compatible socket. The node container mounts the runtime socket so the existing Rūsternetes kubelet can manage containers through its Docker-compatible API.
++
++## Deterministic ports
++
++Ports are computed from the profile name and then adjusted if an existing profile or local listener already uses the deterministic window. A profile gets ports for API server, local registry, metrics, and a future service-exposure range. This enables multiple profiles without collisions while keeping the same profile stable across delete/recreate cycles when the original ports are free.
++
++## Kind-compatible mode
++
++```bash
++rusternetes cluster create --profile dev --driver docker --mode kind
++export KUBECONFIG="$(rusternetes cluster kubeconfig --profile dev --path-only)"
++kubectl get nodes
++```
++
++This mode creates a node-container profile named `rusternetes-<profile>-control-plane`. Multi-node topology is represented in the API and container naming model; this first version implements single-node creation and rejects non-kind multi-node requests clearly.
++
++## Minikube-compatible mode
++
++```bash
++rusternetes cluster create --profile dev --driver docker --mode minikube
++rusternetes cluster stop --profile dev
++rusternetes cluster start --profile dev
++rusternetes cluster delete --profile dev
++```
++
++The minikube-compatible mode uses single-profile semantics: one profile, persistent state, start/stop/delete/reset commands, add-on enablement, service helper extension points, and generated kubeconfig.
++
++## Kubeconfig
++
++```bash
++rusternetes cluster kubeconfig --profile dev
++export KUBECONFIG="$(rusternetes cluster kubeconfig --profile dev --path-only)"
++```
++
++Development profiles use a local HTTP endpoint and a development token because the all-in-one binary defaults to skip-auth. Production profiles generate a CA, API server certificate, admin client certificate, and kubeconfig with certificate paths.
++
++## Image loading
++
++```bash
++rusternetes cluster load-image nginx:latest --profile dev
++```
++
++Because the current node container mounts the host Docker/Podman socket, image loading verifies that the image exists in that runtime and records it in profile metadata. No fake containerd import is reported. A future containerd-backed node image can implement actual archive import under the same API.
++
++## Reset/delete lifecycle
++
++`delete` removes node/add-on containers, the runtime network, and the profile directory. `reset` reads the existing config, deletes the runtime resources, and recreates the profile with the same mode, driver, image, and node count.
++
++
++## Podman Desktop on macOS compatibility
++
++Podman Desktop runs containers inside a Linux Podman machine. The macOS client socket under `~/.local/share/containers/...` must not be bind-mounted into the Rūsternetes node container. For Podman mode, the local cluster manager mounts the Podman VM socket from inside the VM instead:
++
++```text
++/run/podman/podman.sock:/var/run/docker.sock
++```
++
++This gives the Rūsternetes kubelet a Docker-compatible API path while preserving Podman Desktop support. Custom pod `/etc/resolv.conf` bind mounting is currently disabled for the local Podman Desktop path because macOS-to-VM file bind semantics can surface file/dir mismatches. Pods fall back to the runtime-provided DNS configuration.
+diff --git a/docs/production-single-node.md b/docs/production-single-node.md
+new file mode 100644
+index 0000000..4641b9f
+--- /dev/null
++++ b/docs/production-single-node.md
+@@ -0,0 +1,67 @@
++# Production single-node Rūsternetes
++
++Production single-node mode targets edge, lab, customer, and air-gapped environments where one durable Kubernetes-compatible control plane is preferable to a developer-only cluster.
++
++```bash
++rusternetes cluster create --profile prod-single --mode single-node --profile-type production
++export KUBECONFIG="$(rusternetes cluster kubeconfig --profile prod-single --path-only)"
++kubectl get nodes
++```
++
++## Production defaults
++
++Production profiles enable:
++
++- persistent SQLite state under `.rusternetes/profiles/<profile>/storage/`
++- persistent pod volumes under `.rusternetes/profiles/<profile>/volumes/`
++- generated CA, API server certificate, and admin client certificate under `certs/`
++- kubeconfig using the generated CA and admin certificate
++- node container `--restart unless-stopped`
++- logs under `logs/`
++- backup and restore hooks under `hooks/`
++- controlled-upgrade policy metadata under `hooks/upgrade-policy.env`
++- deterministic API and registry ports
++
++The profile creation fails clearly if OpenSSL is unavailable because production mode does not fall back to development TLS shortcuts.
++
++## Backup and restore
++
++```bash
++.rusternetes/profiles/prod-single/hooks/backup.sh
++.rusternetes/profiles/prod-single/hooks/restore.sh .rusternetes/profiles/prod-single/backups/rusternetes-YYYYMMDDHHMMSS.db
++rusternetes cluster stop --profile prod-single
++rusternetes cluster start --profile prod-single
++```
++
++The backup hook copies the SQLite database into `backups/`. The restore hook stages a replacement database; restart the profile container to load it.
++
++## Compose deployment option
++
++A compose template is included at `deploy/production-single-node/compose.yml`. It runs the local-node image directly with persistent bind mounts and a restart policy. Generate certificates with the CLI first, or provide your own CA/server/client material under the same profile `certs/` directory.
++
++```bash
++cd deploy/production-single-node
++cp .env.example .env
++../../target/debug/rusternetes cluster create --profile prod-single --mode single-node --profile-type production --no-wait
++docker compose up -d
++```
++
++## Systemd option
++
++`deploy/production-single-node/rusternetes-single-node.service` runs the CLI-managed profile through systemd. Install the CLI at `/usr/local/bin/rusternetes`, copy the service, then enable it.
++
++```bash
++sudo cp deploy/production-single-node/rusternetes-single-node.service /etc/systemd/system/
++sudo systemctl daemon-reload
++sudo systemctl enable --now rusternetes-single-node.service
++```
++
++## Upgrade control
++
++The first release uses backup-before-recreate semantics. Before replacing the node image, run the backup hook, update `RUSTERNETES_NODE_IMAGE` or pass `--node-image`, and run:
++
++```bash
++rusternetes cluster reset --profile prod-single
++```
++
++The cluster-manager API has a stable point for adding pre-flight checks, schema migrations, and rollback snapshots without changing CLI or desktop UX.
+diff --git a/examples/local/configmap.yaml b/examples/local/configmap.yaml
+new file mode 100644
+index 0000000..bf2d8dd
+--- /dev/null
++++ b/examples/local/configmap.yaml
+@@ -0,0 +1,7 @@
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: nginx-config
++  namespace: default
++data:
++  welcome: "served by Rūsternetes local cluster"
+diff --git a/examples/local/ingress.yaml b/examples/local/ingress.yaml
+new file mode 100644
+index 0000000..2efa6ed
+--- /dev/null
++++ b/examples/local/ingress.yaml
+@@ -0,0 +1,16 @@
++apiVersion: networking.k8s.io/v1
++kind: Ingress
++metadata:
++  name: rusternetes-nginx
++spec:
++  rules:
++  - host: nginx.local.rusternetes
++    http:
++      paths:
++      - path: /
++        pathType: Prefix
++        backend:
++          service:
++            name: rusternetes-nginx
++            port:
++              number: 80
+diff --git a/examples/local/namespace.yaml b/examples/local/namespace.yaml
+new file mode 100644
+index 0000000..6bf8032
+--- /dev/null
++++ b/examples/local/namespace.yaml
+@@ -0,0 +1,4 @@
++apiVersion: v1
++kind: Namespace
++metadata:
++  name: rusternetes-local
+diff --git a/examples/local/nginx-deployment.yaml b/examples/local/nginx-deployment.yaml
+new file mode 100644
+index 0000000..8b0b3bf
+--- /dev/null
++++ b/examples/local/nginx-deployment.yaml
+@@ -0,0 +1,21 @@
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: rusternetes-nginx
++  labels:
++    app: rusternetes-nginx
++spec:
++  replicas: 1
++  selector:
++    matchLabels:
++      app: rusternetes-nginx
++  template:
++    metadata:
++      labels:
++        app: rusternetes-nginx
++    spec:
++      containers:
++      - name: nginx
++        image: nginx:latest
++        ports:
++        - containerPort: 80
+diff --git a/examples/local/nginx-pod.yaml b/examples/local/nginx-pod.yaml
+new file mode 100644
+index 0000000..e48691d
+--- /dev/null
++++ b/examples/local/nginx-pod.yaml
+@@ -0,0 +1,12 @@
++apiVersion: v1
++kind: Pod
++metadata:
++  name: rusternetes-nginx-pod
++  labels:
++    app: rusternetes-nginx
++spec:
++  containers:
++  - name: nginx
++    image: nginx:latest
++    ports:
++    - containerPort: 80
+diff --git a/examples/local/nginx-service.yaml b/examples/local/nginx-service.yaml
+new file mode 100644
+index 0000000..14b7653
+--- /dev/null
++++ b/examples/local/nginx-service.yaml
+@@ -0,0 +1,12 @@
++apiVersion: v1
++kind: Service
++metadata:
++  name: rusternetes-nginx
++spec:
++  selector:
++    app: rusternetes-nginx
++  ports:
++  - name: http
++    port: 80
++    targetPort: 80
++  type: ClusterIP
+diff --git a/examples/local/volume.yaml b/examples/local/volume.yaml
+new file mode 100644
+index 0000000..8bbc7b5
+--- /dev/null
++++ b/examples/local/volume.yaml
+@@ -0,0 +1,26 @@
++apiVersion: v1
++kind: PersistentVolumeClaim
++metadata:
++  name: rusternetes-local-pvc
++spec:
++  accessModes:
++  - ReadWriteOnce
++  resources:
++    requests:
++      storage: 64Mi
++---
++apiVersion: v1
++kind: Pod
++metadata:
++  name: rusternetes-volume-demo
++spec:
++  containers:
++  - name: writer
++    image: nginx:latest
++    volumeMounts:
++    - name: data
++      mountPath: /usr/share/nginx/html
++  volumes:
++  - name: data
++    persistentVolumeClaim:
++      claimName: rusternetes-local-pvc
+diff --git a/scripts/smoke-common.sh b/scripts/smoke-common.sh
+new file mode 100644
+index 0000000..5cbf563
+--- /dev/null
++++ b/scripts/smoke-common.sh
+@@ -0,0 +1,69 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$repo_root"
++
++skip() {
++  echo "SKIP: $*"
++  exit 0
++}
++
++need_cmd() {
++  command -v "$1" >/dev/null 2>&1 || skip "$1 is not installed"
++}
++
++runtime_driver() {
++  if [ -n "${RUSTERNETES_DRIVER:-}" ]; then
++    echo "$RUSTERNETES_DRIVER"
++  elif command -v docker >/dev/null 2>&1; then
++    echo docker
++  elif command -v podman >/dev/null 2>&1; then
++    echo podman
++  else
++    skip "neither docker nor podman is installed"
++  fi
++}
++
++runtime_ready() {
++  local driver="$1"
++  case "$driver" in
++    docker) docker info >/dev/null 2>&1 || skip "docker is installed but not running" ;;
++    podman) podman info >/dev/null 2>&1 || skip "podman is installed but not running" ;;
++    *) skip "unknown runtime driver $driver" ;;
++  esac
++}
++
++rusternetes_cli() {
++  if [ -n "${RUSTERNETES_BIN:-}" ]; then
++    "$RUSTERNETES_BIN" "$@"
++  elif [ -x "$repo_root/target/debug/rusternetes" ]; then
++    "$repo_root/target/debug/rusternetes" "$@"
++  else
++    cargo run -q -p rusternetes-cli -- "$@"
++  fi
++}
++
++cleanup_profile() {
++  local profile="$1"
++  if [ "${KEEP_CLUSTER:-0}" = "1" ]; then
++    echo "KEEP_CLUSTER=1; leaving profile $profile running"
++  else
++    rusternetes_cli cluster logs --profile "$profile" || true
++    rusternetes_cli cluster delete --profile "$profile" || true
++  fi
++}
++
++smoke_workload() {
++  local profile="$1"
++  local kubeconfig
++  kubeconfig="$(rusternetes_cli cluster kubeconfig --profile "$profile" --path-only)"
++  export KUBECONFIG="$kubeconfig"
++  kubectl get nodes
++  kubectl apply -f examples/local/configmap.yaml
++  kubectl apply -f examples/local/nginx-deployment.yaml
++  kubectl apply -f examples/local/nginx-service.yaml
++  kubectl get deployment rusternetes-nginx
++  kubectl get pods -l app=rusternetes-nginx
++  kubectl get service rusternetes-nginx
++}
+diff --git a/scripts/smoke-local-kind.sh b/scripts/smoke-local-kind.sh
+new file mode 100644
+index 0000000..26157c4
+--- /dev/null
++++ b/scripts/smoke-local-kind.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++set -euo pipefail
++source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/smoke-common.sh"
++
++[ "${SKIP_SMOKE:-0}" = "1" ] && skip "SKIP_SMOKE=1"
++need_cmd kubectl
++driver="$(runtime_driver)"
++runtime_ready "$driver"
++profile="${RUSTERNETES_SMOKE_PROFILE:-smoke-kind}"
++trap 'cleanup_profile "$profile"' EXIT
++
++rusternetes_cli cluster create --profile "$profile" --driver "$driver" --mode kind --force
++smoke_workload "$profile"
++echo "PASS: local kind-compatible smoke test"
+diff --git a/scripts/smoke-local-minikube.sh b/scripts/smoke-local-minikube.sh
+new file mode 100644
+index 0000000..6340206
+--- /dev/null
++++ b/scripts/smoke-local-minikube.sh
+@@ -0,0 +1,16 @@
++#!/usr/bin/env bash
++set -euo pipefail
++source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/smoke-common.sh"
++
++[ "${SKIP_SMOKE:-0}" = "1" ] && skip "SKIP_SMOKE=1"
++need_cmd kubectl
++driver="$(runtime_driver)"
++runtime_ready "$driver"
++profile="${RUSTERNETES_SMOKE_PROFILE:-smoke-minikube}"
++trap 'cleanup_profile "$profile"' EXIT
++
++rusternetes_cli cluster create --profile "$profile" --driver "$driver" --mode minikube --force
++rusternetes_cli cluster stop --profile "$profile"
++rusternetes_cli cluster start --profile "$profile"
++smoke_workload "$profile"
++echo "PASS: local minikube-compatible smoke test"
+diff --git a/scripts/smoke-prod-single-node.sh b/scripts/smoke-prod-single-node.sh
+new file mode 100644
+index 0000000..c3e349b
+--- /dev/null
++++ b/scripts/smoke-prod-single-node.sh
+@@ -0,0 +1,16 @@
++#!/usr/bin/env bash
++set -euo pipefail
++source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/smoke-common.sh"
++
++[ "${SKIP_SMOKE:-0}" = "1" ] && skip "SKIP_SMOKE=1"
++need_cmd kubectl
++need_cmd openssl
++driver="$(runtime_driver)"
++runtime_ready "$driver"
++profile="${RUSTERNETES_SMOKE_PROFILE:-smoke-prod-single}"
++trap 'cleanup_profile "$profile"' EXIT
++
++rusternetes_cli cluster create --profile "$profile" --driver "$driver" --mode single-node --profile-type production --force
++smoke_workload "$profile"
++.rusternetes/profiles/$profile/hooks/backup.sh
++echo "PASS: production single-node smoke test"
