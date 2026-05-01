@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rusternetes-nginx
+spec:
+  rules:
+  - host: nginx.local.rusternetes
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rusternetes-nginx
+            port:
+              number: 80
