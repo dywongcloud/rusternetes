@@ -451,7 +451,11 @@ where
                             }
                             Some(Ok(WatchEvent::Deleted(key, prev_value))) => {
                                 debug!("Watch event - Deleted: {}", key);
-                                // For DELETE events, Kubernetes requires the full object with metadata
+                                // For DELETE events, Kubernetes requires the full object with metadata.
+                                // Try typed deserialization first; fall back to raw JSON if it fails.
+                                // prev_kv can be empty after etcd compaction or when the storage
+                                // backend doesn't capture the previous value. Silently dropping
+                                // the DELETE event causes watchers to hang (conformance #4).
                                 if let Ok(object) = serde_json::from_str::<T>(&prev_value) {
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
@@ -478,6 +482,18 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    // Typed deserialization failed — use raw JSON fallback.
+                                    debug!("Watch: typed deser failed for DELETE key={}, using raw fallback", key);
+                                    if let Some(rv) = extract_rv_from_json(&prev_value) {
+                                        latest_resource_version = Some(rv);
+                                    }
+                                    if let Some(json) = build_delete_fallback_json(&key, &prev_value) {
                                         if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
@@ -906,7 +922,11 @@ where
                             }
                             Some(Ok(WatchEvent::Deleted(key, prev_value))) => {
                                 debug!("Watch event - Deleted: {}", key);
-                                // For DELETE events, Kubernetes requires the full object with metadata
+                                // For DELETE events, Kubernetes requires the full object with metadata.
+                                // Try typed deserialization first; fall back to raw JSON if it fails.
+                                // prev_kv can be empty after etcd compaction or when the storage
+                                // backend doesn't capture the previous value. Silently dropping
+                                // the DELETE event causes watchers to hang (conformance #4).
                                 if let Ok(object) = serde_json::from_str::<T>(&prev_value) {
                                     // Update latest resourceVersion
                                     if let Some(rv) = object.metadata().resource_version.as_ref() {
@@ -933,6 +953,18 @@ where
                                         object,
                                     };
                                     if let Ok(json) = serde_json::to_string(&k8s_event) {
+                                        if tx.send(Ok(format!("{}\n", json))).await.is_err() {
+                                            debug!("Watch: tx.send failed, client disconnected");
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    // Typed deserialization failed — use raw JSON fallback.
+                                    debug!("Watch: typed deser failed for DELETE key={}, using raw fallback", key);
+                                    if let Some(rv) = extract_rv_from_json(&prev_value) {
+                                        latest_resource_version = Some(rv);
+                                    }
+                                    if let Some(json) = build_delete_fallback_json(&key, &prev_value) {
                                         if tx.send(Ok(format!("{}\n", json))).await.is_err() {
                                             debug!("Watch: tx.send failed, client disconnected");
                                             break;
@@ -1197,6 +1229,47 @@ fn matches_field_selector(metadata: &ObjectMeta, selector: &Option<String>) -> b
         }
     }
     true
+}
+
+/// Construct a fallback DELETE event JSON when typed deserialization fails.
+///
+/// When etcd's prev_kv is absent (compaction) or the stored JSON doesn't match
+/// the typed struct, the DELETE event must still be delivered. K8s always
+/// delivers DELETE events; the object payload is best-effort.
+///
+/// Returns `Some(json_string)` if a valid event was constructed, `None` otherwise.
+pub fn build_delete_fallback_json(key: &str, prev_value: &str) -> Option<String> {
+    // Try to parse prev_value as raw JSON
+    if let Ok(raw_obj) = serde_json::from_str::<serde_json::Value>(prev_value) {
+        let k8s_event = serde_json::json!({
+            "type": "DELETED",
+            "object": raw_obj
+        });
+        return serde_json::to_string(&k8s_event).ok();
+    }
+
+    // prev_value is not valid JSON — construct minimal DELETE event from the key path.
+    // Key format: /registry/{type}/{ns}/{name} or /registry/{type}/{name}
+    let parts: Vec<&str> = key.split('/').collect();
+    let name = parts.last().unwrap_or(&"");
+    let ns = if parts.len() >= 5 { parts[parts.len() - 2] } else { "" };
+    let k8s_event = serde_json::json!({
+        "type": "DELETED",
+        "object": {
+            "metadata": {
+                "name": name,
+                "namespace": ns,
+            }
+        }
+    });
+    serde_json::to_string(&k8s_event).ok()
+}
+
+/// Extract resourceVersion from a raw JSON string.
+pub fn extract_rv_from_json(json: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|v| v.pointer("/metadata/resourceVersion").and_then(|rv| rv.as_str()).map(|s| s.to_string()))
 }
 
 /// Derive the Kind and apiVersion from resource_type and api_group

@@ -887,6 +887,77 @@ mod tests {
         );
     }
 
+    /// Test enum validation inside array items (conformance test scenario).
+    /// Schema: spec.bars[].feeling has enum: ["Great", "Down"]
+    /// Invalid value "NonExistentValue" should be rejected.
+    #[test]
+    fn test_validate_enum_in_array_items() {
+        use crate::resources::crd::JSONSchemaPropsOrArray;
+
+        // Build the schema matching the conformance test:
+        // spec.bars[].feeling with enum: ["Great", "Down"]
+        let mut feeling_props = HashMap::new();
+        feeling_props.insert(
+            "name".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                ..Default::default()
+            },
+        );
+        feeling_props.insert(
+            "feeling".to_string(),
+            JSONSchemaProps {
+                type_: Some("string".to_string()),
+                enum_: Some(vec![json!("Great"), json!("Down")]),
+                ..Default::default()
+            },
+        );
+
+        let item_schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            required: Some(vec!["name".to_string()]),
+            properties: Some(feeling_props),
+            ..Default::default()
+        };
+
+        let mut spec_properties = HashMap::new();
+        spec_properties.insert(
+            "bars".to_string(),
+            JSONSchemaProps {
+                type_: Some("array".to_string()),
+                items: Some(Box::new(JSONSchemaPropsOrArray::Schema(item_schema))),
+                ..Default::default()
+            },
+        );
+
+        let spec_schema = JSONSchemaProps {
+            type_: Some("object".to_string()),
+            properties: Some(spec_properties),
+            ..Default::default()
+        };
+
+        // Valid value: feeling = "Great"
+        let valid_cr = json!({"bars": [{"name": "test-bar", "feeling": "Great"}]});
+        assert!(
+            SchemaValidator::validate_no_unknown_check(&spec_schema, &valid_cr).is_ok(),
+            "Valid enum value 'Great' should be accepted"
+        );
+
+        // Invalid value: feeling = "NonExistentValue"
+        let invalid_cr = json!({"bars": [{"name": "test-bar", "feeling": "NonExistentValue"}]});
+        let result = SchemaValidator::validate_no_unknown_check(&spec_schema, &invalid_cr);
+        assert!(
+            result.is_err(),
+            "Invalid enum value 'NonExistentValue' should be rejected"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Unsupported value") && err_msg.contains("NonExistentValue"),
+            "Error should mention unsupported value: {}",
+            err_msg
+        );
+    }
+
     /// Test that x-kubernetes-preserve-unknown-fields allows arbitrary fields
     #[test]
     fn test_preserve_unknown_fields() {

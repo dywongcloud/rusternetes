@@ -616,7 +616,7 @@ pub async fn delete_crd(
         }
     }
 
-    // Get CRD to check for custom resources
+    // Get CRD to validate it exists
     let key = build_key("customresourcedefinitions", None, &name);
     let crd: CustomResourceDefinition = state.storage.get(&key).await?;
 
@@ -627,49 +627,9 @@ pub async fn delete_crd(
         return Ok(Json(crd));
     }
 
-    // Check if there are any custom resources of this type
-    // Custom resources are stored with keys like: /apis/{group}/{version}/{resource}/{namespace}/{name}
-    // or /apis/{group}/{version}/{resource}/{name} for cluster-scoped
-    for version in &crd.spec.versions {
-        let resource_prefix =
-            if crd.spec.scope == rusternetes_common::resources::ResourceScope::Namespaced {
-                // For namespaced resources, check across all namespaces
-                format!(
-                    "/apis/{}/{}/{}/",
-                    crd.spec.group, version.name, crd.spec.names.plural
-                )
-            } else {
-                // For cluster-scoped resources
-                format!(
-                    "/apis/{}/{}/{}/",
-                    crd.spec.group, version.name, crd.spec.names.plural
-                )
-            };
-
-        // List all custom resources with this prefix
-        let custom_resources: Vec<serde_json::Value> = state
-            .storage
-            .list(&resource_prefix)
-            .await
-            .unwrap_or_default();
-
-        if !custom_resources.is_empty() {
-            warn!(
-                "CRD {} has {} existing custom resources of type {}/{}/{}",
-                name,
-                custom_resources.len(),
-                crd.spec.group,
-                version.name,
-                crd.spec.names.plural
-            );
-
-            return Err(rusternetes_common::Error::InvalidResource(format!(
-                "CustomResourceDefinition {} cannot be deleted because {} custom resource(s) still exist. Delete all custom resources first.",
-                name,
-                custom_resources.len()
-            )));
-        }
-    }
+    // K8s does NOT block CRD deletion when custom resources exist.
+    // Instead, the CRD finalizer controller (customresourcecleanup.apiextensions.k8s.io)
+    // handles cleanup of custom resources after deletionTimestamp is set.
 
     // Handle deletion with finalizers
     let deleted_immediately =

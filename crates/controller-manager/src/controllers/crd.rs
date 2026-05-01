@@ -151,6 +151,15 @@ impl<S: Storage + 'static> CRDController<S> {
         let crd_name = &crd.metadata.name;
         debug!("Reconciling CRD {}", crd_name);
 
+        // Handle CRD deletion with finalizer cleanup.
+        // K8s has a CRD finalizer controller that processes the
+        // "customresourcecleanup.apiextensions.k8s.io" finalizer by deleting
+        // all custom resource instances, then removing the finalizer so the
+        // CRD can be garbage collected.
+        if crd.metadata.deletion_timestamp.is_some() {
+            return self.handle_crd_deletion(crd).await;
+        }
+
         // Validate the CRD spec
         if let Err(e) = self.validate_crd_spec(crd) {
             warn!("CRD {} validation failed: {}", crd_name, e);
@@ -170,20 +179,116 @@ impl<S: Storage + 'static> CRDController<S> {
             }
         }
 
-        // In a real implementation, this controller would:
-        // 1. Register the CRD with the API server's discovery system
-        // 2. Set up dynamic API handlers for the custom resource
-        // 3. Configure OpenAPI schema for validation
-        // 4. Set up watches for custom resource instances
-        // 5. Update CRD status with:
-        //    - "NamesAccepted" condition
-        //    - "Established" condition
-        //    - "AcceptedNames" reflecting the names being served
-        //    - "StoredVersions" tracking versions used in storage
-        //
-        // For conformance, we ensure CRDs are validated and can be stored.
-
         debug!("CRD {} reconciled successfully", crd_name);
+
+        Ok(())
+    }
+
+    /// Handle CRD deletion: process finalizers by cleaning up custom resources,
+    /// then remove the finalizer and delete the CRD.
+    ///
+    /// K8s ref: staging/src/k8s.io/apiextensions-apiserver/pkg/controller/finalizer/crd_finalizer.go
+    async fn handle_crd_deletion(&self, crd: &CustomResourceDefinition) -> Result<()> {
+        let crd_name = &crd.metadata.name;
+        let finalizers = crd.metadata.finalizers.as_deref().unwrap_or(&[]);
+
+        // Check for the cleanup finalizer
+        let cleanup_finalizer = "customresourcecleanup.apiextensions.k8s.io";
+        if !finalizers.contains(&cleanup_finalizer.to_string()) {
+            debug!("CRD {} has no cleanup finalizer, nothing to do", crd_name);
+            return Ok(());
+        }
+
+        info!("Processing cleanup finalizer for CRD {}", crd_name);
+
+        // Delete all custom resource instances for this CRD.
+        // CRs are stored at /apis/{group}/{version}/{plural}/{ns}/{name}
+        for version in &crd.spec.versions {
+            let cr_prefix = format!(
+                "/apis/{}/{}/{}/",
+                crd.spec.group, version.name, crd.spec.names.plural
+            );
+
+            let crs: Vec<serde_json::Value> = self
+                .storage
+                .list(&cr_prefix)
+                .await
+                .unwrap_or_default();
+
+            for cr in &crs {
+                let cr_name = cr
+                    .pointer("/metadata/name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let cr_ns = cr
+                    .pointer("/metadata/namespace")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let cr_key = if cr_ns.is_empty() {
+                    format!(
+                        "/apis/{}/{}/{}/{}",
+                        crd.spec.group, version.name, crd.spec.names.plural, cr_name
+                    )
+                } else {
+                    format!(
+                        "/apis/{}/{}/{}/{}/{}",
+                        crd.spec.group, version.name, crd.spec.names.plural, cr_ns, cr_name
+                    )
+                };
+
+                if let Err(e) = self.storage.delete(&cr_key).await {
+                    warn!(
+                        "Failed to delete CR {} for CRD {}: {}",
+                        cr_key, crd_name, e
+                    );
+                } else {
+                    debug!("Deleted CR {} for CRD {}", cr_key, crd_name);
+                }
+            }
+        }
+
+        // Remove the cleanup finalizer from the CRD
+        let crd_key = build_key("customresourcedefinitions", None, crd_name);
+        match self.storage.get::<serde_json::Value>(&crd_key).await {
+            Ok(mut crd_value) => {
+                // Remove the finalizer
+                if let Some(meta) = crd_value.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+                    if let Some(fins) = meta.get_mut("finalizers").and_then(|f| f.as_array_mut()) {
+                        fins.retain(|f| f.as_str() != Some(cleanup_finalizer));
+                        if fins.is_empty() {
+                            meta.remove("finalizers");
+                        }
+                    }
+                }
+
+                // Check if any finalizers remain
+                let has_finalizers = crd_value
+                    .pointer("/metadata/finalizers")
+                    .and_then(|f| f.as_array())
+                    .is_some_and(|f| !f.is_empty());
+
+                if has_finalizers {
+                    // Other finalizers remain — just update to remove ours
+                    if let Err(e) = self.storage.update(&crd_key, &crd_value).await {
+                        error!("Failed to update CRD {} after removing finalizer: {}", crd_name, e);
+                        return Err(anyhow!("Failed to update CRD: {}", e));
+                    }
+                    info!("Removed cleanup finalizer from CRD {}, other finalizers remain", crd_name);
+                } else {
+                    // No finalizers left — delete the CRD
+                    if let Err(e) = self.storage.delete(&crd_key).await {
+                        error!("Failed to delete CRD {}: {}", crd_name, e);
+                        return Err(anyhow!("Failed to delete CRD: {}", e));
+                    }
+                    info!("CRD {} fully deleted after finalizer cleanup", crd_name);
+                }
+            }
+            Err(e) => {
+                // CRD already deleted
+                debug!("CRD {} already deleted: {}", crd_name, e);
+            }
+        }
 
         Ok(())
     }

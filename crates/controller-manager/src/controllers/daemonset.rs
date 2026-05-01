@@ -343,33 +343,17 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                 block_owner_deletion: Some(true),
             }]);
 
-            // Build ControllerRevision data using raw JSON from storage.
-            // K8s Match() does byte-level comparison between getPatch(dsFromAPI) and
-            // history.Data.Raw. getPatch() takes the DaemonSet JSON (as served by the API),
-            // extracts spec.template, adds "$patch":"replace", and re-marshals.
-            // We must produce identical bytes by reading the DaemonSet as raw JSON from
-            // storage (same bytes the API serves) and extracting the template from it.
-            let ds_key = rusternetes_storage::build_key("daemonsets", Some(namespace), name);
-            let cr_data = if let Ok(raw_ds) = self.storage.get::<serde_json::Value>(&ds_key).await {
-                // Extract spec.template from the raw stored JSON
-                if let Some(template_val) = raw_ds.pointer("/spec/template").cloned() {
-                    let mut template_obj = template_val;
-                    if let Some(obj) = template_obj.as_object_mut() {
-                        obj.insert("$patch".to_string(), serde_json::json!("replace"));
-                    }
-                    // Re-serialize with sorted keys to match Go's encoding/json
-                    let patch = Self::sort_json_keys(&serde_json::json!({
-                        "spec": {
-                            "template": template_obj
-                        }
-                    }));
-                    Some(patch)
-                } else {
-                    Self::build_patch_data(&daemonset.spec.template)
-                }
-            } else {
-                Self::build_patch_data(&daemonset.spec.template)
-            };
+            // Build ControllerRevision data matching K8s getPatch() format.
+            // K8s Match() does byte-level comparison between getPatch(dsFromAPI)
+            // and history.Data.Raw. getPatch() marshals the DaemonSet through Go's
+            // typed struct serialization (which applies omitempty to drop zero-value
+            // fields), extracts spec.template, adds "$patch":"replace", and
+            // re-marshals with sorted keys.
+            //
+            // We use build_patch_data() which serializes through our typed struct
+            // (applying skip_serializing_if), then strips remaining Go-omitempty
+            // zero values (like empty "name" fields in metadata), and sorts keys.
+            let cr_data = Self::build_patch_data(&daemonset.spec.template);
             cr.data = cr_data;
 
             if self.storage.create(&cr_key, &cr).await.is_ok() {
@@ -859,21 +843,25 @@ impl<S: Storage + 'static> DaemonSetController<S> {
         namespace: &str,
     ) -> Result<()> {
         let daemonset_name = &daemonset.metadata.name;
-        // Use a deterministic hash suffix based on daemonset UID + node name.
-        // This ensures the same pod name is generated for the same node,
-        // preventing orphan cleanup from killing pods that the controller
-        // will just recreate with a different name.
-        use sha2::{Digest, Sha256};
-        let hash_input = format!("{}-{}", daemonset.metadata.uid, node_name);
-        let hash = Sha256::digest(hash_input.as_bytes());
-        let suffix = format!(
-            "{:05x}",
-            u32::from_be_bytes(hash[..4].try_into().unwrap_or([0u8; 4])) & 0xFFFFF
-        );
+        // Use a random suffix like K8s does (via generateName).
+        // K8s generates unique pod names each time, so when a failed pod
+        // is deleted and a replacement created, the replacement has a DIFFERENT
+        // name. This is critical for the conformance test "should retry creating
+        // failed daemon pods" which checks that the original failed pod's name
+        // returns NotFound via GET.
+        let suffix: String = {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            (0..5)
+                .map(|_| {
+                    const CHARSET: &[u8] = b"bcdfghjklmnpqrstvwxz2456789";
+                    CHARSET[rng.gen_range(0..CHARSET.len())] as char
+                })
+                .collect()
+        };
         let pod_name = format!(
-            "{}-{}-{}",
+            "{}-{}",
             daemonset_name,
-            &node_name.replace('.', "-"),
             suffix
         );
 
@@ -1120,12 +1108,20 @@ impl<S: Storage + 'static> DaemonSetController<S> {
     /// Format: {"spec":{"template":{...,"$patch":"replace"}}}
     ///
     /// K8s Match() does byte-level comparison of getPatch() output with
-    /// history.Data.Raw. Go's encoding/json sorts map keys alphabetically.
-    /// We must sort keys the same way for the comparison to succeed.
-    fn build_patch_data(
+    /// history.Data.Raw. Go's encoding/json sorts map keys alphabetically
+    /// and omits zero-value fields with `omitempty`. We must:
+    /// 1. Sort keys the same way
+    /// 2. Strip zero-value fields (empty strings, false bools, 0 ints, empty
+    ///    arrays/maps, nulls) that Go's omitempty would drop
+    pub fn build_patch_data(
         template: &rusternetes_common::resources::PodTemplateSpec,
     ) -> Option<serde_json::Value> {
         let mut template_value = serde_json::to_value(template).ok()?;
+        // Strip Go-omitempty zero values BEFORE adding $patch marker.
+        // Go's getPatch() round-trips the DaemonSet through Go's typed struct
+        // serialization which applies omitempty, dropping empty strings, null
+        // pointers, empty slices/maps, zero ints, and false booleans.
+        template_value = Self::strip_go_omitempty_zeros(&template_value);
         // Add $patch: "replace" to the template object (K8s strategic merge patch marker)
         if let Some(obj) = template_value.as_object_mut() {
             obj.insert("$patch".to_string(), serde_json::json!("replace"));
@@ -1158,6 +1154,59 @@ impl<S: Storage + 'static> DaemonSetController<S> {
                 serde_json::Value::Array(arr.iter().map(|v| Self::sort_json_keys(v)).collect())
             }
             other => other.clone(),
+        }
+    }
+
+    /// Strip zero-value fields that Go's `omitempty` json tag would omit.
+    /// Go's encoding/json omits:
+    ///   - false booleans
+    ///   - 0 integers/floats
+    ///   - empty strings ""
+    ///   - nil pointers (null)
+    ///   - empty arrays []
+    ///   - empty maps {}
+    ///
+    /// This is critical for byte-level comparison with Go's getPatch() output.
+    /// When Go round-trips a DaemonSet through its typed struct serialization,
+    /// all fields with `json:",omitempty"` that have zero values are dropped.
+    /// Our ControllerRevision data must match those exact bytes.
+    fn strip_go_omitempty_zeros(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut cleaned = serde_json::Map::new();
+                for (key, val) in map {
+                    // Recursively clean nested values first
+                    let cleaned_val = Self::strip_go_omitempty_zeros(val);
+                    // Skip zero-value fields (Go's omitempty behavior)
+                    if Self::is_go_zero_value(&cleaned_val) {
+                        continue;
+                    }
+                    cleaned.insert(key.clone(), cleaned_val);
+                }
+                serde_json::Value::Object(cleaned)
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(
+                    arr.iter()
+                        .map(|v| Self::strip_go_omitempty_zeros(v))
+                        .collect(),
+                )
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// Check if a JSON value is a Go zero value (would be omitted by omitempty).
+    fn is_go_zero_value(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Null => true,
+            serde_json::Value::Bool(b) => !b,
+            serde_json::Value::Number(n) => {
+                n.as_f64().map(|f| f == 0.0).unwrap_or(false)
+            }
+            serde_json::Value::String(s) => s.is_empty(),
+            serde_json::Value::Array(arr) => arr.is_empty(),
+            serde_json::Value::Object(map) => map.is_empty(),
         }
     }
 }

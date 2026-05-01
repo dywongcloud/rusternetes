@@ -655,6 +655,15 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         mut pod: Pod,
         node_name: &str,
     ) -> rusternetes_common::Result<()> {
+        // K8s scheduler validates node_name is non-empty before binding.
+        // An empty node_name means select_node returned a node with no name,
+        // which should never happen but would leave the pod stuck Pending.
+        if node_name.is_empty() {
+            return Err(rusternetes_common::Error::Internal(
+                "cannot bind pod to empty node name".to_string(),
+            ));
+        }
+
         debug!(
             "Binding pod {}/{} to node {}",
             pod.metadata
@@ -725,6 +734,38 @@ impl<S: Storage + Send + Sync + 'static> Scheduler<S> {
         match self.storage.update(&key, &pod).await {
             Ok(_) => {
                 info!("Successfully bound pod to node {}", node_name);
+
+                // Create a Scheduled event (K8s scheduler always creates this)
+                let pod_ns = pod.metadata.namespace.as_deref().unwrap_or("default");
+                let event_name = format!("{}.sched.{}", pod.metadata.name,
+                    chrono::Utc::now().format("%Y%m%d%H%M%S"));
+                let event = serde_json::json!({
+                    "apiVersion": "v1",
+                    "kind": "Event",
+                    "metadata": {
+                        "name": event_name,
+                        "namespace": pod_ns,
+                    },
+                    "involvedObject": {
+                        "apiVersion": "v1",
+                        "kind": "Pod",
+                        "name": pod.metadata.name,
+                        "namespace": pod_ns,
+                        "uid": pod.metadata.uid,
+                    },
+                    "reason": "Scheduled",
+                    "message": format!("Successfully assigned {}/{} to {}", pod_ns, pod.metadata.name, node_name),
+                    "type": "Normal",
+                    "source": {
+                        "component": "default-scheduler",
+                    },
+                    "firstTimestamp": chrono::Utc::now().to_rfc3339(),
+                    "lastTimestamp": chrono::Utc::now().to_rfc3339(),
+                    "count": 1,
+                });
+                let event_key = rusternetes_storage::build_key("events", Some(pod_ns), &event_name);
+                let _ = self.storage.create(&event_key, &event).await;
+
                 Ok(())
             }
             Err(rusternetes_common::Error::Conflict(_)) => {

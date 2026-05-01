@@ -631,21 +631,24 @@ fn add_standard_crd_properties(schema: &mut serde_json::Value) {
             .entry("properties")
             .or_insert_with(|| serde_json::json!({}));
         if let Some(props) = properties.as_object_mut() {
+            // K8s CRD definitions reference the standard ObjectMeta definition
+            // instead of inlining "type: object". This matches
+            // staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/builder/builder.go
             props.entry("metadata".to_string()).or_insert_with(|| {
                 serde_json::json!({
-                    "description": "Standard object's metadata.",
-                    "type": "object"
+                    "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta",
+                    "description": "Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata"
                 })
             });
             props.entry("apiVersion".to_string()).or_insert_with(|| {
                 serde_json::json!({
-                    "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/dede/sig-architecture/api-conventions.md#resources",
+                    "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
                     "type": "string"
                 })
             });
             props.entry("kind".to_string()).or_insert_with(|| {
                 serde_json::json!({
-                    "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/dede/sig-architecture/api-conventions.md#types-kinds",
+                    "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
                     "type": "string"
                 })
             });

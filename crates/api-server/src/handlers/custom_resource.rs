@@ -1257,14 +1257,29 @@ fn validate_custom_resource(
             == Some(true);
 
         if !crd_preserves && !schema_preserves {
-            if let Some(ref spec) = cr.spec {
-                // Extract the "spec" sub-schema from the top-level schema
-                if let Some(ref properties) = validation.open_apiv3_schema.properties {
+            // Validate ALL top-level properties against the schema, not just spec.
+            // K8s validates the entire CR object. Some CRDs define enum fields
+            // at the top level (e.g., cronies), not under spec.
+            if let Some(ref properties) = validation.open_apiv3_schema.properties {
+                // Validate spec if present
+                if let Some(ref spec) = cr.spec {
                     if let Some(spec_schema) = properties.get("spec") {
-                        // Use validate_no_unknown_check: unknown fields are handled by
-                        // pruning (non-strict) or strict validation (strict mode).
-                        // This only checks types, required fields, enums, etc.
                         SchemaValidator::validate_no_unknown_check(spec_schema, spec)?;
+                    }
+                }
+                // Validate status if present
+                if let Some(ref status) = cr.status {
+                    if let Some(status_schema) = properties.get("status") {
+                        SchemaValidator::validate_no_unknown_check(status_schema, status)?;
+                    }
+                }
+                // Validate extra top-level fields (e.g., cronies, hostPort)
+                for (key, value) in &cr.extra {
+                    if key == "metadata" || key == "apiVersion" || key == "kind" {
+                        continue;
+                    }
+                    if let Some(field_schema) = properties.get(key) {
+                        SchemaValidator::validate_no_unknown_check(field_schema, value)?;
                     }
                 }
             }

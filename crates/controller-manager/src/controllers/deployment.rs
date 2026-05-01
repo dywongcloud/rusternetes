@@ -228,7 +228,7 @@ impl<S: Storage + 'static> DeploymentController<S> {
         Ok(())
     }
 
-    async fn reconcile_deployment(
+    pub async fn reconcile_deployment(
         &self,
         deployment: &Deployment,
     ) -> rusternetes_common::Result<()> {
@@ -1255,7 +1255,10 @@ impl<S: Storage + 'static> DeploymentController<S> {
         Ok(())
     }
 
-    /// Set the desired-replicas annotation on a ReplicaSet (for scaling event detection).
+    /// Set the desired-replicas and max-replicas annotations on a ReplicaSet.
+    /// K8s ref: pkg/controller/deployment/util/deployment_util.go — SetReplicasAnnotations
+    /// desired-replicas: the deployment's spec.replicas
+    /// max-replicas: desired + maxSurge (the maximum total pods allowed during rollout)
     async fn set_desired_replicas_annotation(
         &self,
         rs: &ReplicaSet,
@@ -1269,11 +1272,25 @@ impl<S: Storage + 'static> DeploymentController<S> {
                 .annotations
                 .get_or_insert_with(std::collections::HashMap::new);
             let desired_str = desired.to_string();
+            // K8s: maxSurge defaults to 25% of desired, rounded up, minimum 1
+            let max_surge = std::cmp::max((desired as f64 * 0.25).ceil() as i32, 1);
+            let max_replicas_str = (desired + max_surge).to_string();
+            let mut changed = false;
             if annotations.get("deployment.kubernetes.io/desired-replicas") != Some(&desired_str) {
                 annotations.insert(
                     "deployment.kubernetes.io/desired-replicas".to_string(),
                     desired_str,
                 );
+                changed = true;
+            }
+            if annotations.get("deployment.kubernetes.io/max-replicas") != Some(&max_replicas_str) {
+                annotations.insert(
+                    "deployment.kubernetes.io/max-replicas".to_string(),
+                    max_replicas_str,
+                );
+                changed = true;
+            }
+            if changed {
                 let _ = self.storage.update(&key, &fresh_rs).await;
             }
         }

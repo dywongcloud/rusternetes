@@ -5058,6 +5058,47 @@ impl ContainerRuntime {
         Ok(has_app_container)
     }
 
+    /// Check if any app (non-init, non-pause) container has been created for a pod.
+    /// K8s ref: kubelet_pods.go:2689 — HasAnyRegularContainerCreated.
+    /// If app containers exist, all init containers must have completed successfully.
+    async fn has_any_app_container(&self, pod: &Pod) -> bool {
+        let pod_name = &pod.metadata.name;
+        let mut filters = HashMap::new();
+        filters.insert("name".to_string(), vec![format!("{}_", pod_name)]);
+
+        let options = ListContainersOptions {
+            all: true, // Include exited/created containers
+            filters,
+            ..Default::default()
+        };
+
+        let containers = match self.docker.list_containers(Some(options)).await {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        let init_names: Vec<String> = pod
+            .spec
+            .as_ref()
+            .and_then(|s| s.init_containers.as_ref())
+            .map(|ics| ics.iter().map(|ic| format!("{}_{}", pod_name, ic.name)).collect())
+            .unwrap_or_default();
+        let pause_name = format!("{}_pause", pod_name);
+
+        containers.iter().any(|c| {
+            c.names
+                .as_ref()
+                .map(|names| {
+                    names.iter().any(|n| {
+                        let clean = n.trim_start_matches('/');
+                        clean != pause_name
+                            && !init_names.iter().any(|init| clean == init)
+                    })
+                })
+                .unwrap_or(false)
+        })
+    }
+
     /// Get detailed status of init containers by inspecting actual Docker container state.
     pub async fn get_init_container_statuses(&self, pod: &Pod) -> Option<Vec<ContainerStatus>> {
         let init_containers = pod.spec.as_ref()?.init_containers.as_ref()?;
@@ -5238,14 +5279,19 @@ impl ContainerRuntime {
                             }
                         } else {
                             // No previous status — the container was cleaned up.
-                            // Only mark as Completed if the pod is in a terminal phase
-                            // (Succeeded/Failed). Do NOT infer from node_name — the pod
-                            // can be scheduled but init containers may not have run yet.
+                            // K8s ref: kubelet_pods.go:2689 — if init container has no
+                            // CRI status and regular containers exist, infer completion.
+                            // Also mark as Completed if pod is already Succeeded/Failed.
                             let pod_phase = pod
                                 .status
                                 .as_ref()
                                 .and_then(|s| s.phase.as_ref());
-                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded))
+                            // Check if any app container has been created/is running.
+                            // If so, ALL init containers must have completed (K8s rule:
+                            // app containers don't start until all init containers succeed).
+                            let app_containers_exist = self.has_any_app_container(pod).await;
+                            if matches!(pod_phase, Some(rusternetes_common::types::Phase::Succeeded) | Some(rusternetes_common::types::Phase::Failed))
+                                || app_containers_exist
                             {
                                 (
                                     ContainerState::Terminated {
@@ -6497,16 +6543,87 @@ impl ContainerRuntime {
                 } else {
                     // Try resolving as a hostname — look up in pod's network namespace
                     // by checking the pod's /etc/hosts or using DNS
-                    match tokio::net::lookup_host(format!("{}:{}", host, http_get.port)).await {
-                        Ok(mut addrs) => {
-                            if let Some(addr) = addrs.next() {
-                                addr.ip().to_string()
-                            } else {
-                                host.clone()
+                    let mut resolved = None;
+                    if let Ok(mut addrs) =
+                        tokio::net::lookup_host(format!("{}:{}", host, http_get.port)).await
+                    {
+                        if let Some(addr) = addrs.next() {
+                            resolved = Some(addr.ip().to_string());
+                        }
+                    }
+                    // Fallback: resolve K8s service/pod names via storage.
+                    // The kubelet container can't resolve K8s DNS names, so
+                    // look up services and pods by name in etcd.
+                    if resolved.is_none() {
+                        if let Some(ref storage) = self.storage {
+                            use rusternetes_storage::Storage;
+                            // Derive namespace from the container name (pod_name -> pod -> namespace)
+                            let pod_name_from_container = container_name
+                                .rsplitn(2, '_')
+                                .last()
+                                .unwrap_or(container_name);
+                            // Search all pods to find our pod's namespace
+                            let ns = {
+                                let prefix = rusternetes_storage::build_prefix("pods", None);
+                                storage
+                                    .list::<Pod>(&prefix)
+                                    .await
+                                    .ok()
+                                    .and_then(|pods| {
+                                        pods.iter()
+                                            .find(|p| p.metadata.name == pod_name_from_container)
+                                            .and_then(|p| p.metadata.namespace.clone())
+                                    })
+                            };
+                            let ns = ns.as_deref().unwrap_or("default");
+
+                            // Try as a service name first
+                            let svc_key = rusternetes_storage::build_key(
+                                "services",
+                                Some(ns),
+                                host,
+                            );
+                            if let Ok(svc) = storage
+                                .get::<rusternetes_common::resources::Service>(&svc_key)
+                                .await
+                            {
+                                if let Some(ref cluster_ip) = svc.spec.cluster_ip {
+                                    if !cluster_ip.is_empty() && cluster_ip != "None" {
+                                        info!(
+                                            "Lifecycle HTTP handler: resolved service {} to ClusterIP {}",
+                                            host, cluster_ip
+                                        );
+                                        resolved = Some(cluster_ip.clone());
+                                    }
+                                }
+                            }
+
+                            // Try as a pod name
+                            if resolved.is_none() {
+                                let prefix = rusternetes_storage::build_prefix("pods", None);
+                                if let Ok(pods) = storage.list::<Pod>(&prefix).await {
+                                    if let Some(target_pod) = pods.iter().find(|p| {
+                                        p.metadata.name == *host
+                                            && p.metadata.namespace.as_deref() == Some(ns)
+                                    }) {
+                                        if let Some(pod_ip) = target_pod
+                                            .status
+                                            .as_ref()
+                                            .and_then(|s| s.pod_ip.as_ref())
+                                            .filter(|ip| !ip.is_empty())
+                                        {
+                                            info!(
+                                                "Lifecycle HTTP handler: resolved pod {} to IP {}",
+                                                host, pod_ip
+                                            );
+                                            resolved = Some(pod_ip.clone());
+                                        }
+                                    }
+                                }
                             }
                         }
-                        Err(_) => host.clone(),
                     }
+                    resolved.unwrap_or_else(|| host.clone())
                 }
             } else {
                 let inspect = self
@@ -6693,10 +6810,17 @@ impl ContainerRuntime {
 
         let containers = self.docker.list_containers(Some(options)).await?;
 
-        // First pass: execute preStop hooks on all running containers
+        // First pass: execute preStop hooks on all running containers.
         // We must run ALL preStop hooks before stopping ANY containers, because
         // preStop hooks may need to communicate with sibling containers (e.g.,
         // sending an HTTP request to another container in the same pod).
+        //
+        // Track elapsed time so we can decrement it from the grace period.
+        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go:860
+        //   gracePeriod -= preStopElapsed
+        //   gracePeriod = max(gracePeriod, minimumGracePeriodInSeconds)  // 2s
+        let prestop_start = std::time::Instant::now();
+
         for container in &containers {
             if let Some(ref id) = container.id {
                 let names = container.names.clone().unwrap_or_default();
@@ -6757,6 +6881,19 @@ impl ContainerRuntime {
             }
         }
 
+        // Decrement grace period by preStop hook elapsed time.
+        // K8s ref: pkg/kubelet/kuberuntime/kuberuntime_container.go:860-862
+        //   gracePeriod -= executePreStopHook elapsed
+        //   gracePeriod = max(gracePeriod, minimumGracePeriodInSeconds)
+        let prestop_elapsed = prestop_start.elapsed().as_secs() as i64;
+        let remaining_grace = (grace_period_seconds - prestop_elapsed).max(2);
+        if prestop_elapsed > 0 {
+            info!(
+                "preStop hooks took {}s, remaining grace period: {}s (was {}s)",
+                prestop_elapsed, remaining_grace, grace_period_seconds
+            );
+        }
+
         // Second pass: stop all containers, stopping the pause container LAST.
         // K8s always stops the infra/sandbox container after all app containers
         // to keep the pod's network namespace alive during graceful shutdown.
@@ -6792,9 +6929,9 @@ impl ContainerRuntime {
 
                 info!("Stopping container: {}", id);
 
-                // Stop the container gracefully
+                // Stop the container with remaining grace period (after preStop).
                 let stop_options = StopContainerOptions {
-                    t: grace_period_seconds,
+                    t: remaining_grace,
                 };
                 if let Err(e) = self.docker.stop_container(id, Some(stop_options)).await {
                     warn!("Failed to stop container {}: {}", id, e);
@@ -6808,7 +6945,7 @@ impl ContainerRuntime {
         if let Some(ref pause_id) = pause_container_id {
             info!("Stopping pause container: {} (last)", pause_id);
             let stop_options = StopContainerOptions {
-                t: grace_period_seconds,
+                t: remaining_grace,
             };
             if let Err(e) = self.docker.stop_container(pause_id, Some(stop_options)).await {
                 warn!("Failed to stop pause container {}: {}", pause_id, e);

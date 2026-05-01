@@ -24,6 +24,65 @@ fn detect_iptables_cmd() -> &'static str {
     "/usr/sbin/iptables-legacy"
 }
 
+/// Detect the container bridge interface and its CIDR.
+/// Works with both Docker (172.18.0.0/16 on br-xxx) and Podman (10.89.0.0/24 on podman1).
+/// Returns (interface_name, cidr) if found.
+fn detect_bridge_network() -> Option<(String, String)> {
+    let output = Command::new("ip")
+        .args(["route", "show"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Look for routes that match known container bridge patterns.
+    // Docker: "172.18.0.0/16 dev br-abcdef proto kernel scope link src 172.18.0.1"
+    // Podman: "10.89.0.0/24 dev podman1 proto kernel scope link src 10.89.0.1"
+    // We look for routes on interfaces named podman*, br-*, docker*, cni*, or
+    // any interface with a 10.x or 172.x private subnet and "proto kernel".
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // Route format: CIDR dev IFACE [proto kernel] [scope link] [src IP]
+        if parts.len() < 3 || parts[1] != "dev" {
+            continue;
+        }
+        let cidr = parts[0];
+        let iface = parts[2];
+
+        // Skip loopback and default routes
+        if iface == "lo" || cidr == "default" {
+            continue;
+        }
+
+        // Match known container bridge interface names
+        let is_bridge = iface.starts_with("podman")
+            || iface.starts_with("br-")
+            || iface.starts_with("docker")
+            || iface.starts_with("cni");
+
+        // Also match private subnets on kernel routes (proto kernel = directly connected)
+        let is_private = cidr.starts_with("10.")
+            || cidr.starts_with("172.16.")
+            || cidr.starts_with("172.17.")
+            || cidr.starts_with("172.18.")
+            || cidr.starts_with("172.19.")
+            || cidr.starts_with("172.2")
+            || cidr.starts_with("172.3")
+            || cidr.starts_with("192.168.");
+        let is_kernel_route = line.contains("proto kernel");
+
+        if is_bridge || (is_private && is_kernel_route && !iface.starts_with("en")) {
+            info!(
+                "Detected container bridge network: {} on interface {}",
+                cidr, iface
+            );
+            return Some((iface.to_string(), cidr.to_string()));
+        }
+    }
+
+    warn!("Could not detect container bridge network");
+    None
+}
+
 /// IptablesManager handles iptables rule programming for service networking
 pub struct IptablesManager {
     /// Chain names we create
@@ -35,6 +94,10 @@ pub struct IptablesManager {
     sep_chains: std::sync::Mutex<Vec<String>>,
     /// Whether the xt_recent kernel module is available
     recent_available: bool,
+    /// Detected container bridge interface name (e.g., "podman1", "br-abcdef")
+    bridge_iface: Option<String>,
+    /// Detected container bridge CIDR (e.g., "10.89.0.0/24", "172.18.0.0/16")
+    bridge_cidr: Option<String>,
 }
 
 impl Default for IptablesManager {
@@ -46,6 +109,7 @@ impl Default for IptablesManager {
 impl IptablesManager {
     pub fn new() -> Self {
         let iptables_cmd = detect_iptables_cmd().to_string();
+        let bridge_network = detect_bridge_network();
         // Probe whether the xt_recent module is available by trying a dummy check rule.
         // If the module is missing, stderr contains "Couldn't load" or "No such file".
         // If the rule just doesn't exist, stderr contains "does a matching rule exist"
@@ -77,12 +141,18 @@ impl IptablesManager {
                 "xt_recent module is NOT available, session affinity will fall back to direct DNAT"
             );
         }
+        let (bridge_iface, bridge_cidr) = match bridge_network {
+            Some((iface, cidr)) => (Some(iface), Some(cidr)),
+            None => (None, None),
+        };
         Self {
             services_chain: "RUSTERNETES-SERVICES".to_string(),
             nodeports_chain: "RUSTERNETES-NODEPORTS".to_string(),
             iptables_cmd,
             sep_chains: std::sync::Mutex::new(Vec::new()),
             recent_available,
+            bridge_iface,
+            bridge_cidr,
         }
     }
 
@@ -153,52 +223,57 @@ impl IptablesManager {
         // Add MASQUERADE rule for hairpin NAT (container→ClusterIP→container on same bridge).
         // Without this, DNATed traffic within the Docker bridge doesn't have its source
         // rewritten, so the return path bypasses NAT and the connection fails.
-        let masq_check = Command::new(&self.iptables_cmd)
-            .args([
-                "-t",
-                "nat",
-                "-C",
-                "POSTROUTING",
-                "-m",
-                "comment",
-                "--comment",
-                "rusternetes service hairpin masquerade",
-                "-s",
-                "172.18.0.0/16",
-                "-d",
-                "172.18.0.0/16",
-                "-j",
-                "MASQUERADE",
-            ])
-            .output();
-        if masq_check.map_or(true, |o| !o.status.success()) {
-            let output = Command::new(&self.iptables_cmd)
+        // Use the dynamically detected bridge CIDR (works with both Docker and Podman).
+        if let Some(ref cidr) = self.bridge_cidr {
+            let masq_check = Command::new(&self.iptables_cmd)
                 .args([
                     "-t",
                     "nat",
-                    "-A",
+                    "-C",
                     "POSTROUTING",
                     "-m",
                     "comment",
                     "--comment",
                     "rusternetes service hairpin masquerade",
                     "-s",
-                    "172.18.0.0/16",
+                    cidr,
                     "-d",
-                    "172.18.0.0/16",
+                    cidr,
                     "-j",
                     "MASQUERADE",
                 ])
-                .output()
-                .context("Failed to add hairpin MASQUERADE rule")?;
-            if output.status.success() {
-                info!("Added hairpin MASQUERADE rule for service traffic within Docker network");
-            } else {
-                warn!(
-                    "Failed to add hairpin MASQUERADE: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                .output();
+            if masq_check.map_or(true, |o| !o.status.success()) {
+                let output = Command::new(&self.iptables_cmd)
+                    .args([
+                        "-t",
+                        "nat",
+                        "-A",
+                        "POSTROUTING",
+                        "-m",
+                        "comment",
+                        "--comment",
+                        "rusternetes service hairpin masquerade",
+                        "-s",
+                        cidr,
+                        "-d",
+                        cidr,
+                        "-j",
+                        "MASQUERADE",
+                    ])
+                    .output()
+                    .context("Failed to add hairpin MASQUERADE rule")?;
+                if output.status.success() {
+                    info!("Added hairpin MASQUERADE rule for {} on container bridge", cidr);
+                } else {
+                    warn!(
+                        "Failed to add hairpin MASQUERADE: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
             }
+        } else {
+            warn!("No bridge CIDR detected, skipping hairpin MASQUERADE rule");
         }
 
         // Add MASQUERADE for NodePort traffic from local sources.
@@ -464,27 +539,19 @@ impl IptablesManager {
         }
 
         // Ensure the service CIDR (10.96.0.0/12) is routable.
-        // Without a route, packets to ClusterIPs are dropped before reaching
-        // iptables PREROUTING/DNAT. We add a route pointing to the Docker bridge
+        // Without a route, packets to ClusterIPs may be dropped before reaching
+        // iptables PREROUTING/DNAT. We add a route pointing to the container bridge
         // so the kernel accepts the packets and lets iptables DNAT them.
+        // Note: PREROUTING DNAT happens before routing, so the route is mainly
+        // needed for locally originated traffic (OUTPUT chain) and as a safety net.
         let route_check = Command::new("ip")
             .args(["route", "show", "10.96.0.0/12"])
             .output();
         if route_check.map_or(true, |o| o.stdout.is_empty()) {
-            // Find the Docker bridge interface
-            let bridge_iface = Command::new("ip")
-                .args(["route", "show", "172.18.0.0/16"])
-                .output()
-                .ok()
-                .and_then(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .split_whitespace()
-                        .nth(2) // "dev <iface>"
-                        .map(|s| s.to_string())
-                });
-            if let Some(iface) = bridge_iface {
+            // Use the dynamically detected bridge interface
+            if let Some(ref iface) = self.bridge_iface {
                 let output = Command::new("ip")
-                    .args(["route", "add", "10.96.0.0/12", "dev", &iface])
+                    .args(["route", "add", "10.96.0.0/12", "dev", iface])
                     .output();
                 match output {
                     Ok(o) if o.status.success() => {
@@ -498,6 +565,8 @@ impl IptablesManager {
                     }
                     Err(e) => warn!("Failed to add service CIDR route: {}", e),
                 }
+            } else {
+                warn!("No bridge interface detected, cannot add service CIDR route");
             }
         }
 
